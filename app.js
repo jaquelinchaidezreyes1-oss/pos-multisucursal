@@ -437,65 +437,130 @@
 
     function checkBlock() { return S.cart.some(i => i.quantity > getStock(i.product_id)); }
 
-    /* ── PRODUCTOS (FILTRADO Y AISLAMIENTO POR SUCURSAL) ── */
+    /* ── CATÁLOGO BASE OFICIAL LA FUENTE ── */
+    const DEFAULT_PRODUCTS = [
+        // PALETAS
+        { product_id: "p_pal_fresa", product_code: "PAL-01", product_name: "Paleta de Fresa (Agua)", category: "paletas", price: 20 },
+        { product_id: "p_pal_limon", product_code: "PAL-02", product_name: "Paleta de Limón", category: "paletas", price: 20 },
+        { product_id: "p_pal_mango", product_code: "PAL-03", product_name: "Paleta de Mango con Chile", category: "paletas", price: 22 },
+        { product_id: "p_pal_tamarindo", product_code: "PAL-04", product_name: "Paleta de Tamarindo", category: "paletas", price: 20 },
+        { product_id: "p_pal_vainilla", product_code: "PAL-05", product_name: "Paleta de Vainilla (Leche)", category: "paletas", price: 25 },
+        { product_id: "p_pal_chocolate", product_code: "PAL-06", product_name: "Paleta de Chocolate", category: "paletas", price: 25 },
+        { product_id: "p_pal_coco", product_code: "PAL-07", product_name: "Paleta de Coco Cremoso", category: "paletas", price: 25 },
+        { product_id: "p_pal_nuez", product_code: "PAL-08", product_name: "Paleta de Nuez Fina", category: "paletas", price: 28 },
+        { product_id: "p_pal_oreo", product_code: "PAL-09", product_name: "Paleta de Galleta Oreo", category: "paletas", price: 28 },
+        { product_id: "p_pal_zarzamora", product_code: "PAL-10", product_name: "Paleta Zarzamora con Queso", category: "paletas", price: 28 },
+        
+        // HELADOS & NIEVES
+        { product_id: "p_hel_sencillo", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25 },
+        { product_id: "p_hel_doble_v", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45 },
+        { product_id: "p_hel_doble_ch", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45 },
+        { product_id: "p_hel_waffle", product_code: "HEL-03", product_name: "Cono Waffle Especial", category: "helados", price: 55 },
+        { product_id: "p_hel_vaso_ch", product_code: "HEL-04", product_name: "Vaso de Nieve Chico", category: "helados", price: 30 },
+        { product_id: "p_hel_vaso_med", product_code: "HEL-05", product_name: "Vaso de Nieve Mediano", category: "helados", price: 50 },
+        { product_id: "p_hel_vaso_gde", product_code: "HEL-06", product_name: "Vaso de Nieve Grande", category: "helados", price: 70 },
+        { product_id: "p_hel_medio_lt", product_code: "HEL-07", product_name: "Medio Litro de Nieve", category: "helados", price: 85 },
+        { product_id: "p_hel_litro", product_code: "HEL-08", product_name: "Litro de Nieve para Llevar", category: "helados", price: 150 },
+
+        // AGUAS FRESCAS
+        { product_id: "p_agua_500", product_code: "AG-01", product_name: "Agua Fresca Vaso 500ml", category: "aguas", price: 25 },
+        { product_id: "p_agua_1lt", product_code: "AG-02", product_name: "Agua Fresca Litro (Horchata/Jamaica/Cebada)", category: "aguas", price: 45 },
+        { product_id: "p_agua_galon", product_code: "AG-03", product_name: "Galón de Agua Fresca", category: "aguas", price: 140 },
+
+        // PREPARADOS
+        { product_id: "p_prep_fresas", product_code: "PREP-01", product_name: "Fresas con Crema Especial", category: "preparados", price: 65 },
+        { product_id: "p_prep_esquite", product_code: "PREP-02", product_name: "Esquites / Vaso de Elote", category: "preparados", price: 45 },
+        { product_id: "p_prep_nachos", product_code: "PREP-03", product_name: "Nachos con Queso y Jalapeño", category: "preparados", price: 50 },
+        { product_id: "p_prep_tosti", product_code: "PREP-04", product_name: "Tostilocos Preparados", category: "preparados", price: 55 },
+        { product_id: "p_prep_dori", product_code: "PREP-05", product_name: "Dorilocos Preparados", category: "preparados", price: 55 },
+        { product_id: "p_prep_mango", product_code: "PREP-06", product_name: "Mangoneada / Chamoyada", category: "preparados", price: 45 },
+        { product_id: "p_prep_bionico", product_code: "PREP-07", product_name: "Biónico de Frutas con Crema", category: "preparados", price: 60 },
+
+        // POSTRES & DULCES
+        { product_id: "p_post_pay", product_code: "POS-01", product_name: "Rebanada Pay de Queso", category: "postres", price: 45 },
+        { product_id: "p_post_flan", product_code: "POS-02", product_name: "Flan Casero Napolitano", category: "postres", price: 40 },
+        { product_id: "p_dul_bolis", product_code: "DUL-01", product_name: "Bolis Gourmet Congelado", category: "dulces", price: 18 },
+        { product_id: "p_dul_dulces", product_code: "DUL-02", product_name: "Dulces / Botanas Variadas", category: "dulces", price: 15 }
+    ];
+
+    /* ── PRODUCTOS (FILTRADO Y CARGA UNIVERSAL PARA TODAS LAS SUCURSALES) ── */
     async function loadProducts() {
-        let baseProducts = [];
+        let remoteProducts = [];
         if (db) {
             try {
                 const {data} = await db.from("pos_products_final_view").select("*").eq("is_active", true).order("product_name");
-                baseProducts = data || [];
+                remoteProducts = data || [];
             } catch(e) {}
+            if (!remoteProducts.length) {
+                try {
+                    const {data} = await db.from("products").select("*").eq("is_active", true).order("product_name");
+                    remoteProducts = data || [];
+                } catch(e2) {}
+            }
         }
 
         const customProds = gr("custom_products", []);
         const deletedIds  = gr("deleted_product_ids", []);
-
         const combinedMap = new Map();
-        
-        // 1. Catálogo base o general
-        baseProducts.forEach(p => {
-            if (!deletedIds.includes(String(p.product_id))) {
-                // Verificar si pertenece a esta sucursal o es general ('all' o sin branch_id)
-                const isForBranch = !p.branch_id || p.branch_id === "all" || String(p.branch_id) === String(S.branchId) ||
-                                    (p.branch_name && S.branchName && p.branch_name.toLowerCase().includes(S.branchName.toLowerCase()));
-                
-                if (isForBranch || S.isSU) {
-                    let cat = (p.category || p.product_category || "paletas").toLowerCase().trim();
-                    if (cat.includes("preparad")) cat = "preparados";
-                    else if (cat.includes("helad")) cat = "helados";
 
-                    combinedMap.set(String(p.product_id), {
-                        product_id: p.product_id,
-                        product_name: p.product_name,
-                        product_code: p.product_code || "",
-                        category: cat,
-                        price: Number(p.price || 0),
-                        image_url: p.image_url || null,
-                        branch_id: p.branch_id || "all",
-                        branch_name: p.branch_name || "General"
-                    });
-                }
+        // 1. Cargar catálogo base predeterminado de La Fuente
+        DEFAULT_PRODUCTS.forEach(p => {
+            if (!deletedIds.includes(String(p.product_id))) {
+                combinedMap.set(String(p.product_id), {
+                    product_id: p.product_id,
+                    product_name: p.product_name,
+                    product_code: p.product_code || "",
+                    category: p.category,
+                    price: Number(p.price || 0),
+                    image_url: p.image_url || null,
+                    branch_id: "all",
+                    branch_name: "General"
+                });
             }
         });
 
-        // 2. Productos personalizados creados local / remotos
+        // 2. Fusionar con catálogo remoto de Supabase
+        remoteProducts.forEach(p => {
+            const pid = String(p.product_id || p.id);
+            if (!deletedIds.includes(pid)) {
+                let cat = String(p.category || p.product_category || "paletas").toLowerCase().trim();
+                const pName = String(p.product_name || "").toLowerCase();
+                if (cat.includes("preparad") || pName.includes("esquite") || pName.includes("nacho") || pName.includes("tosti") || pName.includes("fresas con crema")) cat = "preparados";
+                else if (cat.includes("helad") || pName.includes("cono") || pName.includes("nieve") || pName.includes("vaso")) cat = "helados";
+                else if (cat.includes("agua") || pName.includes("agua") || pName.includes("horchata") || pName.includes("jamaica")) cat = "aguas";
+                else if (cat.includes("postre") || pName.includes("flan") || pName.includes("pay") || pName.includes("pastel")) cat = "postres";
+                else if (cat.includes("dulce") || pName.includes("boli")) cat = "dulces";
+                else if (cat.includes("desechable")) cat = "desechables";
+                else if (cat.includes("congelado")) cat = "congelados";
+                else if (!cat || cat.length > 20) cat = "paletas";
+
+                combinedMap.set(pid, {
+                    product_id: pid,
+                    product_name: p.product_name,
+                    product_code: p.product_code || p.code || "",
+                    category: cat,
+                    price: Number(p.price || 0),
+                    image_url: p.image_url || null,
+                    branch_id: p.branch_id || "all",
+                    branch_name: p.branch_name || "General"
+                });
+            }
+        });
+
+        // 3. Fusionar productos personalizados creados en sucursales
         customProds.forEach(p => {
-            if (!deletedIds.includes(String(p.product_id))) {
-                const isForBranch = !p.branch_id || p.branch_id === "all" || String(p.branch_id) === String(S.branchId) ||
-                                    (p.branch_name && S.branchName && p.branch_name.toLowerCase().includes(S.branchName.toLowerCase()));
-                
-                if (isForBranch || S.isSU) {
-                    combinedMap.set(String(p.product_id), {
-                        product_id: p.product_id,
-                        product_name: p.product_name,
-                        product_code: p.product_code || "",
-                        category: (p.category || "paletas").toLowerCase().trim(),
-                        price: Number(p.price || 0),
-                        image_url: p.image_url || null,
-                        branch_id: p.branch_id || S.branchId || "all",
-                        branch_name: p.branch_name || S.branchName || "General"
-                    });
-                }
+            const pid = String(p.product_id);
+            if (!deletedIds.includes(pid)) {
+                combinedMap.set(pid, {
+                    product_id: pid,
+                    product_name: p.product_name,
+                    product_code: p.product_code || "",
+                    category: (p.category || "paletas").toLowerCase().trim(),
+                    price: Number(p.price || 0),
+                    image_url: p.image_url || null,
+                    branch_id: p.branch_id || "all",
+                    branch_name: p.branch_name || "General"
+                });
             }
         });
 
