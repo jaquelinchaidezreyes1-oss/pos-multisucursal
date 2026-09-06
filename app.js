@@ -284,11 +284,15 @@
 
     /* ── SUCURSALES ── */
     async function loadBranches() {
-        if (!db) return [];
-        try {
-            const {data} = await db.from("branches").select("id,name,code,is_active").eq("is_active", true).order("name");
-            S.branches = (data && data.length) ? data : BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
-        } catch {
+        if (!db) initDB();
+        if (db) {
+            try {
+                const {data} = await db.from("branches").select("id,name,code,is_active").eq("is_active", true).order("name");
+                S.branches = (data && data.length) ? data : BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
+            } catch {
+                S.branches = BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
+            }
+        } else {
             S.branches = BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
         }
         syncBranch();
@@ -318,7 +322,13 @@
             S.role = cfg.r;
             const m = S.branches.find(b => b.name.toLowerCase().trim() === cfg.b.toLowerCase().trim());
             if (m) S.branchId = m.id;
+            else S.branchId = "branch_" + cfg.b.toLowerCase().replace(/\s+/g, "_");
         } else {
+            const m = S.branches.find(b => email.includes(b.name.toLowerCase().replace(/\s+/g, "")));
+            if (m) {
+                S.branchId = m.id;
+                S.branchName = m.name;
+            }
             S.role = "Encargada de Sucursal";
             S.shift = "Turno Asignado";
         }
@@ -366,7 +376,14 @@
 
     function updateUI() {
         evalSU();
-        const name = S.profile?.full_name || S.user?.email || "Usuario";
+        const email = String(S.user?.email || "").toLowerCase().trim();
+        let name = S.profile?.full_name;
+        if (!name || name === email || name === "Usuario") {
+            if (email === SUPER[0]) name = "Jaquelin Chaidez Reyes";
+            else if (email === SUPER[1]) name = "Ignacio García La Fuente";
+            else if (STAFF[email]) name = STAFF[email].r;
+            else name = S.role || "Encargada";
+        }
         setT("#userName,#currentUser,[data-user-name]", name);
         setT("#branchName,#branch-name,[data-branch-name]", S.branchName + " (" + S.shift + ")");
         setT("#user-role,[data-user-role]", S.role);
@@ -382,13 +399,24 @@
     }
 
     async function loadProfile() {
-        if (!db || !S.user) return false;
+        if (!S.user) return false;
         syncBranch();
-        try {
-            const {data} = await db.from("profiles").select("*").eq("id", S.user.id).maybeSingle();
-            S.profile = data || {id: S.user.id, full_name: S.user.email};
-        } catch {
-            S.profile = {id: S.user.id, full_name: S.user.email};
+        const email = String(S.user.email || "").toLowerCase().trim();
+        evalSU();
+        let defaultName = S.role;
+        if (email === SUPER[0]) defaultName = "Jaquelin Chaidez Reyes";
+        else if (email === SUPER[1]) defaultName = "Ignacio García La Fuente";
+        else if (STAFF[email]) defaultName = STAFF[email].r;
+
+        if (db) {
+            try {
+                const {data} = await db.from("profiles").select("*").eq("id", S.user.id).maybeSingle();
+                S.profile = data || {id: S.user.id, full_name: defaultName, email: email};
+            } catch {
+                S.profile = {id: S.user.id, full_name: defaultName, email: email};
+            }
+        } else {
+            S.profile = {id: S.user.id, full_name: defaultName, email: email};
         }
         updateUI();
         renderSel();

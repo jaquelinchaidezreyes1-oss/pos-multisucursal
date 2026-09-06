@@ -392,6 +392,7 @@
 
                         if (window.LaFuentePOS) {
                             window.LaFuentePOS.state.user = result.data.user;
+                            await window.LaFuentePOS.loadBranches();
                             await window.LaFuentePOS.loadProfile();
                             await window.LaFuentePOS.loadProducts();
                             await window.LaFuentePOS.loadCurrentShift();
