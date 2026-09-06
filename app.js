@@ -152,6 +152,111 @@
     const gw = (k, d) => { try { localStorage.setItem("lf_global_" + k, JSON.stringify(d)); } catch(e) {} };
     const gr = (k, d) => { try { const x = localStorage.getItem("lf_global_" + k); return x ? JSON.parse(x) : d; } catch(e) { return d; } };
 
+    /* ── NORMALIZADOR Y COMPARADOR ROBUSTO DE SUCURSALES ── */
+    function normalizeBranchName(str) {
+        if (!str) return "";
+        return String(str)
+            .toLowerCase()
+            .replace(/la fuente/g, "")
+            .replace(/sucursal/g, "")
+            .replace(/matutino|vespertino|mañana|tarde/g, "")
+            .replace(/[()_-]/g, " ")
+            .trim();
+    }
+
+    function matchesBranch(sale, branchRef) {
+        if (!sale) return false;
+        const ref = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
+        const sBranch = normalizeBranchName(sale.branch_name || "");
+        const sId = String(sale.branch_id || "").toLowerCase();
+        
+        if (typeof branchRef === "object" && branchRef?.id && sId && String(branchRef.id).toLowerCase() === sId) {
+            return true;
+        }
+
+        if (ref.includes("calzada")) {
+            return sBranch.includes("calzada") || sId === "branch-1" || sId === "branch_la_fuente_calzada" || sId === "branch_calzada";
+        }
+        if (ref.includes("rescate")) {
+            return sBranch.includes("rescate") || sId === "branch-2" || sId === "branch_rescate";
+        }
+        if (ref.includes("mollotes")) {
+            return sBranch.includes("mollotes") || sId === "branch-3" || sId === "branch_mollotes";
+        }
+        if (ref.includes("tagarete 1") || (ref.includes("tagarete") && ref.includes("1"))) {
+            return (sBranch.includes("tagarete") && (sBranch.includes("1") || !sBranch.includes("2"))) || sId === "branch-4" || sId.includes("tagarete_1") || sId.includes("tagarete1");
+        }
+        if (ref.includes("tagarete 2") || (ref.includes("tagarete") && ref.includes("2"))) {
+            return (sBranch.includes("tagarete") && sBranch.includes("2")) || sId === "branch-5" || sId.includes("tagarete_2") || sId.includes("tagarete2");
+        }
+        if (ref.includes("cnop")) {
+            return sBranch.includes("cnop") || sId === "branch-6" || sId === "branch_cnop";
+        }
+
+        if (ref && sBranch) {
+            return sBranch.includes(ref) || ref.includes(sBranch);
+        }
+        return false;
+    }
+
+    /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE ── */
+    let _isSyncingSales = false;
+    async function syncPendingSalesToSupabase() {
+        if (!db || _isSyncingSales) return;
+        _isSyncingSales = true;
+        try {
+            const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
+            const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
+            const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
+
+            const localSales = lr("sales", []);
+            const syncedIds = new Set(gr("synced_sales_ids", []));
+
+            const unsynced = localSales.filter(s => s && s.id && !syncedIds.has(String(s.id)) && !uuid(s.id));
+            if (!unsynced.length) return;
+
+            for (const s of unsynced) {
+                const bId = uuid(s.branch_id) ? s.branch_id : defaultBranchUUID;
+                const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
+                const uId = uuid(s.cashier_id) ? s.cashier_id : (uuid(S.user?.id) ? S.user.id : defaultUserUUID);
+
+                const observationsObj = {
+                    branch_name: s.branch_name || S.branchName,
+                    shift_name: s.shift_name || S.shift,
+                    cashier_name: s.cashier_name || "Encargada",
+                    payment_method: s.payment_method || "cash",
+                    items: s.items || [],
+                    local_id: s.id
+                };
+
+                const insertPayload = {
+                    company_id: cId,
+                    branch_id: bId,
+                    user_id: uId,
+                    sale_number: s.sale_number,
+                    subtotal: Number(s.total || 0),
+                    discount: 0,
+                    tax: 0,
+                    total: Number(s.total || 0),
+                    status: String(s.status || "").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETED",
+                    observations: JSON.stringify(observationsObj),
+                    created_at: s.created_at || now()
+                };
+
+                const { data, error } = await db.from("sales").insert(insertPayload).select();
+                if (!error && data && data.length) {
+                    syncedIds.add(String(s.id));
+                    if (data[0].id) syncedIds.add(String(data[0].id));
+                }
+            }
+            gw("synced_sales_ids", Array.from(syncedIds));
+        } catch(e) {
+            console.warn("Error en cola de sincronización:", e);
+        } finally {
+            _isSyncingSales = false;
+        }
+    }
+
     /* ── NOTIFICACIONES TOAST & MODALES ELEGANTE ── */
     function toast(msg, type="success", dur=3500) {
         let wrap = document.getElementById("toast-wrapper");
@@ -1996,11 +2101,18 @@
                     console.error("Error al insertar venta en Supabase:", error);
                 } else {
                     console.log("✓ Venta sincronizada exitosamente en Supabase:", data);
+                    const syncedIds = new Set(gr("synced_sales_ids", []));
+                    syncedIds.add(String(saleRecord.id));
+                    if (data && data[0]?.id) syncedIds.add(String(data[0].id));
+                    gw("synced_sales_ids", Array.from(syncedIds));
                 }
             } catch(e) {
                 console.error("Excepción al guardar venta en Supabase:", e);
             }
         }
+
+        // Ejecutar sincronización de fondo por si hay pendientes
+        syncPendingSalesToSupabase();
 
         S.cart.forEach(i => deductStock(i.product_id, i.quantity, i.product_name));
         S.cart = [];
@@ -2023,76 +2135,74 @@
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
         }
 
-        const IGNORED_TEST_SALES = new Set([
-            "4bd1dff9-876c-420a-abea-2bf038a98b15",
-            "db76a364-9102-4ea2-b09f-ac3953245189",
-            "2c1d816a-195c-4b4f-928f-9291bb35d0b0",
-            "5dcc7cde-0afc-4511-ab15-03edeb768497",
-            "1aac230a-8092-44a2-830d-fcd11f88ffdc",
-            "TICK-482011",
-            "TICK-482012",
-            "TICK-482013",
-            "TICK-482014",
-            "TICK-166807"
-        ]);
-
         let remoteSales = [];
         if (db) {
             try {
                 const {data, error} = await db.from("sales").select("id,company_id,branch_id,shift_id,user_id,sale_number,total,status,observations,created_at").order("created_at", {ascending:false});
                 if (data && data.length) {
-                    remoteSales = data
-                        .filter(s => !IGNORED_TEST_SALES.has(String(s.id)) && !IGNORED_TEST_SALES.has(String(s.sale_number)))
-                        .map(s => {
-                            let obs = {};
-                            try {
-                                obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
-                            } catch(e) {}
-                            return {
-                                id: s.id,
-                                sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                                branch_id: s.branch_id,
-                                branch_name: obs.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "Sucursal",
-                                shift_name: obs.shift_name || "Mañana",
-                                cashier_id: s.user_id,
-                                cashier_name: obs.cashier_name || "Encargada",
-                                total: Number(s.total || 0),
-                                payment_method: obs.payment_method || "cash",
-                                status: String(s.status||"").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETADA",
-                                items: obs.items || [],
-                                created_at: s.created_at,
-                                local_id: obs.local_id || s.id
-                            };
-                        });
+                    remoteSales = data.map(s => {
+                        let obs = {};
+                        try {
+                            obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
+                        } catch(e) {}
+                        return {
+                            id: s.id,
+                            sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
+                            branch_id: s.branch_id,
+                            branch_name: obs.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "Sucursal",
+                            shift_name: obs.shift_name || "Mañana",
+                            cashier_id: s.user_id,
+                            cashier_name: obs.cashier_name || "Encargada",
+                            total: Number(s.total || 0),
+                            payment_method: obs.payment_method || "cash",
+                            status: String(s.status||"").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETADA",
+                            items: obs.items || [],
+                            created_at: s.created_at,
+                            local_id: obs.local_id || s.id
+                        };
+                    });
                 }
             } catch(e) {
                 console.warn("Error cargando ventas remotas:", e);
             }
         }
 
-        const localSales = lr("sales", []).filter(s => !IGNORED_TEST_SALES.has(String(s.id)) && !IGNORED_TEST_SALES.has(String(s.sale_number)));
+        const localSales = lr("sales", []);
         const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
 
         const salesMap = new Map();
-        localSales.forEach(s => salesMap.set(String(s.id), s));
-        remoteSales.forEach(s => {
-            const matchBranch = !s.branch_name || s.branch_name === "General" ||
-                                (String(s.branch_id) === String(S.branchId)) || 
-                                (s.branch_name && S.branchName && s.branch_name.toLowerCase().includes(S.branchName.toLowerCase())) ||
-                                (S.branchName && s.branch_name && S.branchName.toLowerCase().includes(s.branch_name.toLowerCase()));
-            if (matchBranch && !salesMap.has(String(s.id))) {
+        localSales.forEach(s => {
+            if (matchesBranch(s, { id: S.branchId, name: S.branchName })) {
                 salesMap.set(String(s.id), s);
             }
         });
 
+        remoteSales.forEach(s => {
+            if (matchesBranch(s, { id: S.branchId, name: S.branchName })) {
+                const sid = String(s.id);
+                let matchedKey = null;
+                for (const [key, existing] of salesMap.entries()) {
+                    if (key === sid || (s.local_id && (key === s.local_id || existing.local_id === s.local_id)) || (s.sale_number && existing.sale_number === s.sale_number)) {
+                        matchedKey = key;
+                        break;
+                    }
+                }
+                if (matchedKey) {
+                    salesMap.set(matchedKey, { ...salesMap.get(matchedKey), ...s });
+                } else {
+                    salesMap.set(sid, s);
+                }
+            }
+        });
+
         // Asegurar que ventas globales de la sucursal también se unan localmente
-        const allGlobalSales = gr("all_sales", []).filter(s => !IGNORED_TEST_SALES.has(String(s.id)) && !IGNORED_TEST_SALES.has(String(s.sale_number)));
+        const allGlobalSales = gr("all_sales", []);
         allGlobalSales.forEach(s => {
-            const matchBranch = (String(s.branch_id) === String(S.branchId)) || 
-                                (s.branch_name && S.branchName && s.branch_name.toLowerCase().includes(S.branchName.toLowerCase())) ||
-                                (S.branchName && s.branch_name && S.branchName.toLowerCase().includes(s.branch_name.toLowerCase()));
-            if (matchBranch && !salesMap.has(String(s.id))) {
-                salesMap.set(String(s.id), s);
+            if (matchesBranch(s, { id: S.branchId, name: S.branchName })) {
+                const sid = String(s.id);
+                if (!salesMap.has(sid)) {
+                    salesMap.set(sid, s);
+                }
             }
         });
 
@@ -3203,19 +3313,6 @@
 
     /* ── MOTOR UNIFICADO DE VENTAS CONSOLIDADAS (EN VIVO + OFFLINE) ── */
     async function getConsolidatedSalesForChain() {
-        const IGNORED_TEST_SALES = new Set([
-            "4bd1dff9-876c-420a-abea-2bf038a98b15",
-            "db76a364-9102-4ea2-b09f-ac3953245189",
-            "2c1d816a-195c-4b4f-928f-9291bb35d0b0",
-            "5dcc7cde-0afc-4511-ab15-03edeb768497",
-            "1aac230a-8092-44a2-830d-fcd11f88ffdc",
-            "TICK-482011",
-            "TICK-482012",
-            "TICK-482013",
-            "TICK-482014",
-            "TICK-166807"
-        ]);
-
         let remoteSales = [];
         if (db) {
             try {
@@ -3224,53 +3321,63 @@
                     .neq("status","CANCELLED")
                     .order("created_at", {ascending:false});
                 if (data && data.length) {
-                    remoteSales = data
-                        .filter(s => !IGNORED_TEST_SALES.has(String(s.id)) && !IGNORED_TEST_SALES.has(String(s.sale_number)))
-                        .map(s => {
-                            let obs = {};
-                            try {
-                                obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
-                            } catch(e) {}
-                            return {
-                                id: s.id,
-                                sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                                branch_id: s.branch_id,
-                                branch_name: obs.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "Sucursal",
-                                shift_name: obs.shift_name || "Mañana",
-                                cashier_id: s.user_id,
-                                cashier_name: obs.cashier_name || "Encargada",
-                                total: Number(s.total || 0),
-                                payment_method: obs.payment_method || "cash",
-                                status: String(s.status||"").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETADA",
-                                items: obs.items || [],
-                                created_at: s.created_at,
-                                local_id: obs.local_id || s.id
-                            };
-                        });
+                    remoteSales = data.map(s => {
+                        let obs = {};
+                        try {
+                            obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
+                        } catch(e) {}
+                        return {
+                            id: s.id,
+                            sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
+                            branch_id: s.branch_id,
+                            branch_name: obs.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "Sucursal",
+                            shift_name: obs.shift_name || "Mañana",
+                            cashier_id: s.user_id,
+                            cashier_name: obs.cashier_name || "Encargada",
+                            total: Number(s.total || 0),
+                            payment_method: obs.payment_method || "cash",
+                            status: String(s.status||"").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETADA",
+                            items: obs.items || [],
+                            created_at: s.created_at,
+                            local_id: obs.local_id || s.id
+                        };
+                    });
                 }
             } catch(e) {
                 console.warn("Supabase offline, using local storage", e);
             }
         }
 
-        const allGlobalSales = gr("all_sales", []).filter(s => !IGNORED_TEST_SALES.has(String(s.id)) && !IGNORED_TEST_SALES.has(String(s.sale_number)));
+        const allGlobalSales = gr("all_sales", []);
         const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
         const salesMap = new Map();
 
         // 1. Añadir locales primero (filtrando canceladas)
         allGlobalSales.forEach(s => {
-            const isCan = String(s.status||"").toUpperCase() === "CANCELLED" || cancelledReasons[String(s.id)];
+            const sid = String(s.id);
+            const isCan = String(s.status||"").toUpperCase() === "CANCELLED" || cancelledReasons[sid];
             if (!isCan) {
-                salesMap.set(String(s.id), s);
+                salesMap.set(sid, s);
             }
         });
 
-        // 2. Fusionar remotas
+        // 2. Fusionar remotas deduplicando por ID, local_id o sale_number
         remoteSales.forEach(s => {
             const sid = String(s.id);
             const isCan = String(s.status||"").toUpperCase() === "CANCELLED" || cancelledReasons[sid];
-            if (!isCan && !salesMap.has(sid)) {
-                salesMap.set(sid, s);
+            if (!isCan) {
+                let matchedKey = null;
+                for (const [key, existing] of salesMap.entries()) {
+                    if (key === sid || (s.local_id && (key === s.local_id || existing.local_id === s.local_id)) || (s.sale_number && existing.sale_number === s.sale_number)) {
+                        matchedKey = key;
+                        break;
+                    }
+                }
+                if (matchedKey) {
+                    salesMap.set(matchedKey, { ...salesMap.get(matchedKey), ...s });
+                } else {
+                    salesMap.set(sid, s);
+                }
             }
         });
 
@@ -3305,7 +3412,7 @@
 
         let chainTotal = 0;
         const summary = S.branches.map(b => {
-            const bs = todaySales.filter(s => String(s.branch_id) === String(b.id) || String(s.branch_name||"").toLowerCase().includes(b.name.toLowerCase()));
+            const bs = todaySales.filter(s => matchesBranch(s, b));
             const total = bs.reduce((acc,s) => acc + Number(s.total||0), 0);
             chainTotal += total;
             return { id: b.id, name: b.name, sales: total, orders: bs.length, isOpen: true };
@@ -3392,7 +3499,7 @@
                 total_chain: chainTotal,
                 total_tickets: todaySales.length,
                 branches: summary.map(b => {
-                    const bSales = todaySales.filter(s => String(s.branch_id) === String(b.id) || String(s.branch_name||"").toLowerCase().includes(b.name.toLowerCase()));
+                    const bSales = todaySales.filter(s => matchesBranch(s, b));
                     const matSales = bSales.filter(s => getShiftCategory(s) === "matutino");
                     const vesSales = bSales.filter(s => getShiftCategory(s) === "vespertino");
                     return {
@@ -3536,7 +3643,7 @@
         <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">🏢 Desglose por Sucursal & Métodos de Pago — ${fd(selectedDate)}</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:28px">
             ${BRANCH_NAMES.map(bName => {
-                const bSales = activeUnarchivedSales.filter(s => String(s.branch_name||"").toLowerCase().includes(bName.toLowerCase()));
+                const bSales = activeUnarchivedSales.filter(s => matchesBranch(s, bName));
                 const bCashSales = bSales.filter(s => (s.payment_method || "cash") === "cash");
                 const bCardSales = bSales.filter(s => s.payment_method === "card");
                 const matSales = bSales.filter(s => getShiftCategory(s) === "matutino");
@@ -3578,7 +3685,7 @@
             ? `<div style="display:flex;flex-direction:column;gap:12px">
                 ${history.map((h, idx) => `
                 <article class="sale-card" style="background:#fff;border:1px solid rgba(188,132,10,.35);border-radius:14px;padding:16px">
-                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:gap:10px">
                         <div>
                             <strong style="font-size:15px;color:var(--wine-900)">📅 Cierre Diario — ${fd(h.date)}</strong>
                             <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Cerrado el: ${fdt(h.created_at)} • ${h.total_tickets} tickets emitidos</div>
@@ -3608,7 +3715,7 @@
         // Event listener para imprimir corte diario seleccionado
         document.getElementById("btn-print-daily-acc")?.addEventListener("click", () => {
             const branchBreakdown = BRANCH_NAMES.map(bName => {
-                const bSales = activeUnarchivedSales.filter(s => String(s.branch_name||"").toLowerCase().includes(bName.toLowerCase()));
+                const bSales = activeUnarchivedSales.filter(s => matchesBranch(s, bName));
                 const bCash = bSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s)=>a+Number(s.total||0),0);
                 const bCard = bSales.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0),0);
                 const mat = bSales.filter(s => getShiftCategory(s) === "matutino").reduce((a,s)=>a+Number(s.total||0),0);
@@ -3810,6 +3917,7 @@
         if (window._syncTimer) clearInterval(window._syncTimer);
         window._syncTimer = setInterval(async () => {
             if (S.user) {
+                syncPendingSalesToSupabase();
                 if (S.view === "private-access" && S.isSU) await loadPrivateAccess(true);
                 else if (S.view === "accounting" && S.isSU) await loadAccounting(true);
                 else if (S.view === "sales") await loadSales(true);
@@ -3837,6 +3945,7 @@
             await loadCurrentShift();
             initSearch();
             setupRealtime();
+            syncPendingSalesToSupabase();
             autoReconnectUsbPrinter();
             if (S.isSU && window.changeView) window.changeView("private-access");
             else if (window.changeView) window.changeView("pos");
