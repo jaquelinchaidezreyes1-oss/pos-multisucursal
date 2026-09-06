@@ -2078,6 +2078,19 @@
         const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
         toast(`✓ Venta de ${money(total)} cobrada en ${payLabel}. Ticket #${saleRecord.sale_number}`, "success", 3000);
 
+        // 2.1 TRANSMISIÓN INSTANTÁNEA EN VIVO A SUPERUSUARIOS Y SUCURSALES (0ms MESH)
+        if (realtimeChannel) {
+            try {
+                realtimeChannel.send({
+                    type: "broadcast",
+                    event: "sale_created",
+                    payload: { sale: saleRecord }
+                });
+            } catch(e) {
+                console.warn("Mesh broadcast error:", e);
+            }
+        }
+
         // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO (Fire-and-forget sin bloquear la pantalla)
         (async () => {
             if (db) {
@@ -2916,6 +2929,18 @@
                     else console.log("✓ Corte sincronizado en Supabase:", data);
                 } catch(e) {
                     console.error("Excepción al registrar corte en Supabase:", e);
+                }
+            }
+
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "cut_created",
+                        payload: { cut: cutRecord }
+                    });
+                } catch(e) {
+                    console.warn("Cut broadcast error:", e);
                 }
             }
 
@@ -3998,10 +4023,84 @@
         }
 
         try {
-            realtimeChannel = db.channel("pos-realtime-master")
+            realtimeChannel = db.channel("lafuente-pos-mesh", { config: { broadcast: { self: false } } })
+                // 1. RECEPCIÓN DIRECTA DE VENTAS EN TIEMPO REAL (MESH BROADCAST)
+                .on("broadcast", { event: "sale_created" }, async ({ payload }) => {
+                    if (!payload || !payload.sale) return;
+                    const s = payload.sale;
+                    const sid = String(s.id);
+                    let allGSales = gr("all_sales", []);
+                    const exists = allGSales.some(x => String(x.id) === sid || (x.local_id && x.local_id === s.local_id) || (x.sale_number && x.sale_number === s.sale_number));
+                    if (!exists) {
+                        allGSales.unshift(s);
+                        gw("all_sales", allGSales);
+                    }
+                    if (S.isSU) {
+                        toast(`🔔 Venta cobrada: ${money(s.total)} en ${s.branch_name || 'Sucursal'} (${s.shift_name || 'Turno'})`, "success", 4000);
+                    }
+                    safeSilentRefresh();
+                })
+                // 2. RECEPCIÓN DIRECTA DE CORTES EN TIEMPO REAL (MESH BROADCAST)
+                .on("broadcast", { event: "cut_created" }, async ({ payload }) => {
+                    if (!payload || !payload.cut) return;
+                    const c = payload.cut;
+                    let allCuts = gr("all_cuts", []);
+                    if (!allCuts.some(x => String(x.id) === String(c.id))) {
+                        allCuts.unshift(c);
+                        gw("all_cuts", allCuts);
+                    }
+                    if (S.isSU) {
+                        toast(`✂️ Nuevo Corte de Caja: ${c.branch_name || 'Sucursal'} (${c.shift_name || 'Turno'}) — Total: ${money(c.total_sales || c.net_sales_without_fund || 0)}`, "info", 5000);
+                    }
+                    safeSilentRefresh();
+                })
+                // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS
+                .on("broadcast", { event: "request_sync" }, async () => {
+                    const mySales = lr("sales", []);
+                    const myCuts = lr("cuts", []);
+                    if ((mySales.length || myCuts.length) && realtimeChannel) {
+                        realtimeChannel.send({
+                            type: "broadcast",
+                            event: "sync_response",
+                            payload: {
+                                branch_name: S.branchName,
+                                shift_name: S.shift,
+                                sales: mySales,
+                                cuts: myCuts
+                            }
+                        });
+                    }
+                })
+                // 4. RESPUESTA DE SINCRONIZACIÓN RECIBIDA DE OTRAS SUCURSALES
+                .on("broadcast", { event: "sync_response" }, async ({ payload }) => {
+                    if (!payload) return;
+                    if (payload.sales && payload.sales.length) {
+                        let allGSales = gr("all_sales", []);
+                        const map = new Map();
+                        allGSales.forEach(s => map.set(String(s.id), s));
+                        payload.sales.forEach(s => {
+                            const sid = String(s.id);
+                            if (!map.has(sid)) {
+                                map.set(sid, s);
+                            }
+                        });
+                        const merged = Array.from(map.values()).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+                        gw("all_sales", merged);
+                    }
+                    if (payload.cuts && payload.cuts.length) {
+                        let allCuts = gr("all_cuts", []);
+                        const mapC = new Map();
+                        allCuts.forEach(c => mapC.set(String(c.id), c));
+                        payload.cuts.forEach(c => {
+                            if (!mapC.has(String(c.id))) mapC.set(String(c.id), c);
+                        });
+                        gw("all_cuts", Array.from(mapC.values()));
+                    }
+                    safeSilentRefresh();
+                })
+                // 5. EVENTOS POSTGRESQL NATIVOS SUPABASE
                 .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, async payload => {
-                    console.log("⚡ [Realtime] Evento de ventas:", payload.eventType, payload);
-
+                    console.log("⚡ [Realtime SQL] Evento de ventas:", payload.eventType, payload);
                     if (payload.eventType === "INSERT" && payload.new) {
                         const n = payload.new;
                         let obs = {};
@@ -4016,9 +4115,6 @@
                         gw("all_sales", gSales);
                         let lSales = lr("sales", []).filter(x => String(x.id) !== delId);
                         lw("sales", lSales);
-                        if (S.isSU) {
-                            toast("🗑 Registro de venta eliminado de la red.", "info", 3500);
-                        }
                     } else if (payload.eventType === "UPDATE" && payload.new) {
                         const n = payload.new;
                         const isCan = String(n.status||"").toUpperCase() === "CANCELLED";
@@ -4029,28 +4125,11 @@
                             let lSales = lr("sales", []);
                             const lTarget = lSales.find(x => String(x.id) === String(n.id));
                             if (lTarget) { lTarget.status = "CANCELLED"; lw("sales", lSales); }
-
-                            if (S.isSU) {
-                                toast(`🚫 Venta #${n.sale_number || n.id} fue cancelada.`, "warn", 3500);
-                            }
                         }
                     }
-
-                    // Actualizar suavemente las vistas sin parpadear ni robar foco
                     safeSilentRefresh();
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "cash_cuts" }, async payload => {
-                    console.log("✂️ [Realtime] Evento de cortes:", payload.eventType, payload);
-                    if (payload.eventType === "INSERT" && payload.new) {
-                        const n = payload.new;
-                        let obs = {};
-                        try { obs = typeof n.observations === "string" ? JSON.parse(n.observations) : (n.observations || {}); } catch(e) {}
-                        const bName = obs.branch_name || "Sucursal";
-                        const shiftN = obs.shift_name || "Turno";
-                        if (S.isSU) {
-                            toast(`✂️ Nuevo Corte de Caja: ${bName} (${shiftN}) — Total: ${money(n.total_sales)}`, "info", 5000);
-                        }
-                    }
                     safeSilentRefresh();
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "products" }, async () => {
@@ -4064,7 +4143,17 @@
                     if (S.view === "private-access" && S.isSU) await loadPrivateAccess(true);
                 })
                 .subscribe(status => {
-                    console.log("📡 [Realtime] Estado de conexión:", status);
+                    console.log("📡 [Realtime Mesh] Estado de conexión:", status);
+                    if (status === "SUBSCRIBED" && S.isSU) {
+                        // Al conectar, pedir a todas las cajeras activas su resumen de ventas
+                        try {
+                            realtimeChannel.send({
+                                type: "broadcast",
+                                event: "request_sync",
+                                payload: { from: S.user?.email }
+                            });
+                        } catch(e) {}
+                    }
                 });
         } catch(e) {
             console.warn("Realtime error:", e);
@@ -4075,6 +4164,15 @@
         window._syncTimer = setInterval(async () => {
             if (S.user) {
                 syncPendingSalesToSupabase();
+                if (S.isSU && realtimeChannel) {
+                    try {
+                        realtimeChannel.send({
+                            type: "broadcast",
+                            event: "request_sync",
+                            payload: { from: S.user?.email }
+                        });
+                    } catch(e) {}
+                }
                 safeSilentRefresh();
             }
         }, 3500);
