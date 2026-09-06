@@ -3424,12 +3424,44 @@
         const pendingReps = allReps.filter(r => r.status !== "reviewed");
 
         let chainTotal = 0;
+        let chainCashTotal = 0;
+        let chainCardTotal = 0;
+        let chainMatTotal = 0;
+        let chainVesTotal = 0;
+
         const summary = S.branches.map(b => {
             const bs = todaySales.filter(s => matchesBranch(s, b));
             const total = bs.reduce((acc,s) => acc + Number(s.total||0), 0);
+            const cashTotal = bs.filter(s => (s.payment_method || "cash") === "cash").reduce((acc,s) => acc + Number(s.total||0), 0);
+            const cardTotal = bs.filter(s => s.payment_method === "card").reduce((acc,s) => acc + Number(s.total||0), 0);
+            const matSales = bs.filter(s => getShiftCategory(s) === "matutino");
+            const vesSales = bs.filter(s => getShiftCategory(s) === "vespertino");
+            const matTotal = matSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+            const vesTotal = vesSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+
             chainTotal += total;
-            return { id: b.id, name: b.name, sales: total, orders: bs.length, isOpen: true };
+            chainCashTotal += cashTotal;
+            chainCardTotal += cardTotal;
+            chainMatTotal += matTotal;
+            chainVesTotal += vesTotal;
+
+            return {
+                id: b.id,
+                name: b.name,
+                sales: total,
+                orders: bs.length,
+                cashTotal: cashTotal,
+                cardTotal: cardTotal,
+                matTotal: matTotal,
+                matOrders: matSales.length,
+                vesTotal: vesTotal,
+                vesOrders: vesSales.length,
+                isOpen: true
+            };
         });
+
+        // Últimas 15 ventas en vivo de la red
+        const liveRecentSales = todaySales.slice(0, 15);
 
         c.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
@@ -3441,17 +3473,21 @@
             <div class="dashboard-card" style="padding:22px;border-radius:18px">
                 <span class="section-kicker">TICKETS COBRADOS HOY</span>
                 <div style="font-size:30px;font-weight:900;color:#ffffff;margin:6px 0">${todaySales.length}</div>
-                <small style="color:#fcebd2">Tickets emitidos hoy</small>
+                <small style="color:#fcebd2">💵 Efectivo: ${money(chainCashTotal)} • 💳 Tarjeta: ${money(chainCardTotal)}</small>
             </div>
             <div class="dashboard-card" style="padding:22px;border-radius:18px">
-                <span class="section-kicker">REPORTES PENDIENTES</span>
-                <div style="font-size:30px;font-weight:900;color:${pendingReps.length>0?'#ff6b6b':'#4ade80'};margin:6px 0">${pendingReps.length}</div>
-                <small style="color:#fcebd2">Daños o peticiones sin revisar</small>
+                <span class="section-kicker">TURNOS HOY (RED COMPLETA)</span>
+                <div style="font-size:18px;font-weight:900;color:#ffffff;margin:6px 0">
+                    🌅 ${money(chainMatTotal)} <span style="font-size:12px;font-weight:normal;color:#fcebd2">(Matutino)</span>
+                </div>
+                <div style="font-size:18px;font-weight:900;color:#ffffff">
+                    🌇 ${money(chainVesTotal)} <span style="font-size:12px;font-weight:normal;color:#fcebd2">(Vespertino)</span>
+                </div>
             </div>
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-            <h3 style="margin:0;color:#ffffff;font-weight:900">📍 Monitor de Red en Vivo</h3>
+            <h3 style="margin:0;color:#ffffff;font-weight:900">📍 Monitor de Red en Vivo (6 Sucursales)</h3>
             <div style="display:flex;gap:8px">
                 <button type="button" id="btn-close-day" style="padding:9px 18px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:10px;font-weight:900;cursor:pointer">
                     🌙 Finalizar Día & Archivar en Contabilidad</button>
@@ -3460,23 +3496,31 @@
             </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:18px;margin-bottom:28px">
         ${summary.map(b => `
-            <div style="background:linear-gradient(145deg,#fffef9,#fceecc);border:1.5px solid rgba(188,132,10,.38);border-radius:18px;padding:20px;display:flex;flex-direction:column;justify-content:space-between">
+            <div style="background:linear-gradient(145deg,#fffef9,#fceecc);border:1.5px solid rgba(188,132,10,.38);border-radius:18px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.15)">
                 <div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                         <strong style="font-size:16px;color:var(--wine-900)">🍦 ${esc(b.name)}</strong>
                         <span style="font-size:10px;padding:4px 10px;border-radius:20px;font-weight:bold;background:#dcfce7;color:#15803d">
                             🟢 EN VIVO</span>
                     </div>
-                    <div style="background:#fffcf0;border:1px solid #f2e6b5;border-radius:10px;padding:12px;margin-bottom:14px">
+                    <div style="background:#fffcf0;border:1px solid #f2e6b5;border-radius:10px;padding:12px;margin-bottom:12px">
                         <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-                            <span style="font-size:12px;color:var(--text-muted)">Ventas Hoy:</span>
-                            <strong style="font-size:15px;color:var(--wine-700)">${money(b.sales)}</strong>
+                            <span style="font-size:12px;color:var(--text-muted);font-weight:700">Ventas Hoy:</span>
+                            <strong style="font-size:17px;color:var(--wine-700)">${money(b.sales)}</strong>
                         </div>
-                        <div style="display:flex;justify-content:space-between">
-                            <span style="font-size:12px;color:var(--text-muted)">Tickets:</span>
-                            <span style="font-weight:700;color:var(--wine-900)">${b.orders}</span>
+                        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                            <span style="font-size:11px;color:var(--text-muted)">Tickets:</span>
+                            <span style="font-weight:700;color:var(--wine-900);font-size:12px">${b.orders}</span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:6px;border-top:1px dashed #e5e7eb;font-size:11px">
+                            <div>💵 Efectivo: <strong style="color:#15803d">${money(b.cashTotal)}</strong></div>
+                            <div>💳 Tarjeta: <strong style="color:#1d4ed8">${money(b.cardTotal)}</strong></div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:4px;font-size:10px;color:var(--text-muted)">
+                            <div>🌅 Matutino: <strong style="color:var(--wine-800)">${money(b.matTotal)}</strong></div>
+                            <div>🌇 Vespertino: <strong style="color:var(--wine-800)">${money(b.vesTotal)}</strong></div>
                         </div>
                     </div>
                 </div>
@@ -3492,6 +3536,53 @@
                         Operar esta Sucursal →</button>
                 </div>
             </div>`).join("")}
+        </div>
+
+        <!-- MONITOR DE TRANSACCIONES EN VIVO (ÚLTIMAS VENTAS REGISTRADAS) -->
+        <div class="dashboard-card" style="padding:22px;border-radius:18px;background:#fff;border:1.5px solid rgba(188,132,10,.35);box-shadow:0 4px 14px rgba(0,0,0,0.15)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+                <div>
+                    <h3 style="margin:0;color:var(--wine-900);font-weight:900;display:flex;align-items:center;gap:8px">
+                        <span>⚡</span> Flujo de Ventas en Vivo (Toda la Cadena)
+                    </h3>
+                    <small style="color:var(--text-muted);font-weight:600">Transacciones registradas en tiempo real en las 6 sucursales</small>
+                </div>
+                <span style="font-size:11px;font-weight:800;color:var(--emerald);background:#dcfce7;padding:4px 12px;border-radius:12px">
+                    ● Conexión Automática Activa
+                </span>
+            </div>
+            ${liveRecentSales.length ? `
+            <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead>
+                        <tr style="background:#fffdf2;border-bottom:2px solid #e5e7eb;text-align:left;color:var(--wine-900)">
+                            <th style="padding:10px 8px;font-weight:900">Hora</th>
+                            <th style="padding:10px 8px;font-weight:900">Sucursal</th>
+                            <th style="padding:10px 8px;font-weight:900">Encargada / Turno</th>
+                            <th style="padding:10px 8px;font-weight:900">Pago</th>
+                            <th style="padding:10px 8px;font-weight:900">Ticket</th>
+                            <th style="padding:10px 8px;font-weight:900;text-align:right">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${liveRecentSales.map(s => {
+                            const isCard = (s.payment_method === "card");
+                            const timeStr = s.created_at ? new Date(s.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '--:--';
+                            return `<tr style="border-bottom:1px solid #f3f4f6">
+                                <td style="padding:9px 8px;color:var(--text-muted);font-weight:700">${timeStr}</td>
+                                <td style="padding:9px 8px;font-weight:800;color:var(--wine-900)">📍 ${esc(s.branch_name || "Sucursal")}</td>
+                                <td style="padding:9px 8px;color:#4b5563">${esc(s.cashier_name || "Encargada")} <small style="color:var(--text-muted)">(${esc(s.shift_name || "Turno")})</small></td>
+                                <td style="padding:9px 8px">${isCard ? '<span style="color:#1d4ed8;font-weight:800;background:#eff6ff;padding:2px 6px;border-radius:4px">💳 Tarjeta</span>' : '<span style="color:#15803d;font-weight:800;background:#f0fdf4;padding:2px 6px;border-radius:4px">💵 Efectivo</span>'}</td>
+                                <td style="padding:9px 8px;font-weight:700;color:var(--text-muted)">#${esc(s.sale_number || s.id)}</td>
+                                <td style="padding:9px 8px;font-weight:900;color:var(--wine-700);text-align:right;font-size:13px">${money(s.total)}</td>
+                            </tr>`;
+                        }).join("")}
+                    </tbody>
+                </table>
+            </div>` : `
+            <div style="padding:24px;text-align:center;color:var(--text-muted)">
+                <p style="margin:0">Aún no hay ventas registradas el día de hoy.</p>
+            </div>`}
         </div>`;
 
         document.getElementById("btn-ref-priv")?.addEventListener("click", async () => {
@@ -3600,7 +3691,11 @@
         }
 
         const selectedDate = S.accHistoryFilterDate || todayStr;
-        const activeUnarchivedSales = (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
+        const isAllDates = (selectedDate === "all");
+
+        const activeUnarchivedSales = isAllDates
+            ? allHistoricalActive
+            : (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
 
         const totalSelectedDate = activeUnarchivedSales.reduce((acc,s) => acc + Number(s.total||0), 0);
         const cashSalesChain = activeUnarchivedSales.filter(s => (s.payment_method || "cash") === "cash");
@@ -3612,6 +3707,8 @@
         const vesChainSales = activeUnarchivedSales.filter(s => getShiftCategory(s) === "vespertino");
         const matChainTotal = matChainSales.reduce((a,s)=>a+Number(s.total||0), 0);
         const vesChainTotal = vesChainSales.reduce((a,s)=>a+Number(s.total||0), 0);
+
+        const dateOptions = Array.from(datesMap.keys()).sort().reverse();
 
         c.innerHTML = `
         <!-- RESUMEN HISTÓRICO GLOBAL DE LA CADENA (DESDE EL DÍA 1) -->
@@ -3651,8 +3748,11 @@
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                     <label style="font-size:12px;font-weight:900;color:var(--wine-800)">FECHA:</label>
-                    <input type="date" id="acc-date-filter" value="${selectedDate}"
-                        style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none;color:#1a0205">
+                    <select id="acc-date-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none;color:#1a0205">
+                        <option value="today"${selectedDate==="today"||selectedDate===todayStr?" selected":""}>📅 Hoy (${fd(todayStr)})</option>
+                        <option value="all"${selectedDate==="all"?" selected":""}>🌐 Todo el Histórico Consolidado</option>
+                        ${dateOptions.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?" selected":""}>📅 ${fd(d)}</option>`).join("")}
+                    </select>
                     <button type="button" id="btn-print-daily-acc" style="padding:8px 16px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)">
                         <span>🖨️</span><span>Imprimir Corte Diario</span>
                     </button>
@@ -3662,7 +3762,7 @@
 
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px">
                 <div style="background:#fff;padding:16px;border-radius:14px;border:1.5px solid rgba(188,132,10,.35);box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);letter-spacing:1px">VENTA DEL DÍA (${fd(selectedDate)})</small>
+                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);letter-spacing:1px">VENTA DEL PERÍODO (${isAllDates ? "HISTÓRICO" : fd(selectedDate==="today"?todayStr:selectedDate)})</small>
                     <div style="font-size:26px;font-weight:900;color:var(--wine-900);margin:4px 0">${money(totalSelectedDate)}</div>
                     <small style="color:var(--emerald);font-weight:800">${activeUnarchivedSales.length} tickets activos</small>
                 </div>
@@ -3688,7 +3788,7 @@
             </div>
         </div>
 
-        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">🏢 Desglose por Sucursal & Métodos de Pago — ${fd(selectedDate)}</h3>
+        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">🏢 Desglose por Sucursal & Métodos de Pago — ${isAllDates ? "Histórico Consolidado" : fd(selectedDate==="today"?todayStr:selectedDate)}</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:28px">
             ${BRANCH_NAMES.map(bName => {
                 const bSales = activeUnarchivedSales.filter(s => matchesBranch(s, bName));
@@ -3758,9 +3858,10 @@
                </div>`
             : `<div class="empty-state" style="padding:30px;text-align:center">
                 <p style="color:var(--text-muted)">Aún no se han generado cierres de día con el botón de finalización.</p>
-               </div>`}`;
+               </div>`}
+        `;
 
-        // Event listener para imprimir corte diario seleccionado
+        // Event listener para imprimir corte diario actual
         document.getElementById("btn-print-daily-acc")?.addEventListener("click", () => {
             const branchBreakdown = BRANCH_NAMES.map(bName => {
                 const bSales = activeUnarchivedSales.filter(s => matchesBranch(s, bName));
@@ -3780,7 +3881,7 @@
             });
 
             const reportPayload = {
-                date: selectedDate,
+                date: isAllDates ? "HISTÓRICO CONSOLIDADO" : (selectedDate === "today" ? todayStr : selectedDate),
                 totalChain: totalSelectedDate,
                 cashTotal: totalCashChain,
                 cardTotal: totalCardChain,
@@ -3877,6 +3978,19 @@
 
     /* ── SINCRONIZACIÓN EN TIEMPO REAL & CANALES SUPABASE ── */
     let realtimeChannel = null;
+    function safeSilentRefresh() {
+        if (!S.user) return;
+        const active = document.activeElement;
+        const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.isContentEditable);
+        const hasOpenModal = !!document.querySelector(".modal.open, .modal.show, [data-modal-open='true'], #checkout-modal:not(.hidden), .confirm-modal");
+        if (isTyping || hasOpenModal) return;
+
+        if (S.view === "private-access" && S.isSU) loadPrivateAccess(true);
+        else if (S.view === "accounting" && S.isSU) loadAccounting(true);
+        else if (S.view === "sales") loadSales(true);
+        else if (S.view === "cuts") loadCuts(true);
+    }
+
     function setupRealtime() {
         if (!db) return;
         if (realtimeChannel) {
@@ -3922,11 +4036,8 @@
                         }
                     }
 
-                    // Actualizar automáticamente todas las pantallas activas sin parpadeos
-                    if (S.view === "private-access" && S.isSU) await loadPrivateAccess(true);
-                    else if (S.view === "accounting" && S.isSU) await loadAccounting(true);
-                    else if (S.view === "sales") await loadSales(true);
-                    else if (S.view === "cuts") await loadCuts(true);
+                    // Actualizar suavemente las vistas sin parpadear ni robar foco
+                    safeSilentRefresh();
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "cash_cuts" }, async payload => {
                     console.log("✂️ [Realtime] Evento de cortes:", payload.eventType, payload);
@@ -3940,9 +4051,7 @@
                             toast(`✂️ Nuevo Corte de Caja: ${bName} (${shiftN}) — Total: ${money(n.total_sales)}`, "info", 5000);
                         }
                     }
-                    if (S.view === "cuts") await loadCuts(true);
-                    else if (S.view === "private-access" && S.isSU) await loadPrivateAccess(true);
-                    else if (S.view === "accounting" && S.isSU) await loadAccounting(true);
+                    safeSilentRefresh();
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "products" }, async () => {
                     await loadProducts();
@@ -3966,12 +4075,9 @@
         window._syncTimer = setInterval(async () => {
             if (S.user) {
                 syncPendingSalesToSupabase();
-                if (S.view === "private-access" && S.isSU) await loadPrivateAccess(true);
-                else if (S.view === "accounting" && S.isSU) await loadAccounting(true);
-                else if (S.view === "sales") await loadSales(true);
-                else if (S.view === "cuts") await loadCuts(true);
+                safeSilentRefresh();
             }
-        }, 5000);
+        }, 3500);
     }
 
     /* ── INICIALIZACIÓN ── */
