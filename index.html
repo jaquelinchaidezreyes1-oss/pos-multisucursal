@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#5b151d">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="La Fuente POS">
+    <title>La Fuente | Punto de Venta Multisucursal</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="images/LaFuente.png">
+    <link rel="apple-touch-icon" href="images/LaFuente.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Cinzel:wght@400;700&family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="login-active">
+
+    <!-- LOGIN SCREEN BOUTIQUE -->
+    <div class="login-screen" id="login-screen">
+        <div class="login-ambient-orb orb-1"></div>
+        <div class="login-ambient-orb orb-2"></div>
+        <div class="login-ambient-orb orb-3"></div>
+        <div class="login-ambient-orb orb-4"></div>
+
+        <div class="floating-particle p-1"><svg width="34" height="34" viewBox="0 0 34 34"><polygon points="17,2 32,17 17,32 2,17" fill="none" stroke="rgba(160,90,10,0.5)" stroke-width="1.5"/><polygon points="17,9 25,17 17,25 9,17" fill="rgba(210,150,10,0.18)" stroke="rgba(160,90,10,0.3)" stroke-width="1"/></svg></div>
+        <div class="floating-particle p-2"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M10,1 L11.8,7.2 L18,10 L11.8,12.8 L10,19 L8.2,12.8 L2,10 L8.2,7.2 Z" fill="rgba(112,23,33,0.28)" stroke="rgba(112,23,33,0.50)" stroke-width="0.9"/></svg></div>
+        <div class="floating-particle p-3"><svg width="38" height="38" viewBox="0 0 38 38"><polygon points="19,2 36,19 19,36 2,19" fill="none" stroke="rgba(160,90,10,0.48)" stroke-width="1.5"/><line x1="19" y1="2" x2="19" y2="36" stroke="rgba(160,90,10,0.18)" stroke-width="1"/><line x1="2" y1="19" x2="36" y2="19" stroke="rgba(160,90,10,0.18)" stroke-width="1"/></svg></div>
+        <div class="floating-particle p-4"><svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7.5" fill="none" stroke="rgba(160,90,10,0.45)" stroke-width="1.2"/><circle cx="9" cy="9" r="3" fill="rgba(160,90,10,0.20)"/></svg></div>
+        <div class="floating-particle p-5"><svg width="30" height="30" viewBox="0 0 30 30"><rect x="7" y="7" width="16" height="16" fill="none" stroke="rgba(112,23,33,0.45)" stroke-width="1.5" transform="rotate(45 15 15)"/><rect x="11" y="11" width="8" height="8" fill="rgba(112,23,33,0.15)" transform="rotate(45 15 15)"/></svg></div>
+        <div class="floating-particle p-6"><svg width="22" height="22" viewBox="0 0 22 22"><path d="M11,1 L13.2,8.8 L21,11 L13.2,13.2 L11,21 L8.8,13.2 L1,11 L8.8,8.8 Z" fill="rgba(210,150,10,0.38)" stroke="rgba(160,90,10,0.60)" stroke-width="1"/></svg></div>
+        <div class="floating-particle p-7"><svg width="34" height="34" viewBox="0 0 34 34"><polygon points="17,2 32,17 17,32 2,17" fill="none" stroke="rgba(112,23,33,0.42)" stroke-width="1.5"/><circle cx="17" cy="17" r="5" fill="rgba(112,23,33,0.15)"/></svg></div>
+        <div class="floating-particle p-8"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8,1 L9.5,6.5 L15,8 L9.5,9.5 L8,15 L6.5,9.5 L1,8 L6.5,6.5 Z" fill="rgba(210,150,10,0.48)" stroke="rgba(160,90,10,0.65)" stroke-width="0.8"/></svg></div>
+
+        <div class="corner-ornament corner-top-left">&#10022; &#10023; &#10022;</div>
+        <div class="corner-ornament corner-top-right">&#10022; &#10023; &#10022;</div>
+        <div class="corner-ornament corner-bottom-left">LA FUENTE &middot; DESDE 1962</div>
+        <div class="corner-ornament corner-bottom-right">PALETER&Iacute;A &amp; HELADER&Iacute;A</div>
+
+        <div class="login-card">
+            <div class="login-emblem-container"><div class="login-emblem-badge">&#127846;</div></div>
+            <div class="login-header">
+                <h1 class="login-brand-title">La Fuente</h1>
+                <div class="login-brand-subtitle">PALETER&Iacute;A &amp; HELADER&Iacute;A</div>
+                <div class="login-seal-badge">&#10022; DESDE 1962 &#10022;</div>
+                <p class="login-welcome-text">Ingresa tus credenciales para acceder a tu sucursal</p>
+            </div>
+            <form id="login-form">
+                <div class="login-field">
+                    <label for="login-email">Correo del Usuario / Cajero</label>
+                    <div class="login-input-wrapper">
+                        <span class="input-decoration">&#9993;</span>
+                        <input type="email" id="login-email" placeholder="usuario@lafuente.com" required autocomplete="email">
+                    </div>
+                </div>
+                <div class="login-field">
+                    <label for="login-password">Contrase&ntilde;a</label>
+                    <div class="login-input-wrapper">
+                        <span class="input-decoration">&#128274;</span>
+                        <input type="password" id="login-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" required autocomplete="current-password">
+                    </div>
+                </div>
+                <div class="login-error" id="login-error"></div>
+                <button type="submit" class="login-submit-btn" id="btn-login-submit">
+                    <span id="btn-login-text">INICIAR SESI&Oacute;N</span>
+                    <span id="btn-login-arrow">&#10151;</span>
+                </button>
+            </form>
+
+            <!-- BOTÓN DE INSTALACIÓN & IMPRESORA EN LOGIN -->
+            <div id="pwa-install-login" style="margin-top:16px;text-align:center;display:none;">
+                <button type="button" id="btn-install-pwa-login"
+                    style="width:100%;padding:12px 16px;background:linear-gradient(135deg,rgba(188,132,10,.2),rgba(188,132,10,.05));border:1.5px solid var(--gold-500);border-radius:12px;color:var(--gold-300);font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s ease;">
+                    <span style="font-size:18px">📲</span>
+                    <span>Instalar Aplicación en este dispositivo</span>
+                </button>
+                <small style="color:rgba(255,255,255,.5);font-size:11px;display:block;margin-top:6px">Acceso directo rápido sin necesidad de buscador</small>
+            </div>
+            <div style="margin-top:12px;text-align:center;">
+                <button type="button" class="btn-open-printer-modal"
+                    style="width:100%;padding:11px 16px;background:linear-gradient(135deg,#701721,#3b0a10);border:1.5px solid var(--gold-400);border-radius:12px;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 3px 12px rgba(0,0,0,0.3);transition:all .2s ease;">
+                    <span style="font-size:16px">🖨️</span>
+                    <span>Configurar / Probar Impresora de Tickets</span>
+                </button>
+            </div>
+            <div style="margin-top:8px;text-align:center;">
+                <button type="button" class="btn-force-refresh-app"
+                    style="width:100%;padding:8px 12px;background:#fef2f2;border:1px solid #f87171;border-radius:10px;color:#991b1b;font-weight:800;font-size:11.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+                    <span>🔄</span>
+                    <span>Forzar Actualización del Sistema / Limpiar Memoria</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- APP SHELL -->
+    <div class="app-layout" id="app-shell" style="display:none; height:100vh; width:100vw; overflow:hidden; flex-direction:column;">
+        <div class="app-body" style="display:flex; flex-direction:row; height:100%; width:100%; overflow:hidden;">
+            <aside class="sidebar" id="sidebar" style="width:240px; flex-shrink:0; height:100%; overflow-y:auto; display:flex; flex-direction:column; justify-content:space-between;">
+                <div class="sidebar-header">
+                    <div class="brand-emblem">&#127846;</div>
+                    <div class="brand-text">
+                        <h2>La Fuente</h2>
+                        <small>PALETER&Iacute;A &amp; HELADER&Iacute;A</small>
+                    </div>
+                </div>
+                <nav class="sidebar-menu">
+                    <button type="button" class="menu-item active" id="menu-pos" onclick="changeView('pos')">
+                        <span class="menu-icon">&#128722;</span>
+                        <span class="menu-text">Punto de Venta</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-private-access" onclick="changeView('private-access')" style="display:none;">
+                        <span class="menu-icon">&#128081;</span>
+                        <span class="menu-text">Acceso Privado</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-accounting" onclick="changeView('accounting')" style="display:none;">
+                        <span class="menu-icon">&#128202;</span>
+                        <span class="menu-text">Contabilidad</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-shift" onclick="changeView('shift')">
+                        <span class="menu-icon">&#128337;</span>
+                        <span class="menu-text">Cambio de Turno</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-products" onclick="changeView('products')">
+                        <span class="menu-icon">&#127846;</span>
+                        <span class="menu-text">Productos</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-inventory" onclick="changeView('inventory')">
+                        <span class="menu-icon">&#128203;</span>
+                        <span class="menu-text">Inventario</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-sales" onclick="changeView('sales')">
+                        <span class="menu-icon">&#128176;</span>
+                        <span class="menu-text">Mis Ventas</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-cuts" onclick="changeView('cuts')">
+                        <span class="menu-icon">&#9986;</span>
+                        <span class="menu-text">Cortes</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-damage-reports" onclick="changeView('damage-reports')">
+                        <span class="menu-icon">&#128276;</span>
+                        <span class="menu-text">Da&ntilde;os &amp; Avisos</span>
+                    </button>
+                    <button type="button" class="menu-item btn-open-printer-modal" id="menu-printer" style="border-top:1px solid rgba(188,132,10,.25);margin-top:6px">
+                        <span class="menu-icon">🖨️</span>
+                        <span class="menu-text">Impresora Térmica</span>
+                    </button>
+                </nav>
+                <div class="sidebar-bottom">
+                    <div class="branch-card">
+                        <div class="branch-information">
+                            <span>SUCURSAL EN TURNO:</span>
+                            <strong id="branch-name" data-branch-name>La Fuente Calzada</strong>
+                            <small id="user-role" data-user-role>Encargada de Sucursal</small>
+                        </div>
+                    </div>
+                    <button type="button" class="logout-button" id="btn-logout" data-logout>
+                        <span>&#128682; Cerrar Sesi&oacute;n</span>
+                    </button>
+                </div>
+            </aside>
+
+            <main class="main-content" style="flex:1; height:100%; overflow-y:auto; display:flex; flex-direction:column; min-width:0;">
+                <div class="content-topbar">
+                    <div>
+                        <span class="heading-label">LA FUENTE POS</span>
+                        <h2 id="view-title">Punto de Venta</h2>
+                        <p id="view-subtitle">Registra cobros y administra pedidos</p>
+                    </div>
+                    <div class="topbar-status">
+                        <!-- BOTÓN CONFIGURAR IMPRESORA -->
+                        <button type="button" id="btn-open-printer-modal" style="padding:7px 13px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 3px 10px rgba(0,0,0,0.25);">
+                            <span style="font-size:15px">🖨️</span>
+                            <span>Impresora</span>
+                        </button>
+                        <!-- BOTÓN FORZAR ACTUALIZACIÓN DE CACHÉ -->
+                        <button type="button" class="btn-force-refresh-app" style="padding:7px 11px;background:#fef2f2;color:#991b1b;border:1.5px solid #f87171;border-radius:10px;font-size:11.5px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px;" title="Limpiar caché y cargar la versión más reciente">
+                            <span>🔄</span>
+                            <span>Actualizar</span>
+                        </button>
+                        <!-- BOTÓN INSTALAR APP EN TOPBAR -->
+                        <button type="button" id="btn-install-pwa-topbar" style="display:none;padding:7px 14px;background:linear-gradient(135deg,#854d0e,#541118);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+                            <span>📲</span>
+                            <span>Instalar App</span>
+                        </button>
+                        <div id="branch-selector-container"></div>
+                        <div class="cash-indicator">
+                            <span class="cash-dot" id="cash-dot"></span>
+                            <span id="cash-status-text" data-cash-status>CAJA ABIERTA</span>
+                        </div>
+                        <div class="user-profile">
+                            <div class="user-avatar" id="user-avatar">E</div>
+                            <div class="user-details">
+                                <strong id="userName" data-user-name>Usuario</strong>
+                                <small id="currentUser" data-user-name></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ALERTA DE INVENTARIO -->
+                <div id="inventory-alert-banner" style="display:none;">
+                    <span style="font-size:18px; flex-shrink:0;">&#9888;</span>
+                    <span id="inventory-alert-text">Productos con poco stock</span>
+                </div>
+
+                <!-- VISTA: POS -->
+                <section class="app-view active-view" id="view-pos" data-page="pos">
+                    <div class="pos-layout">
+                        <div class="products-section">
+                            <div class="section-heading">
+                                <div>
+                                    <span class="section-kicker">CAT&Aacute;LOGO DISPONIBLE</span>
+                                    <h3>Helados, Preparados &amp; Paletas</h3>
+                                </div>
+                                <div class="search-box">
+                                    <span>&#128269;</span>
+                                    <input type="text" id="search-products" placeholder="Buscar por nombre o c&oacute;digo...">
+                                </div>
+                            </div>
+                            <!-- Tabs con Helados y Preparados separados -->
+                            <div id="category-tabs"></div>
+                            <div class="products-grid" id="products-grid"></div>
+                        </div>
+                        <div class="order-panel">
+                            <div class="order-title">
+                                <div>
+                                    <span class="order-kicker">TICKET ACTUAL</span>
+                                    <h3>Orden de Venta</h3>
+                                </div>
+                                <button type="button" class="clear-order" id="btn-clear-cart">Vaciar</button>
+                            </div>
+                            <div class="order-customer">
+                                <div class="customer-icon">&#128100;</div>
+                                <div>
+                                    <small>CLIENTE MOSTRADOR</small>
+                                    <strong>Venta General</strong>
+                                </div>
+                            </div>
+                            <div class="order-items" id="order-items"></div>
+                            <div class="order-summary">
+                                <div class="summary-row"><span>Subtotal:</span><strong id="subtotal">$0.00</strong></div>
+                                <div class="summary-row"><span>Descuento:</span><span>$0.00</span></div>
+                                <div class="summary-total"><span>TOTAL:</span><strong id="total">$0.00</strong></div>
+                            </div>
+                            <button type="button" class="pay-button" id="pay-button">
+                                <span>&#128179; COBRAR ORDEN</span>
+                                <span id="pay-total">$0.00</span>
+                            </button>
+                            <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+                                <button type="button" id="btn-direct-print-ticket"
+                                    style="width:100%;padding:11px 12px;background:linear-gradient(135deg,#15803d,#166534);color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 3px 10px rgba(21,128,61,0.25);">
+                                    <span>🖨️</span>
+                                    <span>IMPRIMIR TICKET FÍSICO DIRECTO</span>
+                                </button>
+                                <button type="button" class="btn-open-printer-modal"
+                                    style="width:100%;padding:8px 12px;background:#fff8e0;color:var(--wine-900);border:1.5px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+                                    <span>⚙️</span>
+                                    <span>Ajustes de Impresora Ghia</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VISTA: ACCESO PRIVADO (DIRECTORES) -->
+                <section class="app-view" id="view-private-access" data-page="private-access" style="display:none;">
+                    <div id="private-access-container"></div>
+                </section>
+
+                <!-- VISTA: GESTIÓN DE VENTAS / CONTABILIDAD (DIRECTORES) -->
+                <section class="app-view" id="view-accounting" data-page="accounting" style="display:none;">
+                    <div id="accounting-container"></div>
+                </section>
+
+                <!-- VISTA: CAMBIO DE TURNO -->
+                <section class="app-view" id="view-shift" data-page="shift" style="display:none;">
+                    <div id="shift-container"></div>
+                </section>
+
+                <!-- VISTA: PRODUCTOS ADMIN -->
+                <section class="app-view" id="view-products" data-page="products" style="display:none;">
+                    <div id="products-admin-container"></div>
+                </section>
+
+                <!-- VISTA: INVENTARIO -->
+                <section class="app-view" id="view-inventory" data-page="inventory" style="display:none;">
+                    <div id="inventory-container"></div>
+                </section>
+
+                <!-- VISTA: MIS VENTAS -->
+                <section class="app-view" id="view-sales" data-page="sales" style="display:none;">
+                    <div id="sales-container"></div>
+                </section>
+
+                <!-- VISTA: CORTES -->
+                <section class="app-view" id="view-cuts" data-page="cuts" style="display:none;">
+                    <div id="cuts-container"></div>
+                </section>
+
+                <!-- VISTA: DAÑOS Y AVISOS -->
+                <section class="app-view" id="view-damage-reports" data-page="damage-reports" style="display:none;">
+                    <div id="damage-reports-container"></div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- SCRIPT DE NAVEGACIÓN Y CONMUTACIÓN -->
+    <script>
+        window.changeView = function(viewName) {
+            var target = String(viewName || "pos").trim().toLowerCase();
+            document.querySelectorAll(".app-view").forEach(function(v) {
+                v.classList.remove("active-view");
+                v.style.display = "none";
+            });
+            document.querySelectorAll(".menu-item").forEach(function(m) { m.classList.remove("active"); });
+            var activeSection = document.getElementById("view-" + target);
+            if (activeSection) { activeSection.classList.add("active-view"); activeSection.style.display = "block"; }
+            var activeBtn = document.getElementById("menu-" + target);
+            if (activeBtn) activeBtn.classList.add("active");
+
+            var titles = {
+                "pos":            { title: "Punto de Venta",              sub: "Registra cobros y administra pedidos" },
+                "private-access": { title: "Acceso Privado Directivo",    sub: "Monitoreo global en vivo de las 6 sucursales" },
+                "accounting":     { title: "Gestión de Ventas & Balance", sub: "Contabilidad oficial, informes de turnos y cierres" },
+                "shift":          { title: "Cambio de Turno",             sub: "Registro de apertura y fondo de caja por turno" },
+                "products":       { title: "Catálogo de Productos",       sub: "Agregar, editar y eliminar productos del catálogo" },
+                "inventory":      { title: "Inventario de Sucursal",      sub: "Existencias y stock disponible por producto" },
+                "sales":          { title: "Mis Ventas",                  sub: "Historial de tickets cobrados y ventas canceladas" },
+                "cuts":           { title: "Cortes de Caja",              sub: "Arqueos y cierres clasificados por turno" },
+                "damage-reports": { title: "Daños & Avisos",              sub: "Reporte de daños en productos y peticiones a dirección" }
+            };
+            var info = titles[target] || titles["pos"];
+            document.getElementById("view-title").textContent = info.title;
+            document.getElementById("view-subtitle").textContent = info.sub;
+
+            if (window.LaFuentePOS) {
+                window.LaFuentePOS.state.view = target;
+                if (target === "private-access") window.LaFuentePOS.loadPrivateAccessData();
+                if (target === "accounting")     window.LaFuentePOS.loadAccounting();
+                if (target === "sales")          window.LaFuentePOS.loadSales();
+                if (target === "cuts")           window.LaFuentePOS.loadCuts();
+                if (target === "inventory")      window.LaFuentePOS.loadInventory();
+                if (target === "shift")          window.LaFuentePOS.loadShiftView();
+                if (target === "products")       window.LaFuentePOS.loadProductsAdmin();
+                if (target === "damage-reports") window.LaFuentePOS.loadDamageReports();
+            }
+        };
+
+        document.addEventListener("DOMContentLoaded", function() {
+            document.getElementById("btn-clear-cart")?.addEventListener("click", function() {
+                if (window.LaFuentePOS) { window.LaFuentePOS.state.cart = []; window.LaFuentePOS.renderCart(); }
+            });
+
+            document.getElementById("pay-button")?.addEventListener("click", async function() {
+                if (window.LaFuentePOS) await window.LaFuentePOS.processSale();
+            });
+
+            var form = document.getElementById("login-form");
+            var btnSub = document.getElementById("btn-login-submit");
+            var btnTxt = document.getElementById("btn-login-text");
+            var btnArr = document.getElementById("btn-login-arrow");
+            var errBox = document.getElementById("login-error");
+
+            if (form) {
+                form.addEventListener("submit", async function(e) {
+                    e.preventDefault();
+                    var email = document.getElementById("login-email").value.trim();
+                    var password = document.getElementById("login-password").value;
+                    btnSub.disabled = true;
+                    if (btnTxt) btnTxt.textContent = "VERIFICANDO...";
+                    if (btnArr) btnArr.innerHTML = '<span class="loading-spinner" style="width:12px;height:12px;border-width:2px;border-top-color:#fff;"></span>';
+                    if (errBox) errBox.style.display = "none";
+
+                    try {
+                        var client = window.supabaseClient || (window.supabase
+                            ? window.supabase.createClient("https://rxyfitblocfvaltuxvqp.supabase.co", "sb_publishable_YEnMCOAPzxEWJTbaZHzIGA_ahFaXg02", { auth: { persistSession:true, storageKey:"lf-pos" } })
+                            : null);
+
+                        if (!client) throw new Error("Sistema no inicializado. Recarga la página.");
+                        var result = await client.auth.signInWithPassword({ email: email, password: password });
+                        if (result.error) throw result.error;
+
+                        document.body.classList.remove("login-active");
+                        document.getElementById("login-screen").style.display = "none";
+                        document.getElementById("app-shell").style.display = "";
+
+                        if (window.LaFuentePOS) {
+                            window.LaFuentePOS.state.user = result.data.user;
+                            await window.LaFuentePOS.loadProfile();
+                            await window.LaFuentePOS.loadProducts();
+                            await window.LaFuentePOS.loadCurrentShift();
+                            if (window.LaFuentePOS.state.isSU) { window.changeView("private-access"); }
+                            else { window.changeView("pos"); }
+                        }
+                    } catch(err) {
+                        var msg = err.message || "Error al iniciar sesión";
+                        if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("credentials")) {
+                            msg = "Correo o contraseña incorrectos.";
+                        }
+                        if (errBox) { errBox.textContent = "⚠ " + msg; errBox.style.display = "block"; }
+                    } finally {
+                        btnSub.disabled = false;
+                        if (btnTxt) btnTxt.textContent = "INICIAR SESIÓN";
+                        if (btnArr) btnArr.innerHTML = "&#10151;";
+                    }
+                });
+            }
+        });
+
+        // REGISTRO DE SERVICE WORKER & CONTROL DE INSTALACIÓN PWA
+        var deferredPrompt = null;
+
+        async function forceAppRefresh() {
+            try {
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map(k => caches.delete(k)));
+                }
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (let r of registrations) {
+                        await r.unregister();
+                    }
+                }
+            } catch(e) {}
+            window.location.reload(true);
+        }
+
+        document.querySelectorAll('.btn-force-refresh-app').forEach(btn => {
+            btn.addEventListener('click', forceAppRefresh);
+        });
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('./sw.js').then(function(reg) {
+                    console.log('Service Worker registrado.');
+                }).catch(function(err) {
+                    console.log('Error registrando Service Worker:', err);
+                });
+            });
+        }
+
+        window.addEventListener('beforeinstallprompt', function(e) {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Mostrar botones de instalación
+            var btnLogin = document.getElementById('pwa-install-login');
+            var btnTopbar = document.getElementById('btn-install-pwa-topbar');
+            if (btnLogin) btnLogin.style.display = 'block';
+            if (btnTopbar) btnTopbar.style.display = 'inline-flex';
+        });
+
+        async function triggerPWAInstall() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                var choiceResult = await deferredPrompt.userChoice;
+                if (choiceResult.outcome === 'accepted') {
+                    console.log('El usuario aceptó instalar La Fuente POS');
+                }
+                deferredPrompt = null;
+                var btnLogin = document.getElementById('pwa-install-login');
+                var btnTopbar = document.getElementById('btn-install-pwa-topbar');
+                if (btnLogin) btnLogin.style.display = 'none';
+                if (btnTopbar) btnTopbar.style.display = 'none';
+            } else {
+                alert("📲 Para instalar en este dispositivo:\n\n• En Android/Chrome: Toca los 3 puntos ⋮ arriba a la derecha y selecciona 'Instalar aplicación' o 'Agregar a la pantalla principal'.\n\n• En iPhone/iPad (Safari): Toca el botón de Compartir ⎋ y selecciona 'Agregar a Inicio'.\n\n• En PC/Mac (Chrome/Edge): Haz clic en el ícono de instalar ⊕ en la barra de direcciones.");
+            }
+        }
+
+        document.getElementById('btn-install-pwa-login')?.addEventListener('click', triggerPWAInstall);
+        document.getElementById('btn-install-pwa-topbar')?.addEventListener('click', triggerPWAInstall);
+
+        window.addEventListener('appinstalled', function() {
+            console.log('¡La Fuente POS ha sido instalada como app!');
+            deferredPrompt = null;
+            var btnLogin = document.getElementById('pwa-install-login');
+            var btnTopbar = document.getElementById('btn-install-pwa-topbar');
+            if (btnLogin) btnLogin.style.display = 'none';
+            if (btnTopbar) btnTopbar.style.display = 'none';
+        });
+    </script>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1195 @@
+/* ==========================================================================
+   LA FUENTE POS — PALETERÍA & HELADERÍA DESDE 1962
+   EDICIÓN MASTER BOUTIQUE: ULTRA COLOR & VIBRANT LUXURY EFFECTS
+   COLORES: VAINILLA ARTESANAL + ORO REAL VIBRANTE + BORGOÑA ATERCIOPELADO
+   ========================================================================== */
+
+/* ── 1. VARIABLES & PALETA DE ALTO CONTRASTE ── */
+:root {
+    /* Familia Guinda & Borgoña Velvet */
+    --wine-950: #1a0205;
+    --wine-900: #290509;
+    --wine-850: #38070d;
+    --wine-800: #4a0a12;
+    --wine-700: #630f1a;
+    --wine-600: #7e1523;
+    --wine-500: #9e1d2e;
+
+    /* Oro Real Radiante & Destellos */
+    --gold-700: #855502;
+    --gold-600: #a36b04;
+    --gold-500: #c98509;
+    --gold-400: #e8a217;
+    --gold-300: #f5ba3d;
+    --gold-200: #fad578;
+    --gold-100: #fce7ad;
+    --gold-50:  #fef7de;
+
+    /* Fondos Guindas & Superficies Velvet (CERO BLANCO) */
+    --bg-base:        #230408;  /* FONDO GUINDA PROFUNDO COMO EL LOGIN */
+    --bg-surface:     #34060c;  /* Superficies secundarias guinda oscuro */
+    --bg-card:        #fffbf2;  /* Tarjetas de producto en Crema Vainilla de alto contraste */
+    --bg-card-hover:  #ffffff;  /* Hover luminoso */
+    --bg-input:       #fcf8f0;  /* Campos de texto */
+    --bg-accent-warm: #42080f;  /* Acentos guindas */
+
+    /* Bordes Finos & Biselados */
+    --border-subtle:  rgba(232, 162, 23, 0.35);
+    --border-medium:  rgba(232, 162, 23, 0.55);
+    --border-gold:    #e8a217;
+    --border-wine:    #7e1523;
+
+    /* Tipografía de Máxima Legibilidad */
+    --text-primary:   #ffffff;  /* TEXTO BLANCO PURO SOBRE GUINDA */
+    --text-secondary: #fef3c7;  /* Crema oro suave */
+    --text-muted:     #630f1a;  /* GUINDA OSCURO VISIBLE Y ERGONÓMICO (NO DAÑA LA VISTA) */
+    --text-gold:      #fcd34d;  /* Oro brillante */
+    --text-on-wine:   #ffffff;
+    --text-sub-wine:  #fef3c7;
+
+    /* Semáforo Boutique */
+    --emerald-bg:     #e2f7e9;
+    --emerald-border: #86e09f;
+    --emerald-text:   #0f5a23;
+    --emerald:        #10b981;
+
+    /* Sombras 3D & Destellos */
+    --shadow-subtle:  0 2px 8px rgba(0, 0, 0, 0.25);
+    --shadow-card:    0 4px 18px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(232, 162, 23, 0.2);
+    --shadow-elevate: 0 12px 36px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(232, 162, 23, 0.3);
+    --shadow-gold:    0 0 26px rgba(245, 186, 61, 0.45);
+    --shadow-wine:    0 8px 26px rgba(126, 21, 35, 0.45);
+
+    --ease-boutique: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── 2. RESET & BASE CON FONDO GUINDA PROFUNDO ── */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Montserrat', sans-serif;
+    background-color: var(--bg-base);
+    background-image: 
+        radial-gradient(circle at 50% 10%, #3e0910 0%, #230408 60%, #150204 100%),
+        radial-gradient(circle at 90% 90%, rgba(232, 162, 23, 0.06) 0%, transparent 50%);
+    color: var(--text-on-wine);
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Scrollbar Artesanal */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg-surface);
+}
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--gold-400), var(--wine-700));
+    border-radius: 10px;
+    border: 1px solid var(--bg-surface);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--gold-500);
+}
+
+/* ── 3. LOGIN SCREEN (INTACTO 100%) ── */
+.login-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: radial-gradient(circle at 50% 20%, #4a0d14 0%, #290509 60%, #150204 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+body:not(.login-active) .login-screen {
+    display: none !important;
+}
+
+.login-ambient-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    opacity: 0.4;
+}
+.orb-1 { width: 400px; height: 400px; background: var(--wine-600); top: -100px; left: -100px; }
+.orb-2 { width: 350px; height: 350px; background: var(--gold-500); bottom: -80px; right: -80px; }
+.orb-3 { width: 250px; height: 250px; background: var(--wine-500); bottom: 20%; left: 10%; }
+.orb-4 { width: 200px; height: 200px; background: var(--gold-400); top: 15%; right: 15%; }
+
+.floating-particle {
+    position: absolute;
+    pointer-events: none;
+    opacity: 0.6;
+    animation: floatParticle 16s infinite ease-in-out alternate;
+}
+.p-1 { top: 12%; left: 8%; animation-duration: 18s; }
+.p-2 { top: 25%; right: 10%; animation-duration: 14s; }
+.p-3 { bottom: 18%; left: 12%; animation-duration: 20s; }
+.p-4 { bottom: 28%; right: 8%; animation-duration: 12s; }
+.p-5 { top: 60%; left: 5%; animation-duration: 16s; }
+.p-6 { top: 8%; right: 25%; animation-duration: 15s; }
+.p-7 { bottom: 8%; right: 30%; animation-duration: 19s; }
+.p-8 { top: 40%; right: 4%; animation-duration: 13s; }
+
+@keyframes floatParticle {
+    0% { transform: translateY(0) rotate(0deg); }
+    100% { transform: translateY(-30px) rotate(45deg); }
+}
+
+.corner-ornament {
+    position: absolute;
+    color: var(--gold-300);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    opacity: 0.7;
+    pointer-events: none;
+}
+.corner-top-left { top: 24px; left: 28px; }
+.corner-top-right { top: 24px; right: 28px; }
+.corner-bottom-left { bottom: 24px; left: 28px; }
+.corner-bottom-right { bottom: 24px; right: 28px; }
+
+.login-card {
+    position: relative;
+    width: 100%;
+    max-width: 440px;
+    background: linear-gradient(145deg, #fffcf5 0%, #fceed3 100%);
+    border: 2px solid var(--gold-400);
+    border-radius: 28px;
+    padding: 40px 34px 30px;
+    box-shadow: 0 25px 70px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.8);
+    text-align: center;
+    z-index: 10;
+}
+
+.login-emblem-container {
+    position: absolute;
+    top: -36px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+.login-emblem-badge {
+    width: 72px;
+    height: 72px;
+    background: linear-gradient(135deg, var(--wine-800), var(--wine-950));
+    border: 3px solid var(--gold-400);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+    box-shadow: var(--shadow-gold);
+}
+
+.login-header {
+    margin-top: 20px;
+    margin-bottom: 24px;
+}
+.login-brand-title {
+    font-family: 'Great Vibes', cursive;
+    font-size: 52px;
+    color: var(--wine-800);
+    line-height: 1;
+    margin-bottom: 2px;
+    text-shadow: 0 2px 4px rgba(84, 17, 24, 0.1);
+}
+.login-brand-subtitle {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 4px;
+    color: var(--gold-600);
+    font-weight: 700;
+}
+.login-seal-badge {
+    display: inline-block;
+    background: var(--wine-800);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    padding: 3px 12px;
+    border-radius: 20px;
+    margin: 8px 0;
+    border: 1px solid var(--gold-400);
+}
+.login-welcome-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.login-field {
+    text-align: left;
+    margin-bottom: 16px;
+}
+.login-field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--wine-900);
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+}
+.login-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.input-decoration {
+    position: absolute;
+    left: 14px;
+    font-size: 15px;
+    color: var(--gold-600);
+    pointer-events: none;
+}
+.login-input-wrapper input {
+    width: 100%;
+    padding: 13px 14px 13px 42px;
+    background: var(--bg-input);
+    border: 1.5px solid var(--border-medium);
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--wine-950);
+    outline: none;
+    transition: var(--ease-boutique);
+}
+.login-input-wrapper input:focus {
+    border-color: var(--wine-700);
+    box-shadow: 0 0 0 4px rgba(117, 23, 34, 0.15);
+}
+
+.login-button {
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, var(--wine-800) 0%, var(--wine-600) 100%);
+    border: 1.5px solid var(--gold-400);
+    border-radius: 12px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 10px;
+    box-shadow: var(--shadow-wine);
+    transition: var(--ease-boutique);
+}
+.login-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(92, 17, 25, 0.4);
+}
+.login-footer-seal {
+    margin-top: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--gold-600);
+    letter-spacing: 1px;
+}
+
+/* ── 4. HEADER & LOGO ULTRA VISIBLE, ANCHO & RADIANTE ── */
+.header-la-fuente-elegante {
+    background: linear-gradient(135deg, #180204 0%, #3a070e 45%, #200306 100%);
+    border-bottom: 3px solid var(--gold-400);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.75);
+    flex-shrink: 0;
+    z-index: 100;
+}
+.pastel-top-accent {
+    height: 4.5px;
+    background: linear-gradient(90deg, #c98509, #fef08a, #e8a217, #fef08a, #c98509);
+    background-size: 200% auto;
+    animation: shimmerGold 5s linear infinite;
+}
+@keyframes shimmerGold { to { background-position: 200% center; } }
+
+.header-content-wrapper {
+    max-width: 100%;
+    padding: 12px 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 28px; /* Espaciado amplio y panorámico */
+}
+.brand-badge {
+    width: 64px; /* Emblema extra amplio */
+    height: 64px;
+    background: radial-gradient(circle, var(--wine-700), var(--wine-950));
+    border: 3px solid var(--gold-300);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px; /* Ícono de helado grande y nítido */
+    box-shadow: 0 0 26px rgba(245, 186, 61, 0.7), inset 0 2px 5px rgba(255,255,255,0.5);
+    flex-shrink: 0;
+}
+.brand-typography { 
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.brand-name {
+    font-family: 'Great Vibes', cursive;
+    font-size: 58px; /* Logo caligráfico grande y deslumbrante */
+    color: #ffffff;
+    line-height: 0.88;
+    text-shadow: 0 4px 16px rgba(0,0,0,0.9), 0 0 28px rgba(245, 186, 61, 0.6);
+    letter-spacing: 2px;
+}
+.brand-subtext {
+    font-family: 'Cinzel', serif;
+    font-size: 13px; /* Subtítulo nítido y legible */
+    letter-spacing: 8px; /* Extra espaciado panorámico */
+    color: #fde68a; /* Oro brillante */
+    font-weight: 900;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.95);
+    margin-top: 3px;
+}
+.brand-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 4px;
+}
+.divider-line {
+    width: 55px; /* Líneas doradas de gran amplitud */
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold-300), transparent);
+}
+.divider-year {
+    font-size: 10.5px;
+    font-weight: 900;
+    letter-spacing: 3px;
+    color: #fef08a;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+}
+
+/* ── 5. APP SHELL & LAYOUT ── */
+.app-shell, .app-layout, #app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+}
+.main-layout, .app-body {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+}
+
+/* ── 6. SIDEBAR EN GUINDA VELVET CÁLIDO ── */
+.sidebar {
+    width: 240px;
+    background: linear-gradient(180deg, #38080f 0%, #240408 100%); /* Guindita suave y elegante */
+    border-right: 2px solid rgba(232, 162, 23, 0.4);
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex-shrink: 0;
+    overflow-y: auto;
+    box-shadow: 4px 0 22px rgba(0, 0, 0, 0.5);
+}
+.sidebar-header {
+    font-size: 10px;
+    font-weight: 900;
+    color: #fde68a; /* Oro suave */
+    letter-spacing: 2px;
+    padding-left: 6px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+.sidebar-header::before {
+    content: "❖";
+    color: var(--gold-400);
+}
+.main-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    background: rgba(255, 255, 255, 0.06); /* Sutil transparencia guindita */
+    border: 1.5px solid rgba(232, 162, 23, 0.25);
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #ffffff; /* LETRAS BLANCAS LEGIBLES */
+    cursor: pointer;
+    transition: var(--ease-boutique);
+    text-align: left;
+    width: 100%;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+.menu-item:hover {
+    background: linear-gradient(135deg, rgba(126, 21, 35, 0.6), rgba(158, 29, 46, 0.6));
+    color: #ffffff;
+    border-color: var(--gold-400);
+    transform: translateX(4px);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+}
+.menu-item.active {
+    background: linear-gradient(135deg, var(--wine-700) 0%, var(--wine-500) 100%);
+    color: #ffffff;
+    border-color: var(--gold-400);
+    box-shadow: 0 4px 16px rgba(158, 29, 46, 0.5), 0 0 12px rgba(232, 162, 23, 0.35);
+}
+.menu-item-private {
+    background: linear-gradient(145deg, #4a0d16, #2d050b);
+    border: 1.5px solid var(--gold-400);
+    color: #fffef8;
+    font-weight: 900;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+.menu-item-private:hover {
+    background: linear-gradient(145deg, #5c121d, #3d070f);
+    border-color: var(--gold-300);
+    transform: translateX(4px);
+    box-shadow: 0 4px 16px rgba(232, 162, 23, 0.35);
+}
+.menu-icon { font-size: 16px; }
+
+.branch-card {
+    background: linear-gradient(145deg, #38080e, #290509);
+    border: 1.5px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    box-shadow: var(--shadow-subtle);
+}
+.branch-information span {
+    font-size: 8.5px;
+    font-weight: 900;
+    color: #ffffff !important; /* TEXTO BLANCO SOBRE GUINDA */
+    display: block;
+    letter-spacing: 0.8px;
+}
+.branch-information strong {
+    font-size: 12px;
+    color: #ffffff !important; /* TEXTO BLANCO SOBRE GUINDA */
+    display: block;
+    margin: 3px 0;
+    font-weight: 900;
+}
+.branch-information small {
+    font-size: 10.5px;
+    color: #fcebd2 !important; /* BLANCO CREMA CLARO SOBRE GUINDA */
+    font-weight: 600;
+}
+
+.logout-button {
+    width: 100%;
+    padding: 9px;
+    background: linear-gradient(145deg, #fee2e2, #fecaca);
+    border: 1.5px solid #f87171;
+    border-radius: 10px;
+    color: #991b1b;
+    font-weight: 800;
+    font-size: 11px;
+    cursor: pointer;
+    transition: var(--ease-boutique);
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.2);
+}
+.logout-button:hover {
+    background: linear-gradient(145deg, #fecaca, #fca5a5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+}
+
+/* ── 7. CONTENIDO PRINCIPAL & TOPBAR ── */
+.main-content {
+    flex: 1;
+    padding: 12px 18px;
+    background: var(--bg-base);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.content-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1.5px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+.heading-label {
+    font-size: 8.5px;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+    color: #ffffff !important; /* BLANCO SOBRE GUINDA */
+    display: block;
+}
+#view-title {
+    font-size: 20px;
+    color: #ffffff !important; /* BLANCO SOBRE GUINDA */
+    font-weight: 900;
+    letter-spacing: -0.3px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+#view-subtitle {
+    font-size: 11px;
+    color: #fcebd2 !important; /* BLANCO CREMA CLARO SOBRE GUINDA */
+}
+
+.topbar-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.cash-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(145deg, #e8f8ec, #d5f2dc);
+    border: 1.5px solid var(--emerald-border);
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 900;
+    color: var(--emerald-text);
+    box-shadow: 0 2px 10px rgba(16, 185, 129, 0.2);
+}
+.cash-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--emerald);
+    box-shadow: 0 0 8px var(--emerald);
+    animation: pulseGlow 2s infinite ease-in-out;
+}
+@keyframes pulseGlow {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.7; }
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-surface);
+    border: 1.5px solid var(--border-subtle);
+    padding: 3px 12px 3px 4px;
+    border-radius: 24px;
+    box-shadow: var(--shadow-subtle);
+}
+.user-avatar {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--wine-700), var(--wine-500));
+    color: #fff;
+    border: 1.5px solid var(--gold-300);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 12px;
+}
+.user-details strong {
+    font-size: 11px;
+    color: #ffffff !important; /* BLANCO SOBRE GUINDA */
+    display: block;
+    line-height: 1;
+    font-weight: 800;
+}
+.user-details small {
+    font-size: 9px;
+    color: #fcebd2 !important; /* BLANCO CREMA CLARO SOBRE GUINDA */
+}
+
+.branch-selector-box {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.branch-selector-box label {
+    font-size: 8.5px;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+    color: #ffffff !important; /* BLANCO VISIBLE SOBRE FONDO GUINDA */
+}
+.branch-select-dropdown {
+    padding: 6px 12px;
+    border-radius: 10px;
+    border: 2px solid var(--gold-400);
+    background: #ffffff !important; /* FONDO BLANCO PURO */
+    font-size: 12px;
+    font-weight: 900;
+    color: #000000 !important; /* LETRAS NEGRAS NÍTIDAS PARA VER "LA MOLLOTES", "RESCATE", ETC. */
+    outline: none;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    cursor: pointer;
+}
+.branch-select-dropdown option {
+    background-color: #ffffff !important;
+    color: #000000 !important; /* LETRAS NEGRAS EN EL DESPLEGABLE */
+    font-weight: 800;
+    padding: 6px;
+}
+.branch-pill-active {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-surface);
+    border: 1.5px solid var(--border-subtle);
+    padding: 5px 12px;
+    border-radius: 16px;
+}
+.branch-pill-active span {
+    color: #ffffff !important;
+}
+.branch-pill-active strong {
+    color: #ffffff !important;
+}
+
+/* ── 8. VISTA PUNTO DE VENTA (2 COLUMNAS FIJAS) ── */
+.app-view {
+    height: 100%;
+    overflow-y: auto;
+}
+#view-pos {
+    height: 100%;
+    overflow: hidden !important;
+    display: none;
+}
+#view-pos.active-view {
+    display: flex !important;
+    flex-direction: column;
+    height: 100%;
+}
+
+.pos-layout {
+    display: grid !important;
+    grid-template-columns: 1fr 360px !important;
+    gap: 16px !important;
+    flex: 1;
+    height: calc(100% - 10px);
+    overflow: hidden !important;
+}
+
+/* COLUMNA 1: CATÁLOGO EN CONTRASTE GUINDA / ORO */
+.products-section {
+    background: linear-gradient(180deg, #2f060c 0%, #200306 100%);
+    border: 2px solid var(--border-subtle);
+    border-radius: 22px;
+    padding: 14px 18px;
+    box-shadow: var(--shadow-card);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+.section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+.section-heading h3 {
+    font-size: 15px;
+    color: #ffffff !important; /* BLANCO SOBRE GUINDA */
+    font-weight: 900;
+}
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1.5px solid var(--gold-400);
+    border-radius: 10px;
+    padding: 6px 12px;
+    width: 220px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    transition: var(--ease-boutique);
+}
+.search-box:focus-within {
+    box-shadow: 0 0 0 3px rgba(232, 162, 23, 0.35);
+}
+.search-box input {
+    border: none;
+    outline: none;
+    font-size: 11px;
+    font-weight: 700;
+    width: 100%;
+    background: transparent;
+    color: #1a0205 !important; /* TEXTO GUINDA OSCURO DENTRO DEL BUSCADOR BLANCO */
+}
+
+/* TABS DE CATEGORÍAS */
+#category-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+.cat-tab {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1.5px solid var(--border-subtle);
+    border-radius: 18px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #ffffff !important; /* BLANCO SOBRE GUINDA */
+    cursor: pointer;
+    white-space: nowrap;
+    transition: var(--ease-boutique);
+    box-shadow: var(--shadow-subtle);
+}
+.cat-tab:hover {
+    transform: translateY(-2px);
+    background: rgba(232, 162, 23, 0.2);
+    border-color: var(--gold-400);
+    color: #ffffff;
+}
+
+.cat-tab-active {
+    background: linear-gradient(135deg, var(--gold-500) 0%, var(--gold-300) 100%) !important;
+    color: var(--wine-950) !important;
+    border-color: #fffef8 !important;
+    box-shadow: 0 4px 16px rgba(245, 186, 61, 0.4) !important;
+    font-weight: 900 !important;
+}
+.cat-tab[data-cat="paletas"].cat-tab-active   { background: linear-gradient(135deg, #e11d48, #fb7185) !important; color: #fff !important; }
+.cat-tab[data-cat="aguas"].cat-tab-active     { background: linear-gradient(135deg, #0284c7, #38bdf8) !important; color: #fff !important; }
+.cat-tab[data-cat="helados"].cat-tab-active   { background: linear-gradient(135deg, #ca8a04, #facc15) !important; color: var(--wine-950) !important; }
+.cat-tab[data-cat="preparados"].cat-tab-active{ background: linear-gradient(135deg, #be123c, #f43f5e) !important; color: #fff !important; }
+.cat-tab[data-cat="congelados"].cat-tab-active{ background: linear-gradient(135deg, #2563eb, #60a5fa) !important; color: #fff !important; }
+.cat-tab[data-cat="desechables"].cat-tab-active{background: linear-gradient(135deg, #7c3aed, #a78bfa) !important; color: #fff !important; }
+.cat-tab[data-cat="postres"].cat-tab-active   { background: linear-gradient(135deg, #ea580c, #fb923c) !important; color: #fff !important; }
+.cat-tab[data-cat="dulces"].cat-tab-active    { background: linear-gradient(135deg, #db2777, #f472b6) !important; color: #fff !important; }
+
+/* ── GRID 4 EN 4: TARJETAS EN CREMA VAINILLA DE ALTO CONTRASTE ── */
+.products-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 12px !important;
+    overflow-y: auto;
+    flex: 1;
+    padding-right: 4px;
+    align-content: start;
+}
+.product-card {
+    background: linear-gradient(145deg, #ffffff 0%, #fcf7ec 100%);
+    border: 1.5px solid #d9c7a9;
+    border-radius: 16px;
+    padding: 10px 10px 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: var(--ease-boutique);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 175px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    position: relative;
+    overflow: hidden;
+}
+.product-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3.5px;
+    background: linear-gradient(90deg, transparent, var(--gold-400), transparent);
+    opacity: 0;
+    transition: var(--ease-boutique);
+}
+.product-card:hover:not([disabled]) {
+    transform: translateY(-4px) scale(1.02);
+    border-color: var(--gold-500);
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(232, 162, 23, 0.35), 0 3px 8px rgba(0, 0, 0, 0.3);
+}
+.product-card:hover:not([disabled])::before {
+    opacity: 1;
+}
+.product-image {
+    height: 82px;
+    background: radial-gradient(circle, #fffaf0 0%, #f6ebd5 100%);
+    border: 1px solid #e6d9c3;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 6px;
+    overflow: hidden;
+    transition: var(--ease-boutique);
+}
+.product-card:hover:not([disabled]) .product-image {
+    background: radial-gradient(circle, #fffdf8 0%, #faecd0 100%);
+    border-color: var(--gold-300);
+}
+.product-image img {
+    max-height: 90%;
+    max-width: 90%;
+    object-fit: contain;
+    transition: var(--ease-boutique);
+}
+.product-card:hover:not([disabled]) .product-image img {
+    transform: scale(1.08);
+}
+.product-placeholder { font-size: 32px; }
+.product-info small {
+    font-size: 9.5px;
+    color: #630f1a !important; /* GUINDA PROFUNDO Y LEGIBLE */
+    font-weight: 900;
+    display: block;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.product-info strong {
+    font-size: 12.5px;
+    color: #1a0205 !important; /* NEGRO GUINDA SÓLIDO */
+    display: block;
+    margin: 2px 0;
+    line-height: 1.2;
+    font-weight: 900;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.product-info span {
+    font-size: 15px;
+    font-weight: 900;
+    color: #7e1523 !important; /* PRECIO EN GUINDA INTENSO */
+}
+
+/* COLUMNA 2: TICKET DE ORDEN DE VENTA DE LUJO */
+.order-panel {
+    background: linear-gradient(180deg, #fffcf6 0%, #f7efe1 100%);
+    border: 2.5px solid var(--gold-400);
+    border-radius: 22px;
+    padding: 16px 18px;
+    box-shadow: var(--shadow-elevate);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+.order-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1.5px solid #d9c7a9;
+    flex-shrink: 0;
+}
+.order-title h3 {
+    font-size: 15px;
+    color: #1a0205 !important;
+    font-weight: 900;
+}
+.clear-order {
+    background: #fee2e2;
+    border: 1px solid #f87171;
+    padding: 3px 8px;
+    border-radius: 8px;
+    color: #991b1b;
+    font-size: 10px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: var(--ease-boutique);
+}
+.clear-order:hover { background: #fecaca; }
+
+.order-customer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(145deg, #f7f1e4, #eee3ce);
+    border: 1px solid #d9c7a9;
+    padding: 6px 10px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+.order-customer small {
+    font-size: 8.5px;
+    font-weight: 900;
+    color: #630f1a !important; /* GUINDA LEGIBLE */
+}
+.order-customer strong {
+    font-size: 11.5px;
+    color: #1a0205 !important;
+    font-weight: 800;
+}
+
+/* Lista de Artículos */
+.order-items {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 4px;
+}
+.cart-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 10px;
+    background: #ffffff;
+    border: 1.5px solid #d9c7a9;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    transition: var(--ease-boutique);
+}
+.cart-item:hover {
+    border-color: var(--gold-400);
+}
+.cart-item strong {
+    font-size: 11.5px;
+    color: #1a0205 !important;
+}
+.cart-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.cart-item-actions button {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid #d9c7a9;
+    background: var(--bg-surface);
+    color: #fff;
+    font-weight: 900;
+    font-size: 12px;
+    cursor: pointer;
+    transition: var(--ease-boutique);
+}
+.cart-item-actions button:hover {
+    background: var(--gold-400);
+    color: #fff;
+    border-color: var(--gold-500);
+}
+
+/* Totales & Botón de Cobrar */
+.order-summary {
+    background: linear-gradient(145deg, #fbf7ed, #f3e9d4);
+    border: 1.5px solid #d9c7a9;
+    border-radius: 14px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+}
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #630f1a !important; /* GUINDA OSCURO EN LUGAR DE AMARILLO */
+    font-weight: 800;
+    margin-bottom: 3px;
+}
+.summary-total {
+    display: flex;
+    justify-content: space-between;
+    font-size: 16px;
+    font-weight: 900;
+    color: #1a0205 !important;
+    padding-top: 5px;
+    margin-top: 3px;
+    border-top: 1.5px dashed #d9c7a9;
+}
+
+.pay-button {
+    width: 100%;
+    padding: 13px 18px;
+    background: linear-gradient(135deg, var(--wine-800) 0%, var(--wine-600) 100%);
+    border: 2px solid var(--gold-300);
+    border-radius: 14px;
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 6px 22px rgba(126, 21, 35, 0.5);
+    flex-shrink: 0;
+    transition: var(--ease-boutique);
+    position: relative;
+    overflow: hidden;
+}
+.pay-button::after {
+    content: "";
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: linear-gradient(45deg, transparent, rgba(255,255,255,0.2), transparent);
+    transform: rotate(30deg);
+    animation: payShimmer 4s infinite linear;
+}
+@keyframes payShimmer {
+    0% { transform: translateX(-100%) rotate(30deg); }
+    100% { transform: translateX(100%) rotate(30deg); }
+}
+.pay-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(126, 21, 35, 0.65);
+    border-color: #fef08a;
+}
+
+/* ── 9. OTRAS VISTAS (DASHBOARDS & CORTES) ── */
+.dashboard-card, .sale-card {
+    background: linear-gradient(180deg, #2e060c 0%, #200306 100%);
+    border: 1.5px solid var(--border-subtle);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: var(--shadow-card);
+    transition: var(--ease-boutique);
+    color: #ffffff !important;
+}
+/* REGLAS DE ALTO CONTRASTE PARA FONDOS BLANCOS/CREMA (CERO TEXTO BLANCO SOBRE BLANCO) */
+.sale-card[style*="background:#fff"],
+.sale-card[style*="background: #fff"],
+.dashboard-card[style*="background:#fff"],
+.dashboard-card[style*="background: #fff"],
+.dashboard-card[style*="background:linear-gradient(145deg,#fff"],
+.dashboard-card[style*="background: linear-gradient(145deg,#fff"],
+.dashboard-card[style*="background:white"],
+.dashboard-card[style*="background: white"],
+.modal-card,
+.product-card,
+.order-panel {
+    color: #1a0205 !important;
+}
+
+.sale-card[style*="background:#fff"] h1, .sale-card[style*="background:#fff"] h2, .sale-card[style*="background:#fff"] h3, .sale-card[style*="background:#fff"] h4,
+.sale-card[style*="background:#fff"] strong,
+.dashboard-card[style*="background:linear-gradient(145deg,#fff"] h3,
+.dashboard-card[style*="background:linear-gradient(145deg,#fff"] h4,
+.dashboard-card[style*="background:linear-gradient(145deg,#fff"] strong,
+.dashboard-card[style*="background:#fff"] h3,
+.dashboard-card[style*="background:#fff"] h4,
+.dashboard-card[style*="background:#fff"] strong {
+    color: #1a0205 !important; /* TEXTO NEGRO GUINDA NÍTIDO SOBRE BLANCO */
+    text-shadow: none !important;
+}
+
+.sale-card[style*="background:#fff"] small,
+.sale-card[style*="background:#fff"] p,
+.sale-card[style*="background:#fff"] span:not([style*="color:"]):not([class*="badge"]),
+.dashboard-card[style*="background:linear-gradient(145deg,#fff"] small,
+.dashboard-card[style*="background:linear-gradient(145deg,#fff"] label,
+.dashboard-card[style*="background:linear-gradient(145deg,#fff"] p,
+.dashboard-card[style*="background:#fff"] small,
+.dashboard-card[style*="background:#fff"] label,
+.dashboard-card[style*="background:#fff"] p {
+    color: #630f1a !important; /* GUINDA OSCURO SOBRE BLANCO */
+    text-shadow: none !important;
+}
+
+/* TÍTULOS Y TEXTOS SOBRE FONDO GUINDA GLOBAL (CERO GUINDA SOBRE GUINDA) */
+.main-content,
+.app-view,
+.products-section,
+.sidebar {
+    color: #ffffff !important;
+}
+
+.main-content > div > h1, .main-content > div > h2, .main-content > div > h3,
+.app-view > div > h3,
+.products-section > div > h3,
+.empty-state h1, .empty-state h2, .empty-state h3, .empty-state p,
+.section-heading h1, .section-heading h2, .section-heading h3 {
+    color: #ffffff !important;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Asegurar que dentro de tarjetas blancas/crema el texto permanezca guinda oscuro legible */
+.product-card .product-info small { color: #630f1a !important; }
+.product-card .product-info strong { color: #1a0205 !important; }
+.product-card .product-info span { color: #7e1523 !important; }
+.order-panel .order-title h3 { color: #1a0205 !important; }
+.order-panel .order-customer small { color: #630f1a !important; }
+.order-panel .order-customer strong { color: #1a0205 !important; }
+.order-panel .summary-row { color: #630f1a !important; }
+.order-panel .summary-total { color: #1a0205 !important; }
+
+/* Inputs y Selects */
+input[type="text"], input[type="number"], input[type="date"], select, textarea {
+    background-color: #fff !important;
+    border: 1.5px solid var(--gold-400) !important;
+    color: var(--wine-950) !important;
+    border-radius: 10px;
+}
+input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus, select:focus, textarea:focus {
+    border-color: var(--wine-700) !important;
+    box-shadow: 0 0 0 3px rgba(232, 162, 23, 0.3) !important;
+    outline: none !important;
+}
+
+/* Spinner */
+.loading-spinner {
+    display: inline-block;
+    width: 26px;
+    height: 26px;
+    border: 3.5px solid rgba(232, 162, 23, 0.3);
+    border-top-color: var(--gold-300);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── MOTOR UNIVERSAL DE IMPRESIÓN TÉRMICA (58MM & 80MM) ── */
+@media print {
+    @page {
+        margin: 0;
+        size: auto;
+    }
+    html, body {
+        background: #fff !important;
+        color: #000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+}
