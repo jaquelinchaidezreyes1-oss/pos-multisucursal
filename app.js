@@ -215,10 +215,13 @@
             const unsynced = localSales.filter(s => s && s.id && !syncedIds.has(String(s.id)) && !uuid(s.id));
             if (!unsynced.length) return;
 
+            const defaultShiftUUID = "1dabe6df-2ce6-4e3a-97df-b81e179898ab";
+
             for (const s of unsynced) {
                 const bId = uuid(s.branch_id) ? s.branch_id : defaultBranchUUID;
                 const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
                 const uId = uuid(s.cashier_id) ? s.cashier_id : (uuid(S.user?.id) ? S.user.id : defaultUserUUID);
+                const sId = uuid(s.shift_id) ? s.shift_id : (uuid(S.currentShift?.id) ? S.currentShift.id : defaultShiftUUID);
 
                 const observationsObj = {
                     branch_name: s.branch_name || S.branchName,
@@ -232,6 +235,7 @@
                 const insertPayload = {
                     company_id: cId,
                     branch_id: bId,
+                    shift_id: sId,
                     user_id: uId,
                     sale_number: s.sale_number,
                     subtotal: Number(s.total || 0),
@@ -364,7 +368,8 @@
         });
     }
 
-    /* ── BASE DE DATOS ── */
+    /* ── BASE DE DATOS & SINCRONIZACIÓN EN TIEMPO REAL ── */
+    let _realtimeChannel = null;
     function initDB() {
         if (db) return true;
         if (!window.supabase) return false;
@@ -373,11 +378,26 @@
                 auth: { persistSession: true, autoRefreshToken: true, storageKey: "lf-pos" }
             });
             window.supabaseClient = db;
+            setupRealtime();
             return true;
         } catch(e) {
             console.error("Supabase error:", e);
             return false;
         }
+    }
+
+    function setupRealtime() {
+        if (!db || _realtimeChannel) return;
+        try {
+            _realtimeChannel = db.channel("realtime-pos")
+                .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, async () => {
+                    if (S.view === "sales") await loadSales(true);
+                    if (S.view === "accounting") await loadAccounting(true);
+                    if (S.view === "private-access") await loadPrivateAccess(true);
+                    if (S.view === "cuts") await loadCuts(true);
+                })
+                .subscribe();
+        } catch(e) {}
     }
 
     /* ── CANDADO SUPERUSUARIOS ── */
@@ -595,53 +615,14 @@
 
     function checkBlock() { return S.cart.some(i => i.quantity > getStock(i.product_id)); }
 
-    /* ── CATÁLOGO BASE OFICIAL LA FUENTE ── */
+    /* ── CATÁLOGO OFICIAL LA FUENTE (SOLO PRODUCTOS AUTÉNTICOS) ── */
     const DEFAULT_PRODUCTS = [
-        // PALETAS
-        { product_id: "p_pal_fresa", product_code: "PAL-01", product_name: "Paleta de Fresa (Agua)", category: "paletas", price: 20 },
-        { product_id: "p_pal_limon", product_code: "PAL-02", product_name: "Paleta de Limón", category: "paletas", price: 20 },
-        { product_id: "p_pal_mango", product_code: "PAL-03", product_name: "Paleta de Mango con Chile", category: "paletas", price: 22 },
-        { product_id: "p_pal_tamarindo", product_code: "PAL-04", product_name: "Paleta de Tamarindo", category: "paletas", price: 20 },
-        { product_id: "p_pal_vainilla", product_code: "PAL-05", product_name: "Paleta de Vainilla (Leche)", category: "paletas", price: 25 },
-        { product_id: "p_pal_chocolate", product_code: "PAL-06", product_name: "Paleta de Chocolate", category: "paletas", price: 25 },
-        { product_id: "p_pal_coco", product_code: "PAL-07", product_name: "Paleta de Coco Cremoso", category: "paletas", price: 25 },
-        { product_id: "p_pal_nuez", product_code: "PAL-08", product_name: "Paleta de Nuez Fina", category: "paletas", price: 28 },
-        { product_id: "p_pal_oreo", product_code: "PAL-09", product_name: "Paleta de Galleta Oreo", category: "paletas", price: 28 },
-        { product_id: "p_pal_zarzamora", product_code: "PAL-10", product_name: "Paleta Zarzamora con Queso", category: "paletas", price: 28 },
-        
-        // HELADOS & NIEVES
-        { product_id: "p_hel_sencillo", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25 },
-        { product_id: "p_hel_doble_v", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45 },
-        { product_id: "p_hel_doble_ch", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45 },
-        { product_id: "p_hel_waffle", product_code: "HEL-03", product_name: "Cono Waffle Especial", category: "helados", price: 55 },
-        { product_id: "p_hel_vaso_ch", product_code: "HEL-04", product_name: "Vaso de Nieve Chico", category: "helados", price: 30 },
-        { product_id: "p_hel_vaso_med", product_code: "HEL-05", product_name: "Vaso de Nieve Mediano", category: "helados", price: 50 },
-        { product_id: "p_hel_vaso_gde", product_code: "HEL-06", product_name: "Vaso de Nieve Grande", category: "helados", price: 70 },
-        { product_id: "p_hel_medio_lt", product_code: "HEL-07", product_name: "Medio Litro de Nieve", category: "helados", price: 85 },
-        { product_id: "p_hel_litro", product_code: "HEL-08", product_name: "Litro de Nieve para Llevar", category: "helados", price: 150 },
-
-        // AGUAS FRESCAS
-        { product_id: "p_agua_500", product_code: "AG-01", product_name: "Agua Fresca Vaso 500ml", category: "aguas", price: 25 },
-        { product_id: "p_agua_1lt", product_code: "AG-02", product_name: "Agua Fresca Litro (Horchata/Jamaica/Cebada)", category: "aguas", price: 45 },
-        { product_id: "p_agua_galon", product_code: "AG-03", product_name: "Galón de Agua Fresca", category: "aguas", price: 140 },
-
-        // PREPARADOS
-        { product_id: "p_prep_fresas", product_code: "PREP-01", product_name: "Fresas con Crema Especial", category: "preparados", price: 65 },
-        { product_id: "p_prep_esquite", product_code: "PREP-02", product_name: "Esquites / Vaso de Elote", category: "preparados", price: 45 },
-        { product_id: "p_prep_nachos", product_code: "PREP-03", product_name: "Nachos con Queso y Jalapeño", category: "preparados", price: 50 },
-        { product_id: "p_prep_tosti", product_code: "PREP-04", product_name: "Tostilocos Preparados", category: "preparados", price: 55 },
-        { product_id: "p_prep_dori", product_code: "PREP-05", product_name: "Dorilocos Preparados", category: "preparados", price: 55 },
-        { product_id: "p_prep_mango", product_code: "PREP-06", product_name: "Mangoneada / Chamoyada", category: "preparados", price: 45 },
-        { product_id: "p_prep_bionico", product_code: "PREP-07", product_name: "Biónico de Frutas con Crema", category: "preparados", price: 60 },
-
-        // POSTRES & DULCES
-        { product_id: "p_post_pay", product_code: "POS-01", product_name: "Rebanada Pay de Queso", category: "postres", price: 45 },
-        { product_id: "p_post_flan", product_code: "POS-02", product_name: "Flan Casero Napolitano", category: "postres", price: 40 },
-        { product_id: "p_dul_bolis", product_code: "DUL-01", product_name: "Bolis Gourmet Congelado", category: "dulces", price: 18 },
-        { product_id: "p_dul_dulces", product_code: "DUL-02", product_name: "Dulces / Botanas Variadas", category: "dulces", price: 15 }
+        { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25, branch_name: "La Fuente Calzada", initial_stock: 99 },
+        { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45, branch_name: "La Fuente Calzada", initial_stock: 100 },
+        { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45, branch_name: "La Fuente Calzada", initial_stock: 100 }
     ];
 
-    /* ── PRODUCTOS (FILTRADO Y CARGA UNIVERSAL PARA TODAS LAS SUCURSALES) ── */
+    /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
     async function loadProducts() {
         let remoteProducts = [];
         if (db) {
@@ -661,52 +642,55 @@
         const deletedIds  = gr("deleted_product_ids", []);
         const combinedMap = new Map();
 
-        // 1. Cargar catálogo base predeterminado de La Fuente
-        DEFAULT_PRODUCTS.forEach(p => {
-            if (!deletedIds.includes(String(p.product_id))) {
-                combinedMap.set(String(p.product_id), {
-                    product_id: p.product_id,
-                    product_name: p.product_name,
-                    product_code: p.product_code || "",
-                    category: p.category,
-                    price: Number(p.price || 0),
-                    image_url: p.image_url || null,
-                    branch_id: "all",
-                    branch_name: "General"
-                });
-            }
-        });
+        // 1. Cargar productos remotos de Supabase si existen
+        if (remoteProducts.length) {
+            remoteProducts.forEach(p => {
+                const pid = String(p.product_id || p.id);
+                if (!deletedIds.includes(pid)) {
+                    let cat = String(p.category || p.product_category || "helados").toLowerCase().trim();
+                    const pName = String(p.product_name || "").toLowerCase();
+                    if (cat.includes("preparad") || pName.includes("esquite") || pName.includes("nacho") || pName.includes("tosti") || pName.includes("fresas con crema")) cat = "preparados";
+                    else if (cat.includes("helad") || pName.includes("cono") || pName.includes("nieve") || pName.includes("vaso")) cat = "helados";
+                    else if (cat.includes("agua") || pName.includes("agua") || pName.includes("horchata") || pName.includes("jamaica")) cat = "aguas";
+                    else if (cat.includes("postre") || pName.includes("flan") || pName.includes("pay") || pName.includes("pastel")) cat = "postres";
+                    else if (cat.includes("dulce") || pName.includes("boli")) cat = "dulces";
+                    else if (cat.includes("desechable")) cat = "desechables";
+                    else if (cat.includes("congelado")) cat = "congelados";
+                    else if (!cat || cat.length > 20) cat = "helados";
 
-        // 2. Fusionar con catálogo remoto de Supabase respetando stock y sucursales
-        remoteProducts.forEach(p => {
-            const pid = String(p.product_id || p.id);
-            if (!deletedIds.includes(pid)) {
-                let cat = String(p.category || p.product_category || "paletas").toLowerCase().trim();
-                const pName = String(p.product_name || "").toLowerCase();
-                if (cat.includes("preparad") || pName.includes("esquite") || pName.includes("nacho") || pName.includes("tosti") || pName.includes("fresas con crema")) cat = "preparados";
-                else if (cat.includes("helad") || pName.includes("cono") || pName.includes("nieve") || pName.includes("vaso")) cat = "helados";
-                else if (cat.includes("agua") || pName.includes("agua") || pName.includes("horchata") || pName.includes("jamaica")) cat = "aguas";
-                else if (cat.includes("postre") || pName.includes("flan") || pName.includes("pay") || pName.includes("pastel")) cat = "postres";
-                else if (cat.includes("dulce") || pName.includes("boli")) cat = "dulces";
-                else if (cat.includes("desechable")) cat = "desechables";
-                else if (cat.includes("congelado")) cat = "congelados";
-                else if (!cat || cat.length > 20) cat = "paletas";
+                    combinedMap.set(pid, {
+                        product_id: pid,
+                        product_name: p.product_name,
+                        product_code: p.product_code || p.code || "",
+                        category: cat,
+                        price: Number(p.price || 0),
+                        image_url: p.image_url || null,
+                        branch_id: p.branch_id || "all",
+                        branch_name: p.branch_name || "General",
+                        initial_stock: p.stock != null ? Number(p.stock) : undefined
+                    });
+                }
+            });
+        } else {
+            // Catálogo base si aún no se conecta con Supabase
+            DEFAULT_PRODUCTS.forEach(p => {
+                if (!deletedIds.includes(String(p.product_id))) {
+                    combinedMap.set(String(p.product_id), {
+                        product_id: p.product_id,
+                        product_name: p.product_name,
+                        product_code: p.product_code || "",
+                        category: p.category,
+                        price: Number(p.price || 0),
+                        image_url: p.image_url || null,
+                        branch_id: p.branch_id || "all",
+                        branch_name: p.branch_name || "General",
+                        initial_stock: p.initial_stock
+                    });
+                }
+            });
+        }
 
-                combinedMap.set(pid, {
-                    product_id: pid,
-                    product_name: p.product_name,
-                    product_code: p.product_code || p.code || "",
-                    category: cat,
-                    price: Number(p.price || 0),
-                    image_url: p.image_url || null,
-                    branch_id: p.branch_id || "all",
-                    branch_name: p.branch_name || "General",
-                    initial_stock: p.stock != null ? Number(p.stock) : undefined
-                });
-            }
-        });
-
-        // 3. Fusionar productos personalizados creados en sucursales
+        // 2. Fusionar productos personalizados creados por los administradores
         customProds.forEach(p => {
             const pid = String(p.product_id);
             if (!deletedIds.includes(pid)) {
@@ -714,7 +698,7 @@
                     product_id: pid,
                     product_name: p.product_name,
                     product_code: p.product_code || "",
-                    category: (p.category || "paletas").toLowerCase().trim(),
+                    category: (p.category || "helados").toLowerCase().trim(),
                     price: Number(p.price || 0),
                     image_url: p.image_url || null,
                     branch_id: p.branch_id || "all",
@@ -2117,10 +2101,12 @@
                     const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
                     const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
                     const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
+                    const defaultShiftUUID = "1dabe6df-2ce6-4e3a-97df-b81e179898ab";
 
                     const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
                     const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
                     const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
+                    const sId = uuid(S.currentShift?.id) ? S.currentShift.id : defaultShiftUUID;
 
                     const observationsObj = {
                         branch_name: S.branchName,
@@ -2134,6 +2120,7 @@
                     const insertPayload = {
                         company_id: cId,
                         branch_id: bId,
+                        shift_id: sId,
                         user_id: uId,
                         sale_number: saleRecord.sale_number,
                         subtotal: total,
@@ -2144,10 +2131,6 @@
                         observations: JSON.stringify(observationsObj),
                         created_at: saleRecord.created_at
                     };
-
-                    if (uuid(S.currentShift?.id)) {
-                        insertPayload.shift_id = S.currentShift.id;
-                    }
 
                     const { data, error } = await db.from("sales").insert(insertPayload).select();
 
@@ -2258,11 +2241,13 @@
         datesSet.add(todayStr);
 
         const availableDates = Array.from(datesSet).sort().reverse();
-        const selectedDate = S.salesFilterDate || todayStr;
+        const selectedDate = S.salesFilterDate !== undefined ? S.salesFilterDate : todayStr;
         const selectedShiftFilter = S.salesFilterShift || "all";
 
-        // Ventas del día seleccionado
-        const daySales = allSales.filter(s => toDateKey(s.created_at) === selectedDate);
+        // Ventas del día seleccionado (o todas si se selecciona ver todo)
+        const daySales = (selectedDate === "all") 
+            ? allSales 
+            : allSales.filter(s => toDateKey(s.created_at) === selectedDate);
         
         const activeDaySales = daySales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED" && !cancelledReasons[String(s.id)]);
         const cancelledDaySales = daySales.filter(s => String(s.status||"").toUpperCase() === "CANCELLED" || cancelledReasons[String(s.id)]);
@@ -2297,9 +2282,9 @@
         <!-- TARJETAS DE CONTROL DE CAJA Y ACUMULADOS POR TURNO Y MÉTODO DE PAGO -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px">
             <div class="dashboard-card" style="background:linear-gradient(135deg,#230408,#5c121b);color:#fff;border:1.5px solid var(--gold-400);padding:18px;border-radius:16px;box-shadow:var(--shadow-card)">
-                <span style="font-size:9.5px;font-weight:900;color:#fef08a;letter-spacing:1px;display:block">TOTAL VENDIDO HOY</span>
+                <span style="font-size:9.5px;font-weight:900;color:#fef08a;letter-spacing:1px;display:block">${selectedDate==='all'?'TOTAL HISTÓRICO':'TOTAL VENDIDO HOY'}</span>
                 <div style="font-size:26px;font-weight:900;color:#ffffff;margin:4px 0">${money(totalDayActive)}</div>
-                <small style="color:#fde68a">${activeDaySales.length} tickets activos en el día</small>
+                <small style="color:#fde68a">${activeDaySales.length} tickets activos ${selectedDate==='all'?'en total':'en el día'}</small>
             </div>
             <div class="dashboard-card" style="padding:18px;border-radius:16px;background:linear-gradient(145deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;box-shadow:var(--shadow-card)">
                 <span style="font-size:9.5px;font-weight:900;color:#166534;letter-spacing:1px;display:block">💵 COBRADO EN EFECTIVO</span>
@@ -2323,8 +2308,11 @@
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <div style="display:flex;align-items:center;gap:6px">
                     <label style="font-size:11px;font-weight:900;color:var(--wine-900)">📅 FILTRAR FECHA:</label>
-                    <input type="date" id="sales-date-picker" value="${selectedDate}"
-                        style="padding:6px 10px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:800;background:#fff;outline:none;color:#1a0205">
+                    <select id="sales-date-picker" style="padding:6px 10px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:800;background:#fff;outline:none;color:#1a0205">
+                        <option value="${todayStr}"${selectedDate===todayStr?' selected':''}>📅 Hoy (${fd(todayStr)})</option>
+                        <option value="all"${selectedDate==='all'?' selected':''}>📜 Ver Todo el Histórico</option>
+                        ${availableDates.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?' selected':''}>📅 ${fd(d)}</option>`).join("")}
+                    </select>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px">
                     <label style="font-size:11px;font-weight:900;color:var(--wine-900)">FILTRAR TURNO:</label>
