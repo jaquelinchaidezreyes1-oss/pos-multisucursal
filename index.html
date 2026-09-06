@@ -392,10 +392,10 @@
 
                         if (window.LaFuentePOS) {
                             window.LaFuentePOS.state.user = result.data.user;
-                            await window.LaFuentePOS.loadBranches();
-                            await window.LaFuentePOS.loadProfile();
-                            await window.LaFuentePOS.loadProducts();
-                            await window.LaFuentePOS.loadCurrentShift();
+                            if (window.LaFuentePOS.loadBranches) await window.LaFuentePOS.loadBranches();
+                            if (window.LaFuentePOS.loadProfile) await window.LaFuentePOS.loadProfile();
+                            if (window.LaFuentePOS.loadProducts) await window.LaFuentePOS.loadProducts();
+                            if (window.LaFuentePOS.loadCurrentShift) await window.LaFuentePOS.loadCurrentShift();
                             if (window.LaFuentePOS.state.isSU) { window.changeView("private-access"); }
                             else { window.changeView("pos"); }
                         }

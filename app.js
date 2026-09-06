@@ -368,8 +368,7 @@
         });
     }
 
-    /* ── BASE DE DATOS & SINCRONIZACIÓN EN TIEMPO REAL ── */
-    let _realtimeChannel = null;
+    /* ── BASE DE DATOS ── */
     function initDB() {
         if (db) return true;
         if (!window.supabase) return false;
@@ -378,26 +377,11 @@
                 auth: { persistSession: true, autoRefreshToken: true, storageKey: "lf-pos" }
             });
             window.supabaseClient = db;
-            setupRealtime();
             return true;
         } catch(e) {
             console.error("Supabase error:", e);
             return false;
         }
-    }
-
-    function setupRealtime() {
-        if (!db || _realtimeChannel) return;
-        try {
-            _realtimeChannel = db.channel("realtime-pos")
-                .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, async () => {
-                    if (S.view === "sales") await loadSales(true);
-                    if (S.view === "accounting") await loadAccounting(true);
-                    if (S.view === "private-access") await loadPrivateAccess(true);
-                    if (S.view === "cuts") await loadCuts(true);
-                })
-                .subscribe();
-        } catch(e) {}
     }
 
     /* ── CANDADO SUPERUSUARIOS ── */
@@ -720,10 +704,10 @@
     function filtered() {
         let p = S.products;
         
-        // Filtrar por sucursal actual si el producto está asignado a una sucursal específica
+        // Mostrar productos generales en todas las sucursales o productos exclusivos por sucursal
         if (S.branchId || S.branchName) {
             p = p.filter(x => {
-                const isGen = !x.branch_name || x.branch_name === "General" || x.branch_id === "all" || !x.branch_id;
+                const isGen = !x.branch_name || x.branch_name === "General" || x.branch_id === "all" || !x.branch_id || x.branch_name === "La Fuente Calzada" || x.branch_name === "La Fuente";
                 if (isGen) return true;
                 return matchesBranch({ branch_id: x.branch_id, branch_name: x.branch_name }, { id: S.branchId, name: S.branchName });
             });
@@ -4062,6 +4046,7 @@
     window.LaFuentePOS = {
         state: S,
         changeBranch,
+        loadBranches,
         loadPrivateAccessData: loadPrivateAccess,
         loadProducts,
         loadProductsAdmin,
