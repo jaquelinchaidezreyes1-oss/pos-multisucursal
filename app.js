@@ -1068,61 +1068,40 @@
         if (rawEscPosBytes && (directUsbDevice || directBtChar)) {
             const success = await sendEscPosBytes(rawEscPosBytes);
             if (success) {
-                toast("✓ Ticket impreso directamente en la Ghia.", "success", 3000);
+                toast("✓ Ticket impreso físicamente en la mini impresora.", "success", 3000);
                 return;
             }
         }
 
-        let printed = false;
         try {
-            const printWin = window.open("", "_blank", "width=380,height=600,menubar=no,toolbar=no,location=no,status=no");
-            if (printWin) {
-                printWin.document.open();
-                printWin.document.write(htmlContent);
-                printWin.document.close();
-                printed = true;
-                setTimeout(() => {
-                    try {
-                        printWin.focus();
-                        printWin.print();
-                    } catch(e) {}
-                }, 300);
+            let iframe = document.getElementById("pos-print-iframe");
+            if (!iframe) {
+                iframe = document.createElement("iframe");
+                iframe.id = "pos-print-iframe";
+                iframe.style.position = "fixed";
+                iframe.style.bottom = "0";
+                iframe.style.right = "0";
+                iframe.style.width = "10px";
+                iframe.style.height = "10px";
+                iframe.style.opacity = "0.001";
+                iframe.style.pointerEvents = "none";
+                iframe.style.zIndex = "-1";
+                document.body.appendChild(iframe);
             }
-        } catch(e) {
-            console.warn("Direct print popup failed:", e);
-        }
-
-        if (!printed) {
-            try {
-                let iframe = document.getElementById("pos-print-iframe");
-                if (!iframe) {
-                    iframe = document.createElement("iframe");
-                    iframe.id = "pos-print-iframe";
-                    iframe.style.position = "fixed";
-                    iframe.style.bottom = "0";
-                    iframe.style.right = "0";
-                    iframe.style.width = "200px";
-                    iframe.style.height = "200px";
-                    iframe.style.opacity = "0.01";
-                    iframe.style.pointerEvents = "none";
-                    iframe.style.zIndex = "99999";
-                    document.body.appendChild(iframe);
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write(htmlContent);
+            doc.close();
+            setTimeout(() => {
+                try {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                } catch(e) {
+                    console.error("Iframe print error:", e);
                 }
-                const doc = iframe.contentWindow.document;
-                doc.open();
-                doc.write(htmlContent);
-                doc.close();
-                setTimeout(() => {
-                    try {
-                        iframe.contentWindow.focus();
-                        iframe.contentWindow.print();
-                    } catch(e) {
-                        console.error("Iframe print error:", e);
-                    }
-                }, 350);
-            } catch(err) {
-                console.error("Print execution failed:", err);
-            }
+            }, 300);
+        } catch(err) {
+            console.error("Print execution failed:", err);
         }
     }
 
@@ -1269,6 +1248,31 @@
         const isMorning = String(ct.shift_name || "").toLowerCase().includes("mañana") || String(ct.shift_name || "").toLowerCase().includes("matutino");
         const shiftLabel = isMorning ? "MATUTINO (MAÑANA)" : "VESPERTINO (TARDE)";
 
+        // Calcular ventas acumuladas de todo el día para esta sucursal
+        const cutDate = toDateKey(ct.created_at);
+        const allRecordedSales = gr("all_sales", []).concat(lr("sales", []));
+        const uniqueSalesMap = new Map();
+        allRecordedSales.forEach(s => {
+            const sameBranch = (String(s.branch_id) === String(ct.branch_id)) ||
+                               (s.branch_name && ct.branch_name && s.branch_name.toLowerCase().includes(ct.branch_name.toLowerCase())) ||
+                               (ct.branch_name && s.branch_name && ct.branch_name.toLowerCase().includes(s.branch_name.toLowerCase()));
+            const sameDate = toDateKey(s.created_at) === cutDate;
+            const notCan = String(s.status || "").toUpperCase() !== "CANCELLED";
+            if (sameBranch && sameDate && notCan) {
+                uniqueSalesMap.set(String(s.id), s);
+            }
+        });
+        const daySales = Array.from(uniqueSalesMap.values());
+
+        const morningSales = daySales.filter(s => getShiftCategory(s) === "matutino");
+        const afternoonSales = daySales.filter(s => getShiftCategory(s) === "vespertino");
+
+        const dayTotalMorning = morningSales.reduce((a,s) => a + Number(s.total||0), 0);
+        const dayTotalAfternoon = afternoonSales.reduce((a,s) => a + Number(s.total||0), 0);
+        const dayTotalAll = daySales.reduce((a,s) => a + Number(s.total||0), 0);
+        const dayCashAll = daySales.filter(s => (s.payment_method||"cash") === "cash").reduce((a,s) => a + Number(s.total||0), 0);
+        const dayCardAll = daySales.filter(s => s.payment_method === "card").reduce((a,s) => a + Number(s.total||0), 0);
+
         const cutHtml = `
 <!DOCTYPE html>
 <html>
@@ -1317,7 +1321,7 @@
     <div><strong>FECHA/HORA:</strong> ${fdt(ct.created_at)}</div>
     <div><strong>ENCARGADA:</strong> ${esc(ct.performed_by_name || "Encargada")}</div>
     <div class="divider"></div>
-    <div class="bold" style="font-size:11px;margin-bottom:3px;">DESGLOSE FINANCIERO:</div>
+    <div class="bold" style="font-size:11px;margin-bottom:3px;">DESGLOSE FINANCIERO TURNO:</div>
     <div class="row">
         <span>Fondo Inicial:</span>
         <span>${money(ct.opening_amount || 0)}</span>
@@ -1332,7 +1336,7 @@
     </div>
     <div class="divider"></div>
     <div class="row bold" style="font-size:12px;">
-        <span>TOTAL VENDIDO:</span>
+        <span>TOTAL VENDIDO TURNO:</span>
         <span>${money(ct.total_sales || 0)}</span>
     </div>
     <div class="divider"></div>
@@ -1353,6 +1357,34 @@
     <div class="row bold" style="font-size:11px;">
         <span>DIFERENCIA:</span>
         <span>${diffLabel}</span>
+    </div>
+    <div class="double-divider"></div>
+    <div class="bold center" style="font-size:11.5px;margin:5px 0 3px;">*** RESUMEN TOTAL DEL DÍA ***</div>
+    <div class="center" style="font-size:9.5px;color:#333;margin-bottom:4px;">(Fecha: ${fd(cutDate)})</div>
+    <div class="row">
+        <span>Matutino (${morningSales.length} tickets):</span>
+        <span>${money(dayTotalMorning)}</span>
+    </div>
+    <div class="row">
+        <span>Vespertino (${afternoonSales.length} tickets):</span>
+        <span>${money(dayTotalAfternoon)}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="row bold" style="font-size:12.5px;">
+        <span>TOTAL VENDIDO HOY:</span>
+        <span>${money(dayTotalAll)}</span>
+    </div>
+    <div class="row" style="font-size:10px;margin-top:2px;">
+        <span>Efectivo Total Hoy:</span>
+        <span>${money(dayCashAll)}</span>
+    </div>
+    <div class="row" style="font-size:10px;">
+        <span>Tarjetas Total Hoy:</span>
+        <span>${money(dayCardAll)}</span>
+    </div>
+    <div class="row" style="font-size:10px;">
+        <span>Total Tickets Hoy:</span>
+        <span>${daySales.length} órdenes</span>
     </div>
     <div class="double-divider"></div>
     <div style="margin-top:22px;text-align:center;">
@@ -1385,12 +1417,28 @@
             { text: `VENTAS TARJETA:  ${money(ct.card_sales || 0)}` },
             { text: "--------------------------------" },
             { bold: true },
-            { text: `TOTAL VENDIDO:   ${money(ct.total_sales || 0)}` },
+            { text: `TOTAL TURNO:     ${money(ct.total_sales || 0)}` },
             { text: `EFECTIVO ESP:    ${money(ct.expected_cash || 0)}` },
             { text: `EFECTIVO CONT:   ${money(ct.counted_cash || 0)}` },
             { text: `CORTE NETO:      ${money(ct.net_sales_without_fund || 0)}` },
             { text: `DIFERENCIA:      ${diffLabel}` },
             { bold: false },
+            { text: "================================" },
+            { align: "center" },
+            { bold: true },
+            { text: "*** RESUMEN TOTAL DEL DIA ***" },
+            { text: `(Fecha: ${cutDate})` },
+            { align: "left" },
+            { bold: false },
+            { text: `Matutino (${morningSales.length} tks):  ${money(dayTotalMorning)}` },
+            { text: `Vespertino (${afternoonSales.length} tks):${money(dayTotalAfternoon)}` },
+            { text: "--------------------------------" },
+            { bold: true },
+            { text: `TOTAL VENDIDO HOY:${money(dayTotalAll)}` },
+            { bold: false },
+            { text: `Efectivo Hoy:     ${money(dayCashAll)}` },
+            { text: `Tarjeta Hoy:      ${money(dayCardAll)}` },
+            { text: `Total Tickets:    ${daySales.length}` },
             { text: "================================" },
             { feed: 4 },
             { cut: true }
@@ -1865,6 +1913,9 @@
         if (e.target.closest("#btn-direct-print-ticket")) {
             directPrintTicketAction();
         }
+        if (e.target.closest("#pay-button,.pay-button")) {
+            processSale();
+        }
     });
 
     async function processSale() {
@@ -1906,12 +1957,10 @@
             try {
                 const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
                 const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
-                const defaultShiftUUID = "1dabe6df-2ce6-4e3a-97df-b81e179898ab";
                 const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
 
                 const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
                 const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
-                const sId = uuid(S.currentShift?.id) ? S.currentShift.id : defaultShiftUUID;
                 const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
 
                 const observationsObj = {
@@ -1923,10 +1972,9 @@
                     local_id: saleRecord.id
                 };
 
-                const { data, error } = await db.from("sales").insert({
+                const insertPayload = {
                     company_id: cId,
                     branch_id: bId,
-                    shift_id: sId,
                     user_id: uId,
                     sale_number: saleRecord.sale_number,
                     subtotal: total,
@@ -1936,7 +1984,13 @@
                     status: "COMPLETED",
                     observations: JSON.stringify(observationsObj),
                     created_at: saleRecord.created_at
-                }).select();
+                };
+
+                if (uuid(S.currentShift?.id)) {
+                    insertPayload.shift_id = S.currentShift.id;
+                }
+
+                const { data, error } = await db.from("sales").insert(insertPayload).select();
 
                 if (error) {
                     console.error("Error al insertar venta en Supabase:", error);
@@ -1956,14 +2010,9 @@
         const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
         toast(`✓ Venta de ${money(total)} cobrada en ${payLabel}. Ticket #${saleRecord.sale_number}`, "success", 4000);
 
-        // Imprimir ticket automáticamente en mini impresora térmica
+        // Guardar última venta registrada para impresión física directa sólo cuando se presione el botón
         lw("last_printed_sale", saleRecord);
         gw("last_printed_sale", saleRecord);
-        try {
-            printSaleReceipt(saleRecord);
-        } catch(e) {
-            console.warn("No se pudo disparar diálogo de impresión:", e);
-        }
     }
 
     /* ── MIS VENTAS (FILTRO POR CALENDARIO, TURNOS Y ACUMULADOR PARA CAJA) ── */
@@ -2297,20 +2346,42 @@
         if (!c || !S.branchId) return;
         c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div></div>`;
 
-        const localSales = lr("sales", []);
         const cancelled = lr("cancelled_reasons", {});
-        const todayStr = new Date().toISOString().slice(0,10);
+        const todayStr = toDateKey();
 
-        const systemSalesToday = localSales.filter(s => {
-            const sDate = (s.created_at || "").slice(0,10);
+        const allRecordedSales = gr("all_sales", []).concat(lr("sales", []));
+        const uniqueBranchSalesMap = new Map();
+        allRecordedSales.forEach(s => {
+            const sameBranch = (String(s.branch_id) === String(S.branchId)) ||
+                               (s.branch_name && S.branchName && s.branch_name.toLowerCase().includes(S.branchName.toLowerCase())) ||
+                               (S.branchName && s.branch_name && S.branchName.toLowerCase().includes(s.branch_name.toLowerCase()));
+            const sameDate = toDateKey(s.created_at) === todayStr;
             const notCan = !cancelled[String(s.id)] && String(s.status||"").toUpperCase() !== "CANCELLED";
-            const matchShift = String(s.shift_name || "").toLowerCase() === S.shift.toLowerCase();
-            return sDate === todayStr && notCan && matchShift;
+            if (sameBranch && sameDate && notCan) {
+                uniqueBranchSalesMap.set(String(s.id), s);
+            }
+        });
+        const dayBranchSales = Array.from(uniqueBranchSalesMap.values());
+
+        // Ventas del turno actual
+        const systemSalesToday = dayBranchSales.filter(s => {
+            const curShiftCat = S.shift.toLowerCase().includes("mañana") ? "matutino" : (S.shift.toLowerCase().includes("tarde") ? "vespertino" : "");
+            const sCat = getShiftCategory(s);
+            return (curShiftCat && sCat === curShiftCat) || String(s.shift_name || "").toLowerCase() === S.shift.toLowerCase();
         });
 
         const systemCashSales = systemSalesToday.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s) => a + Number(s.total||0), 0);
         const systemCardSales = systemSalesToday.filter(s => s.payment_method === "card").reduce((a,s) => a + Number(s.total||0), 0);
         const systemTotalSold = systemSalesToday.reduce((acc,s) => acc + Number(s.total||0), 0);
+
+        // Ventas de todo el día (Matutino + Vespertino)
+        const morningDaySales = dayBranchSales.filter(s => getShiftCategory(s) === "matutino");
+        const afternoonDaySales = dayBranchSales.filter(s => getShiftCategory(s) === "vespertino");
+        const dayTotalMorning = morningDaySales.reduce((a,s) => a + Number(s.total||0), 0);
+        const dayTotalAfternoon = afternoonDaySales.reduce((a,s) => a + Number(s.total||0), 0);
+        const dayTotalAll = dayBranchSales.reduce((a,s) => a + Number(s.total||0), 0);
+        const dayCashAll = dayBranchSales.filter(s => (s.payment_method||"cash") === "cash").reduce((a,s) => a + Number(s.total||0), 0);
+        const dayCardAll = dayBranchSales.filter(s => s.payment_method === "card").reduce((a,s) => a + Number(s.total||0), 0);
 
         let remoteCuts = [];
         if (db) {
@@ -2381,17 +2452,34 @@
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
                     <div style="background:#f0fdf4;border:1.5px solid #86efac;padding:8px 12px;border-radius:10px;text-align:right">
-                        <small style="color:#166534;font-size:9.5px;font-weight:900;display:block">💵 EFECTIVO SISTEMA</small>
+                        <small style="color:#166534;font-size:9.5px;font-weight:900;display:block">💵 EFECTIVO TURNO</small>
                         <strong style="font-size:15px;color:#15803d">${money(systemCashSales)}</strong>
                     </div>
                     <div style="background:#eff6ff;border:1.5px solid #93c5fd;padding:8px 12px;border-radius:10px;text-align:right">
-                        <small style="color:#1e40af;font-size:9.5px;font-weight:900;display:block">💳 TARJETAS SISTEMA</small>
+                        <small style="color:#1e40af;font-size:9.5px;font-weight:900;display:block">💳 TARJETAS TURNO</small>
                         <strong style="font-size:15px;color:#1d4ed8">${money(systemCardSales)}</strong>
                     </div>
                     <div style="background:#fff8e0;border:1.5px solid var(--gold-400);padding:8px 12px;border-radius:10px;text-align:right">
                         <small style="color:var(--text-muted);font-size:9.5px;font-weight:900;display:block">TOTAL TURNO (${systemSalesToday.length} TICKETS)</small>
                         <strong style="font-size:15px;color:var(--wine-900)">${money(systemTotalSold)}</strong>
                     </div>
+                </div>
+            </div>
+
+            <!-- RESUMEN DEL DÍA COMPLETO -->
+            <div style="background:linear-gradient(135deg,#541118,#701721);color:#fff;border:2px solid var(--gold-400);border-radius:14px;padding:14px 18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                <div>
+                    <div style="font-size:11px;font-weight:900;color:var(--gold-300);letter-spacing:1px">🌟 RESUMEN ACUMULADO DEL DÍA (HOY)</div>
+                    <div style="font-size:13px;margin-top:4px">
+                        Matutino: <strong>${money(dayTotalMorning)}</strong> (${morningDaySales.length} tks) • Vespertino: <strong>${money(dayTotalAfternoon)}</strong> (${afternoonDaySales.length} tks)
+                    </div>
+                    <div style="font-size:11px;color:#fcebd2;margin-top:2px">
+                        Efectivo Día: <strong>${money(dayCashAll)}</strong> | Tarjetas Día: <strong>${money(dayCardAll)}</strong>
+                    </div>
+                </div>
+                <div style="text-align:right">
+                    <small style="font-size:10px;font-weight:800;color:var(--gold-300);display:block">TOTAL VENDIDO HOY (${dayBranchSales.length} TICKETS):</small>
+                    <strong style="font-size:22px;color:#fff">${money(dayTotalAll)}</strong>
                 </div>
             </div>
 
@@ -2450,9 +2538,11 @@
                 </div>
             </div>
 
-            <button type="button" id="btn-do-cut"
-                style="padding:12px 32px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer">
-                ✂️ Guardar y Cerrar Corte de Caja</button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <button type="button" id="btn-do-cut"
+                    style="padding:12px 32px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer">
+                    ✂️ Guardar y Cerrar Corte de Caja</button>
+            </div>
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
@@ -2515,8 +2605,8 @@
                                 </div>
                                 <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap">
                                     <button type="button" class="btn-print-cut" data-id="${esc(ct.id)}"
-                                        style="padding:5px 12px;background:#fef3c7;color:#854d0e;border:1.5px solid #fcd34d;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:4px">
-                                        🖨️ Imprimir Recibo
+                                        style="padding:7px 14px;background:linear-gradient(135deg,#15803d,#166534);color:#fff;border:none;border-radius:8px;font-size:11.5px;font-weight:900;cursor:pointer;display:inline-flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(21,128,61,0.2)">
+                                        🖨️ Imprimir Ticket de Corte
                                     </button>
                                     ${S.isSU ? `<button type="button" class="btn-del-cut" data-id="${esc(ct.id)}" style="padding:4px 10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:6px;font-size:10px;font-weight:800;cursor:pointer">🗑 Eliminar</button>` : ''}
                                 </div>
