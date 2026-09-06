@@ -1254,7 +1254,7 @@
             { text: "La Fuente Paleteria" },
             { feed: 4 },
             { cut: true }
-        ];
+        );
 
         const rawBytes = buildEscPos(escLines);
         triggerUniversalPrint(ticketHtml, rawBytes);
@@ -3734,9 +3734,16 @@
     /* ── INICIALIZACIÓN ── */
     async function init() {
         if (!initDB()) return;
+        const loginEl = document.getElementById("login-screen");
+        const shellEl = document.getElementById("app-shell");
+
         const {data} = await db.auth.getSession();
         if (data?.session) {
             S.user = data.session.user;
+            if (loginEl) loginEl.style.display = "none";
+            if (shellEl) shellEl.style.display = "flex";
+            document.body.classList.remove("login-active");
+
             await loadBranches();
             await loadProfile();
             await loadProducts();
@@ -3747,7 +3754,12 @@
             if (S.isSU && window.changeView) window.changeView("private-access");
             else if (window.changeView) window.changeView("pos");
         } else {
+            if (loginEl) loginEl.style.display = "flex";
+            if (shellEl) shellEl.style.display = "none";
+            document.body.classList.add("login-active");
+
             await loadBranches();
+            await loadProducts();
             setupRealtime();
             autoReconnectUsbPrinter();
         }
@@ -3755,16 +3767,26 @@
         db.auth.onAuthStateChange(async (event, session) => {
             if (event === "SIGNED_IN" && session) {
                 S.user = session.user;
+                if (loginEl) loginEl.style.display = "none";
+                if (shellEl) shellEl.style.display = "flex";
+                document.body.classList.remove("login-active");
+
                 await loadBranches();
                 await loadProfile();
                 await loadProducts();
                 await loadCurrentShift();
                 initSearch();
                 setupRealtime();
+                if (S.isSU && window.changeView) window.changeView("private-access");
+                else if (window.changeView) window.changeView("pos");
             }
             if (event === "SIGNED_OUT") {
                 S.user = null; S.profile = null;
                 S.cart = []; S.products = [];
+                if (loginEl) loginEl.style.display = "flex";
+                if (shellEl) shellEl.style.display = "none";
+                document.body.classList.add("login-active");
+
                 if (realtimeChannel) {
                     try { db.removeChannel(realtimeChannel); } catch(e) {}
                 }
