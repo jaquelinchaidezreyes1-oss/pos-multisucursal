@@ -545,11 +545,36 @@
         if (e.target.closest("#logout-btn,#btn-logout,[data-logout]")) logout();
     });
 
-    /* ── INVENTARIO ── */
-    function initInv() { S.inv = lr("inv", {}); }
-    function getStock(id) { if (S.inv[id] === undefined) S.inv[id] = STOCK_MAX; return S.inv[id]; }
-    function deductStock(id, qty) { S.inv[id] = Math.max(0, getStock(id) - qty); lw("inv", S.inv); alertInv(); }
-    function addStock(id, qty)    { S.inv[id] = Math.min(STOCK_MAX, getStock(id) + qty); lw("inv", S.inv); alertInv(); }
+    /* ── INVENTARIO CON SOPORTE INDEPENDIENTE POR SUCURSAL ── */
+    function initInv() { 
+        S.inv = lr("inv", {}); 
+        // Respetar stock inicial asignado si aún no se ha guardado localmente en esta sucursal
+        S.products.forEach(p => {
+            if (S.inv[p.product_id] === undefined && p.initial_stock !== undefined && p.initial_stock !== null) {
+                S.inv[p.product_id] = Number(p.initial_stock);
+            }
+        });
+    }
+
+    function getStock(id) { 
+        if (S.inv[id] === undefined) {
+            const prod = S.products.find(p => String(p.product_id) === String(id));
+            S.inv[id] = (prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : STOCK_MAX; 
+        }
+        return S.inv[id]; 
+    }
+
+    function deductStock(id, qty) { 
+        S.inv[id] = Math.max(0, getStock(id) - qty); 
+        lw("inv", S.inv); 
+        alertInv(); 
+    }
+
+    function addStock(id, qty) { 
+        S.inv[id] = Math.min(STOCK_MAX, getStock(id) + qty); 
+        lw("inv", S.inv); 
+        alertInv(); 
+    }
 
     function alertInv() {
         const banner = document.getElementById("inventory-alert-banner");
@@ -652,7 +677,7 @@
             }
         });
 
-        // 2. Fusionar con catálogo remoto de Supabase
+        // 2. Fusionar con catálogo remoto de Supabase respetando stock y sucursales
         remoteProducts.forEach(p => {
             const pid = String(p.product_id || p.id);
             if (!deletedIds.includes(pid)) {
@@ -675,7 +700,8 @@
                     price: Number(p.price || 0),
                     image_url: p.image_url || null,
                     branch_id: p.branch_id || "all",
-                    branch_name: p.branch_name || "General"
+                    branch_name: p.branch_name || "General",
+                    initial_stock: p.stock != null ? Number(p.stock) : undefined
                 });
             }
         });
@@ -692,7 +718,8 @@
                     price: Number(p.price || 0),
                     image_url: p.image_url || null,
                     branch_id: p.branch_id || "all",
-                    branch_name: p.branch_name || "General"
+                    branch_name: p.branch_name || "General",
+                    initial_stock: p.stock != null ? Number(p.stock) : undefined
                 });
             }
         });
@@ -708,6 +735,16 @@
 
     function filtered() {
         let p = S.products;
+        
+        // Filtrar por sucursal actual si el producto está asignado a una sucursal específica
+        if (S.branchId || S.branchName) {
+            p = p.filter(x => {
+                const isGen = !x.branch_name || x.branch_name === "General" || x.branch_id === "all" || !x.branch_id;
+                if (isGen) return true;
+                return matchesBranch({ branch_id: x.branch_id, branch_name: x.branch_name }, { id: S.branchId, name: S.branchName });
+            });
+        }
+
         if (S.cat !== "all") {
             p = p.filter(x => String(x.category || "").toLowerCase() === S.cat);
         }
