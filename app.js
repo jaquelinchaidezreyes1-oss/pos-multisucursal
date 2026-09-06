@@ -2050,6 +2050,7 @@
             created_at: now()
         };
 
+        // 1. GUARDADO LOCAL INSTANTÁNEO
         const localSales = lr("sales", []);
         localSales.unshift(saleRecord);
         lw("sales", localSales);
@@ -2058,73 +2059,75 @@
         allGlobalSales.unshift(saleRecord);
         gw("all_sales", allGlobalSales);
 
-        if (db) {
-            try {
-                const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
-                const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
-                const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
+        // Guardar última venta registrada para impresión física directa sólo cuando se presione el botón
+        lw("last_printed_sale", saleRecord);
+        gw("last_printed_sale", saleRecord);
 
-                const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
-                const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
-                const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
-
-                const observationsObj = {
-                    branch_name: S.branchName,
-                    shift_name: S.shift,
-                    cashier_name: saleRecord.cashier_name,
-                    payment_method: payMethod,
-                    items: saleRecord.items,
-                    local_id: saleRecord.id
-                };
-
-                const insertPayload = {
-                    company_id: cId,
-                    branch_id: bId,
-                    user_id: uId,
-                    sale_number: saleRecord.sale_number,
-                    subtotal: total,
-                    discount: 0,
-                    tax: 0,
-                    total: total,
-                    status: "COMPLETED",
-                    observations: JSON.stringify(observationsObj),
-                    created_at: saleRecord.created_at
-                };
-
-                if (uuid(S.currentShift?.id)) {
-                    insertPayload.shift_id = S.currentShift.id;
-                }
-
-                const { data, error } = await db.from("sales").insert(insertPayload).select();
-
-                if (error) {
-                    console.error("Error al insertar venta en Supabase:", error);
-                } else {
-                    console.log("✓ Venta sincronizada exitosamente en Supabase:", data);
-                    const syncedIds = new Set(gr("synced_sales_ids", []));
-                    syncedIds.add(String(saleRecord.id));
-                    if (data && data[0]?.id) syncedIds.add(String(data[0].id));
-                    gw("synced_sales_ids", Array.from(syncedIds));
-                }
-            } catch(e) {
-                console.error("Excepción al guardar venta en Supabase:", e);
-            }
-        }
-
-        // Ejecutar sincronización de fondo por si hay pendientes
-        syncPendingSalesToSupabase();
-
-        S.cart.forEach(i => deductStock(i.product_id, i.quantity, i.product_name));
+        // 2. ACTUALIZACIÓN INMEDIATA DE LA UI (0ms de retraso para la encargada)
+        const cartItemsSnapshot = [...S.cart];
+        cartItemsSnapshot.forEach(i => deductStock(i.product_id, i.quantity, i.product_name));
         S.cart = [];
         renderCart();
         renderPOS(filtered());
         alertInv();
         const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
-        toast(`✓ Venta de ${money(total)} cobrada en ${payLabel}. Ticket #${saleRecord.sale_number}`, "success", 4000);
+        toast(`✓ Venta de ${money(total)} cobrada en ${payLabel}. Ticket #${saleRecord.sale_number}`, "success", 3000);
 
-        // Guardar última venta registrada para impresión física directa sólo cuando se presione el botón
-        lw("last_printed_sale", saleRecord);
-        gw("last_printed_sale", saleRecord);
+        // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO (Fire-and-forget sin bloquear la pantalla)
+        (async () => {
+            if (db) {
+                try {
+                    const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
+                    const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
+                    const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
+
+                    const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
+                    const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
+                    const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
+
+                    const observationsObj = {
+                        branch_name: S.branchName,
+                        shift_name: S.shift,
+                        cashier_name: saleRecord.cashier_name,
+                        payment_method: payMethod,
+                        items: saleRecord.items,
+                        local_id: saleRecord.id
+                    };
+
+                    const insertPayload = {
+                        company_id: cId,
+                        branch_id: bId,
+                        user_id: uId,
+                        sale_number: saleRecord.sale_number,
+                        subtotal: total,
+                        discount: 0,
+                        tax: 0,
+                        total: total,
+                        status: "COMPLETED",
+                        observations: JSON.stringify(observationsObj),
+                        created_at: saleRecord.created_at
+                    };
+
+                    if (uuid(S.currentShift?.id)) {
+                        insertPayload.shift_id = S.currentShift.id;
+                    }
+
+                    const { data, error } = await db.from("sales").insert(insertPayload).select();
+
+                    if (!error && data && data.length) {
+                        const syncedIds = new Set(gr("synced_sales_ids", []));
+                        syncedIds.add(String(saleRecord.id));
+                        if (data[0]?.id) syncedIds.add(String(data[0].id));
+                        gw("synced_sales_ids", Array.from(syncedIds));
+                    } else if (error) {
+                        console.warn("Venta pendiente de sincronizar en cola:", error);
+                    }
+                } catch(e) {
+                    console.warn("Red lenta/offline, guardado en cola para reintentar:", e);
+                }
+            }
+            syncPendingSalesToSupabase();
+        })();
     }
 
     /* ── MIS VENTAS (FILTRO POR CALENDARIO, TURNOS Y ACUMULADOR PARA CAJA) ── */
@@ -3319,7 +3322,8 @@
                 const {data, error} = await db.from("sales")
                     .select("id,company_id,branch_id,shift_id,user_id,sale_number,total,status,observations,created_at")
                     .neq("status","CANCELLED")
-                    .order("created_at", {ascending:false});
+                    .order("created_at", {ascending:false})
+                    .limit(5000);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
@@ -3562,6 +3566,12 @@
         const history = gr("accounting_history", []);
         const allSales = await getConsolidatedSalesForChain();
 
+        const allHistoricalActive = allSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
+        const grandHistoricalTotal = allHistoricalActive.reduce((acc,s) => acc + Number(s.total||0), 0);
+        const grandHistoricalCash = allHistoricalActive.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s)=>a+Number(s.total||0), 0);
+        const grandHistoricalCard = allHistoricalActive.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0), 0);
+        const grandHistoricalTickets = allHistoricalActive.length;
+
         const datesMap = new Map();
         allSales.forEach(s => {
             const d = toDateKey(s.created_at);
@@ -3595,6 +3605,35 @@
         const vesChainTotal = vesChainSales.reduce((a,s)=>a+Number(s.total||0), 0);
 
         c.innerHTML = `
+        <!-- RESUMEN HISTÓRICO GLOBAL DE LA CADENA (DESDE EL DÍA 1) -->
+        <div class="dashboard-card" style="background:linear-gradient(135deg,#1f0307,#4a0c14);color:#fff;border:2px solid var(--gold-400);padding:22px;border-radius:18px;margin-bottom:20px;box-shadow:var(--shadow-card)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+                <div>
+                    <span style="color:#fef08a;font-size:11px;font-weight:900;letter-spacing:1.5px">👑 CONTROL DIRECTIVO SUPERUSUARIO</span>
+                    <h2 style="margin:4px 0 0;font-size:22px;color:#fff;font-weight:900">Acumulado Histórico de la Cadena Completa</h2>
+                </div>
+                <div style="text-align:right">
+                    <span style="font-size:11px;color:#fde68a;font-weight:800">Total Histórico en Sistema</span>
+                    <div style="font-size:32px;font-weight:900;color:#ffffff">${money(grandHistoricalTotal)}</div>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding-top:10px;border-top:1px solid rgba(254,240,138,0.2)">
+                <div style="background:rgba(255,255,255,0.08);padding:10px 14px;border-radius:10px">
+                    <small style="color:#fde68a;font-size:10px;font-weight:800;display:block">TICKETS TOTALES</small>
+                    <strong style="font-size:18px;color:#fff">${grandHistoricalTickets}</strong>
+                </div>
+                <div style="background:rgba(22,101,52,0.25);padding:10px 14px;border-radius:10px;border:1px solid rgba(134,239,172,0.3)">
+                    <small style="color:#86efac;font-size:10px;font-weight:800;display:block">💵 EFECTIVO HISTÓRICO</small>
+                    <strong style="font-size:18px;color:#86efac">${money(grandHistoricalCash)}</strong>
+                </div>
+                <div style="background:rgba(30,64,175,0.25);padding:10px 14px;border-radius:10px;border:1px solid rgba(147,197,253,0.3)">
+                    <small style="color:#93c5fd;font-size:10px;font-weight:800;display:block">💳 TARJETA HISTÓRICA</small>
+                    <strong style="font-size:18px;color:#93c5fd">${money(grandHistoricalCard)}</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- REPORTE DETALLADO POR FECHA DE JORNADA -->
         <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
                 <div>
@@ -3614,7 +3653,7 @@
 
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px">
                 <div style="background:#fff;padding:16px;border-radius:14px;border:1.5px solid rgba(188,132,10,.35);box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);letter-spacing:1px">VENTA TOTAL DEL DÍA</small>
+                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);letter-spacing:1px">VENTA DEL DÍA (${fd(selectedDate)})</small>
                     <div style="font-size:26px;font-weight:900;color:var(--wine-900);margin:4px 0">${money(totalSelectedDate)}</div>
                     <small style="color:var(--emerald);font-weight:800">${activeUnarchivedSales.length} tickets activos</small>
                 </div>
