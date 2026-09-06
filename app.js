@@ -2016,10 +2016,12 @@
     }
 
     /* ── MIS VENTAS (FILTRO POR CALENDARIO, TURNOS Y ACUMULADOR PARA CAJA) ── */
-    async function loadSales() {
+    async function loadSales(silent = false) {
         const c = $("#sales-container");
         if (!c || !S.branchId) return;
-        c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
+        if (!silent && !c.children.length) {
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
+        }
 
         const IGNORED_TEST_SALES = new Set([
             "4bd1dff9-876c-420a-abea-2bf038a98b15",
@@ -2341,10 +2343,12 @@
     }
 
     /* ── CORTES DE CAJA (ALERTA ROJA POR DESCUADRE & FILTRO DOBLE) ── */
-    async function loadCuts() {
+    async function loadCuts(silent = false) {
         const c = $("#cuts-container");
         if (!c || !S.branchId) return;
-        c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div></div>`;
+        if (!silent && !c.children.length) {
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div></div>`;
+        }
 
         const cancelled = lr("cancelled_reasons", {});
         const todayStr = toDateKey();
@@ -3032,10 +3036,12 @@
     }
 
     /* ── DAÑOS & AVISOS DIRECTIVOS ── */
-    async function loadDamageReports() {
+    async function loadDamageReports(silent = false) {
         const c = document.getElementById("damage-reports-container");
         if (!c) return;
-        c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div></div>`;
+        if (!silent && !c.children.length) {
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div></div>`;
+        }
 
         let remoteReports = [];
         if (db) {
@@ -3282,7 +3288,7 @@
             if (window.changeView) window.changeView("pos");
             return;
         }
-        if (!silent) {
+        if (!silent && !c.children.length) {
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Sincronizando las 6 sucursales en tiempo real con Contabilidad…</p></div>`;
         }
 
@@ -3442,7 +3448,7 @@
             window.changeView("pos");
             return;
         }
-        if (!silent) {
+        if (!silent && !c.children.length) {
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando balances y contabilidad sincronizada…</p></div>`;
         }
 
@@ -3463,21 +3469,12 @@
             datesMap.set(todayStr, []);
         }
 
-        // Si no hay filtro manual explícito o si la fecha filtrada es de un día anterior, actualizar a la fecha de hoy
         if (!S.accHistoryFilterDate) {
             S.accHistoryFilterDate = todayStr;
         }
 
         const selectedDate = S.accHistoryFilterDate || todayStr;
-
-        const dateSales = (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
-        
-        // Si la fecha actual ya fue cerrada/archivada, los valores en vivo de contabilidad se muestran restablecidos a $0.00
-        const closedDates = gr("closed_business_days", []);
-        const isArchivedSelectedDate = closedDates.includes(selectedDate);
-        const activeUnarchivedSales = isArchivedSelectedDate 
-            ? dateSales.filter(s => !s.is_archived_day) 
-            : dateSales;
+        const activeUnarchivedSales = (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
 
         const totalSelectedDate = activeUnarchivedSales.reduce((acc,s) => acc + Number(s.total||0), 0);
         const cashSalesChain = activeUnarchivedSales.filter(s => (s.payment_method || "cash") === "cash");
@@ -3770,11 +3767,11 @@
                         }
                     }
 
-                    // Actualizar automáticamente todas las pantallas activas
+                    // Actualizar automáticamente todas las pantallas activas sin parpadeos
                     if (S.view === "private-access" && S.isSU) await loadPrivateAccess(true);
                     else if (S.view === "accounting" && S.isSU) await loadAccounting(true);
-                    else if (S.view === "sales") await loadSales();
-                    else if (S.view === "cuts") await loadCuts();
+                    else if (S.view === "sales") await loadSales(true);
+                    else if (S.view === "cuts") await loadCuts(true);
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "cash_cuts" }, async payload => {
                     console.log("✂️ [Realtime] Evento de cortes:", payload.eventType, payload);
@@ -3788,7 +3785,7 @@
                             toast(`✂️ Nuevo Corte de Caja: ${bName} (${shiftN}) — Total: ${money(n.total_sales)}`, "info", 5000);
                         }
                     }
-                    if (S.view === "cuts") await loadCuts();
+                    if (S.view === "cuts") await loadCuts(true);
                     else if (S.view === "private-access" && S.isSU) await loadPrivateAccess(true);
                     else if (S.view === "accounting" && S.isSU) await loadAccounting(true);
                 })
@@ -3809,16 +3806,16 @@
             console.warn("Realtime error:", e);
         }
 
-        // Heartbeat de auto-sincronización periódica cada 4 segundos
+        // Heartbeat de auto-sincronización periódica suave y sin parpadeos
         if (window._syncTimer) clearInterval(window._syncTimer);
         window._syncTimer = setInterval(async () => {
             if (S.user) {
                 if (S.view === "private-access" && S.isSU) await loadPrivateAccess(true);
                 else if (S.view === "accounting" && S.isSU) await loadAccounting(true);
-                else if (S.view === "sales") await loadSales();
-                else if (S.view === "cuts") await loadCuts();
+                else if (S.view === "sales") await loadSales(true);
+                else if (S.view === "cuts") await loadCuts(true);
             }
-        }, 4000);
+        }, 5000);
     }
 
     /* ── INICIALIZACIÓN ── */
