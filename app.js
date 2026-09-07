@@ -46,7 +46,7 @@
         {id:"dulces",     label:"Dulces",       e:"🍬"}
     ];
 
-    const STOCK_MAX = 100;
+    const STOCK_MAX = 500;
     const STOCK_LOW = 10;
     let db = null;
 
@@ -578,7 +578,7 @@
         if (S.inv[id] === undefined) {
             const prod = S.products.find(p => String(p.product_id) === String(id));
             const maxS = getMaxStock(prod);
-            S.inv[id] = (prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : Math.min(100, maxS); 
+            S.inv[id] = (prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : Math.min(500, maxS); 
         }
         return S.inv[id]; 
     }
@@ -975,6 +975,13 @@
         const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
         toast("✓ Venta de " + money(total) + " cobrada en " + payLabel + ". Ticket #" + saleRecord.sale_number, "success", 3000);
 
+        // 3. IMPRESIÓN OBLIGATORIA E INMEDIATA DEL TICKET (USB, BLUETOOTH O NAVEGADOR)
+        try {
+            printSaleReceipt(saleRecord);
+        } catch(e) {
+            console.warn("Auto-impresión de ticket:", e);
+        }
+
         // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO
         (async () => {
             if (db) {
@@ -1032,9 +1039,11 @@
         })();
     }
 
-    /* ── MOTOR UNIVERSAL DE IMPRESIÓN DE TICKETS & CORTES (58MM / 80MM) ── */
+    /* ── MOTOR UNIVERSAL DE IMPRESIÓN DE TICKETS & CORTES (USB, BLUETOOTH & NAVEGADOR) ── */
     let directUsbDevice = null;
     let directUsbEndpoint = 1;
+    let directBtDevice = null;
+    let directBtServer = null;
     let directBtChar = null;
 
     function getPrinterConfig() {
@@ -1043,9 +1052,10 @@
             if (raw) return JSON.parse(raw);
         } catch(e) {}
         return {
-            model: "EC Line (58mm / 80mm)",
+            model: "EC Line / POS-58 (Térmica)",
             paperWidth: "58mm",
-            autoPrint: true
+            autoPrint: true,
+            connectionType: "browser"
         };
     }
 
@@ -1053,6 +1063,103 @@
         try {
             localStorage.setItem("lf_printer_config", JSON.stringify(cfg));
         } catch(e) {}
+    }
+
+    function getPrinterConnectionStatus() {
+        if (directUsbDevice && directUsbDevice.opened) return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado por Cable USB" };
+        if (directBtChar && directBtServer && directBtServer.connected) return { type: "bt", name: directBtDevice?.name || "Impresora Bluetooth", label: "🔵 Conectado por Bluetooth" };
+        return { type: "browser", name: "Impresora del Sistema", label: "🟡 Modo Impresión Universal (Sistema)" };
+    }
+
+    // Generador de comandos ESC/POS binarios para impresión física directa por USB / Bluetooth
+    function buildEscPosTicket(s) {
+        const encoder = new TextEncoder();
+        const parts = [];
+        const isCard = s.payment_method === "card";
+        const width = 32; // 32 columnas estándar para 58mm
+
+        const initCmd = new Uint8Array([0x1B, 0x40]); // ESC @ Inicializar
+        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]); // ESC a 1 Centrado
+        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]); // ESC a 0 Izquierda
+        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]); // ESC E 1 Negrita on
+        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]); // ESC E 0 Negrita off
+        const cutCmd = new Uint8Array([0x1D, 0x56, 0x41, 0x10]); // GS V A 16 Corte parcial
+        const feedCmd = new Uint8Array([0x1B, 0x64, 0x03]); // ESC d 3 Avanzar 3 líneas
+
+        parts.push(initCmd);
+        parts.push(centerCmd, boldOn, encoder.encode("NEVERIA LA FUENTE\n"), boldOff);
+        parts.push(encoder.encode("-- DESDE 1962 --\n"));
+        parts.push(encoder.encode("PALETERIA Y NEVERIA ARTESANAL\n"));
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(leftCmd);
+        parts.push(encoder.encode("SUCURSAL: " + (s.branch_name || S.branchName) + "\n"));
+        parts.push(encoder.encode("TURNO:    " + (s.shift_name || S.shift) + "\n"));
+        parts.push(encoder.encode("FECHA:    " + fdt(s.created_at) + "\n"));
+        parts.push(encoder.encode("ATENDIO:  " + (s.cashier_name || "Encargada") + "\n"));
+        parts.push(encoder.encode("TICKET:   #" + (s.sale_number || "") + "\n"));
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(boldOn, encoder.encode("CANT  DESCRIPCION         TOTAL\n"), boldOff);
+        parts.push(encoder.encode("--------------------------------\n"));
+
+        (s.items || []).forEach(i => {
+            const qtyStr = (i.quantity + "x ").padEnd(4, " ");
+            const subtotalStr = money(i.subtotal != null ? i.subtotal : (i.price * i.quantity)).padStart(9, " ");
+            const maxDescLen = width - 4 - 9;
+            const descStr = (i.product_name || "Producto").substring(0, maxDescLen).padEnd(maxDescLen, " ");
+            parts.push(encoder.encode(qtyStr + descStr + subtotalStr + "\n"));
+        });
+
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(boldOn, encoder.encode("TOTAL: " + money(s.total).padStart(width - 7, " ") + "\n"), boldOff);
+        parts.push(encoder.encode("PAGO:  " + (isCard ? "TARJETA" : "EFECTIVO").padStart(width - 7, " ") + "\n"));
+        parts.push(encoder.encode("================================\n"));
+        parts.push(centerCmd, boldOn, encoder.encode("¡GRACIAS POR SU COMPRA!\n"), boldOff);
+        parts.push(encoder.encode("Conserve este ticket\n\n\n"));
+        parts.push(cutCmd, feedCmd);
+
+        // Concatenar todos los Uint8Array
+        const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
+        const combined = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const p of parts) {
+            combined.set(p, offset);
+            offset += p.length;
+        }
+        return combined;
+    }
+
+    async function writeEscPosBytes(bytes) {
+        // 1. Intentar USB directo
+        if (directUsbDevice && directUsbDevice.opened) {
+            try {
+                await directUsbDevice.transferOut(directUsbEndpoint || 1, bytes);
+                console.log("✓ Impresión enviada directamente por USB");
+                return true;
+            } catch(e) {
+                console.warn("Error escribiendo en USB:", e);
+            }
+        }
+
+        // 2. Intentar Bluetooth directo
+        if (directBtChar && directBtServer && directBtServer.connected) {
+            try {
+                const chunkSize = 512;
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                    const chunk = bytes.slice(i, i + chunkSize);
+                    if (directBtChar.writeValueWithoutResponse) {
+                        await directBtChar.writeValueWithoutResponse(chunk);
+                    } else {
+                        await directBtChar.writeValue(chunk);
+                    }
+                }
+                console.log("✓ Impresión enviada directamente por Bluetooth");
+                return true;
+            } catch(e) {
+                console.warn("Error escribiendo en Bluetooth:", e);
+            }
+        }
+
+        return false;
     }
 
     function triggerUniversalPrint(htmlContent) {
@@ -1066,10 +1173,11 @@
 
     async function connectUsbDirect() {
         if (!navigator.usb) {
-            toast("Tu navegador no soporta WebUSB. Usa Chrome en Android o Windows.", "warn");
+            toast("WebUSB no está disponible en este navegador. Usa Chrome o Edge en Windows/Android.", "warn", 5000);
             return false;
         }
         try {
+            toast("🔌 Selecciona tu impresora USB en la ventana emergente…", "info", 4000);
             const device = await navigator.usb.requestDevice({ filters: [] });
             await device.open();
             if (device.configuration === null) await device.selectConfiguration(1);
@@ -1089,16 +1197,74 @@
             }
             directUsbDevice = device;
             directUsbEndpoint = epNum;
-            toast("✓ Conectado por USB a " + (device.productName || "Impresora Térmica"), "success");
+            const cfg = getPrinterConfig();
+            cfg.connectionType = "usb";
+            savePrinterConfig(cfg);
+            toast("✓ Conectado exitosamente por Cable USB a " + (device.productName || "Impresora Térmica"), "success", 5000);
             return true;
         } catch(err) {
-            console.warn("USB connect:", err);
+            console.warn("USB connect error:", err);
+            if (err.name !== "NotFoundError") toast("Error al vincular USB: " + err.message, "error", 4000);
             return false;
         }
     }
 
-    function printSaleReceipt(s) {
+    async function connectBtDirect() {
+        if (!navigator.bluetooth) {
+            toast("Bluetooth Web no disponible. Usa Google Chrome en Android o Windows con Bluetooth.", "warn", 5000);
+            return false;
+        }
+        try {
+            toast("📶 Buscando impresoras Bluetooth cercanas…", "info", 4000);
+            const device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [
+                    "000018f0-0000-1000-8000-00805f9b34fb",
+                    "0000e0ff-0000-1000-8000-00805f9b34fb",
+                    "49535343-fe7d-41aa-8d9b-06ec680ca597",
+                    "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
+                ]
+            });
+            const server = await device.gatt.connect();
+            directBtDevice = device;
+            directBtServer = server;
+
+            // Buscar característica escribible
+            const services = await server.getPrimaryServices();
+            for (const service of services) {
+                const chars = await service.getCharacteristics();
+                for (const char of chars) {
+                    if (char.properties.write || char.properties.writeWithoutResponse) {
+                        directBtChar = char;
+                        break;
+                    }
+                }
+                if (directBtChar) break;
+            }
+
+            const cfg = getPrinterConfig();
+            cfg.connectionType = "bluetooth";
+            savePrinterConfig(cfg);
+            toast("✓ Conectado exitosamente por Bluetooth a " + (device.name || "Impresora Térmica"), "success", 5000);
+            return true;
+        } catch(err) {
+            console.warn("Bluetooth connect error:", err);
+            if (err.name !== "NotFoundError") toast("Error al vincular Bluetooth: " + err.message, "error", 4000);
+            return false;
+        }
+    }
+
+    async function printSaleReceipt(s) {
         if (!s) return;
+        
+        // 1. Intentar envío directo ESC/POS por cable USB o Bluetooth
+        if ((directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
+            const raw = buildEscPosTicket(s);
+            const ok = await writeEscPosBytes(raw);
+            if (ok) return;
+        }
+
+        // 2. Fallback Universal obligatorio (ventana emergente con formato exacto y auto-print)
         const cfg = getPrinterConfig();
         const pWidth = cfg.paperWidth || "58mm";
         const isCard = s.payment_method === "card";
@@ -1132,7 +1298,7 @@
         }
     </style>
 </head>
-<body onload="window.print(); setTimeout(function(){ window.close(); }, 500);">
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 600);">
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
     <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
     <div class="center" style="font-size:10px;">PALETERIA Y NEVERIA ARTESANAL</div>
@@ -1215,7 +1381,7 @@
         }
     </style>
 </head>
-<body onload="window.print(); setTimeout(function(){ window.close(); }, 500);">
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 600);">
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
     <div class="center bold" style="font-size:12px;">CORTE DE CAJA OFICIAL</div>
     <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
@@ -1281,6 +1447,7 @@
     function printTestReceipt(customCfg = null) {
         const cfg = customCfg || getPrinterConfig();
         const pWidth = cfg.paperWidth || "58mm";
+        const conn = getPrinterConnectionStatus();
 
         const testHtml = `
 <!DOCTYPE html>
@@ -1310,11 +1477,12 @@
         }
     </style>
 </head>
-<body onload="window.print(); setTimeout(function(){ window.close(); }, 500);">
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 600);">
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
     <div class="center" style="font-size:10px;">PRUEBA DE IMPRESORA TÉRMICA</div>
     <div class="divider"></div>
     <div><strong>MODELO:</strong> ${esc(cfg.model)}</div>
+    <div><strong>CONEXIÓN:</strong> ${esc(conn.label)}</div>
     <div><strong>ANCHO DE ROLLO:</strong> ${esc(pWidth)}</div>
     <div><strong>FECHA Y HORA:</strong> ${fdt(now())}</div>
     <div><strong>SUCURSAL:</strong> ${esc(S.branchName)}</div>
@@ -1323,7 +1491,7 @@
     <div class="bold center" style="font-size:12px; margin:4px 0;">¡CALIBRACIÓN CORRECTA!</div>
     <div class="center" style="font-size:10px;">
         Esta impresora está lista para imprimir:<br>
-        ✓ Tickets de Venta a Clientes<br>
+        ✓ Tickets de Venta a Clientes (Obligatorio)<br>
         ✓ Cortes de Caja por Turno<br>
         ✓ Reportes Diarios Consolidados<br>
         ✓ Aperturas de Turno con Firma
@@ -1341,33 +1509,58 @@
 
     function openPrinterSetupModal() {
         const curCfg = getPrinterConfig();
+        const conn = getPrinterConnectionStatus();
         const overlay = document.createElement("div");
         overlay.id = "printer-modal-overlay";
         overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px);";
         overlay.innerHTML = `
-            <div style="background:#fffef8;border:2px solid var(--gold-500);border-radius:22px;padding:26px 22px;max-width:480px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.45);color:#1a0205">
+            <div style="background:#fffef8;border:2px solid var(--gold-500);border-radius:22px;padding:26px 22px;max-width:520px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.45);color:#1a0205;max-height:90vh;overflow-y:auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1.5px solid rgba(188,132,10,.3);padding-bottom:10px">
                     <div style="display:flex;align-items:center;gap:8px">
-                        <span style="font-size:26px">🖨️</span>
+                        <span style="font-size:28px">🖨️</span>
                         <div>
-                            <h3 style="margin:0;color:var(--wine-950);font-size:17px;font-weight:900">Configurar Impresora Térmica</h3>
+                            <h3 style="margin:0;color:var(--wine-950);font-size:18px;font-weight:900">Vincular Impresora Térmica</h3>
                             <small style="color:var(--text-muted);font-weight:700">Mini impresora de tickets para sucursales</small>
                         </div>
                     </div>
-                    <button id="p-close-btn" type="button" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--wine-900);font-weight:900">✕</button>
+                    <button id="p-close-btn" type="button" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--wine-900);font-weight:900">✕</button>
+                </div>
+
+                <!-- ESTADO ACTUAL DE CONEXIÓN -->
+                <div style="background:#fef3c7;border:1.5px solid #fcd34d;padding:12px;border-radius:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <div style="font-size:11px;color:#92400e;font-weight:900">ESTADO DE CONEXIÓN:</div>
+                        <strong style="font-size:13px;color:#78350f" id="printer-status-text">${conn.label}</strong>
+                    </div>
+                    <span style="font-size:20px">${conn.type === 'usb' ? '🔌' : conn.type === 'bt' ? '📶' : '🖨️'}</span>
+                </div>
+
+                <!-- OPCIONES DE VINCULACIÓN DIRECTA -->
+                <div style="margin-bottom:18px">
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:6px">MÉTODOS DE VINCULACIÓN DIRECTA:</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                        <button type="button" id="btn-pair-usb"
+                            style="padding:12px 10px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af;border:1.5px solid #93c5fd;border-radius:12px;font-weight:900;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 2px 6px rgba(30,64,175,0.15)">
+                            <span>🔌</span>
+                            <span>Vincular Cable USB</span>
+                        </button>
+                        <button type="button" id="btn-pair-bt"
+                            style="padding:12px 10px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);color:#15803d;border:1.5px solid #86efac;border-radius:12px;font-weight:900;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 2px 6px rgba(21,128,61,0.15)">
+                            <span>📶</span>
+                            <span>Vincular Bluetooth</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px">
                     <div>
-                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">MODELO / MARCA DE IMPRESORA:</label>
+                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">MODELO / MARCA:</label>
                         <select id="p-model" style="width:100%;padding:10px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none">
-                            <option value="EC Line (58mm / 80mm)"${curCfg.model.includes("EC Line")?' selected':''}>🖨️ EC Line (Térmica USB / Bluetooth)</option>
-                            <option value="Ofichido (58mm / 80mm)"${curCfg.model.includes("Ofichido")?' selected':''}>🖨️ Ofichido POS Thermal</option>
-                            <option value="Caysn Thermal (POS-58)"${curCfg.model.includes("Caysn")?' selected':''}>🖨️ Caysn Thermal Printer</option>
-                            <option value="Xprinter (XP-58 / XP-80)"${curCfg.model.includes("Xprinter")?' selected':''}>🖨️ Xprinter / Gprinter</option>
-                            <option value="Impresora POS-58 Genérica"${curCfg.model.includes("POS-58")?' selected':''}>🖨️ Impresora POS-58 (Rollo 58mm)</option>
-                            <option value="Impresora POS-80 Genérica"${curCfg.model.includes("POS-80")?' selected':''}>🖨️ Impresora POS-80 (Rollo 80mm)</option>
-                            <option value="Epson TM-T20 / TM-T88"${curCfg.model.includes("Epson")?' selected':''}>🖨️ Epson TM-T20 / TM-T88 (ESC/POS)</option>
+                            <option value="EC Line / POS-58 (58mm)"${curCfg.model.includes("EC Line")?' selected':''}>🖨️ EC Line (Térmica USB / Bluetooth / 58mm)</option>
+                            <option value="Ofichido / Ghia (58mm / 80mm)"${curCfg.model.includes("Ofichido")||curCfg.model.includes("Ghia")?' selected':''}>🖨️ Ofichido / Ghia POS Thermal</option>
+                            <option value="Caysn / Xprinter (POS-58)"${curCfg.model.includes("Caysn")||curCfg.model.includes("Xprinter")?' selected':''}>🖨️ Caysn / Xprinter POS-58</option>
+                            <option value="Impresora Térmica Genérica POS-58"${curCfg.model.includes("Genérica")?' selected':''}>🖨️ Impresora POS-58 Genérica (Rollo 58mm)</option>
+                            <option value="Epson TM-T20 / TM-T88 (80mm)"${curCfg.model.includes("Epson")?' selected':''}>🖨️ Epson TM-T20 / TM-T88 (ESC/POS 80mm)</option>
                         </select>
                     </div>
 
@@ -1385,8 +1578,8 @@
                         </div>
                     </div>
 
-                    <div style="background:#fef3c7;border:1px solid #fcd34d;padding:10px 12px;border-radius:10px;font-size:11px;color:#92400e;line-height:1.4">
-                        💡 <strong>Consejo de instalación rápida:</strong> En el diálogo de impresión de Windows o Android, selecciona tu impresora térmica como predeterminada y en <em>"Márgenes"</em> elige <em>"Ninguno"</em>.
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;padding:10px 12px;border-radius:10px;font-size:11.5px;color:#1e40af;line-height:1.4">
+                        ⚡ <strong>Impresión Automática Activa:</strong> Todos los tickets de venta se enviarán automáticamente a la impresora al cobrar.
                     </div>
                 </div>
 
@@ -1406,6 +1599,22 @@
 
         overlay.querySelector("#p-close-btn").onclick = () => overlay.remove();
 
+        overlay.querySelector("#btn-pair-usb").onclick = async () => {
+            const ok = await connectUsbDirect();
+            if (ok) {
+                const newConn = getPrinterConnectionStatus();
+                overlay.querySelector("#printer-status-text").textContent = newConn.label;
+            }
+        };
+
+        overlay.querySelector("#btn-pair-bt").onclick = async () => {
+            const ok = await connectBtDirect();
+            if (ok) {
+                const newConn = getPrinterConnectionStatus();
+                overlay.querySelector("#printer-status-text").textContent = newConn.label;
+            }
+        };
+
         overlay.querySelector("#p-test-btn").onclick = () => {
             const selectedWidth = overlay.querySelector("input[name='p-width']:checked")?.value || "58mm";
             const selectedModel = overlay.querySelector("#p-model")?.value || "EC Line";
@@ -1418,23 +1627,12 @@
             const selectedModel = overlay.querySelector("#p-model")?.value || "EC Line";
             savePrinterConfig({ model: selectedModel, paperWidth: selectedWidth, autoPrint: true });
             overlay.remove();
-            toast("✓ Impresora configurada correctamente.", "success", 4000);
+            toast("✓ Ajustes de impresora guardados.", "success", 4000);
         };
     }
 
     async function directPrintTicketAction() {
         const lastSale = lr("last_printed_sale", null) || lr("sales", [])[0];
-        if (!directUsbDevice && !directBtChar) {
-            if (navigator.usb) {
-                toast("🔌 Conectando con impresora Ghia por USB…", "info", 3000);
-                const ok = await connectUsbDirect();
-                if (ok) {
-                    if (lastSale) printSaleReceipt(lastSale);
-                    else printTestReceipt();
-                    return;
-                }
-            }
-        }
         if (lastSale) {
             printSaleReceipt(lastSale);
             toast("🖨️ Imprimiendo Ticket #" + (lastSale.sale_number || '') + " en físico…", "info", 3000);
@@ -1468,7 +1666,7 @@
                 }
                 directUsbDevice = device;
                 directUsbEndpoint = epNum;
-                console.log("✓ Impresora Ghia USB reconectada automáticamente:", device.productName);
+                console.log("✓ Impresora USB reconectada automáticamente:", device.productName);
             }
         } catch(err) {
             console.warn("Auto-reconnect USB:", err);
@@ -1484,7 +1682,9 @@
         }
     });
 
-    /* ── ADMINISTRACIÓN DE CATÁLOGO & BORRADO ── */
+    /* ── ADMINISTRACIÓN DE CATÁLOGO, PRODUCTOS COMPUESTOS & GESTIÓN DE INSUMOS ── */
+    let editingProductId = null;
+
     async function loadProductsAdmin() {
         const c = document.getElementById("products-admin-container");
         if (!c) return;
@@ -1514,61 +1714,122 @@
             </div>` : '';
 
         // Lista de insumos/desechables disponibles para ser componentes
-        const availableSupplies = S.products.filter(p => p.is_supply || p.category === "desechables");
+        const availableSupplies = S.products.filter(p => p.is_supply || p.category === "desechables").sort((a,b) => (a.product_name || "").localeCompare(b.product_name || ""));
 
         c.innerHTML = `
-        <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
-            <h3 style="color:var(--wine-900);margin:0 0 16px;font-weight:900">➕ Agregar Nuevo Producto / Compuesto / Insumo</h3>
+        <!-- FORMULARIO: AGREGAR O EDITAR PRODUCTO / COMPUESTO -->
+        <div class="dashboard-card" id="form-product-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card);border:2px solid var(--gold-400)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+                <h3 id="form-product-title" style="color:var(--wine-900);margin:0;font-weight:900;font-size:18px">➕ Agregar Nuevo Producto / Compuesto / Insumo</h3>
+                <button type="button" id="btn-cancel-edit" style="display:none;padding:7px 14px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer">
+                    ✕ Cancelar Edición
+                </button>
+            </div>
+
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:16px">
-                <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">NOMBRE DEL PRODUCTO *</label>
+                <div>
+                    <label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">NOMBRE DEL PRODUCTO *</label>
                     <input id="np-name" type="text" placeholder="Ej: Nieve en Vaso #12"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
-                <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">CÓDIGO / CLAVE</label>
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box;font-weight:700">
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">CÓDIGO / CLAVE</label>
                     <input id="np-code" type="text" placeholder="NV-12"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
-                <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">CATEGORÍA EXACTA *</label>
-                    <select id="np-cat" style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box">${catOpts}</select></div>
-                <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">PRECIO ($) *</label>
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box">
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">CATEGORÍA EXACTA *</label>
+                    <select id="np-cat" style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box;font-weight:700">${catOpts}</select>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">PRECIO ($) *</label>
                     <input id="np-price" type="number" step="0.5" min="0" placeholder="Ej: 35.00"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
-                <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">PIEZAS POR PAQUETE (Desechables)</label>
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box;font-weight:800">
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">PIEZAS POR PAQUETE (Desechables)</label>
                     <input id="np-pack-units" type="number" step="1" min="1" placeholder="Ej: 50" value="50"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box">
+                </div>
                 ${branchSelectHtml}
             </div>
 
             <!-- SECCIÓN PRODUCTO COMPUESTO / RECETA -->
-            <div style="background:#fffcf0;border:1.5px solid #f2e6b5;border-radius:12px;padding:16px;margin-bottom:16px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-                    <input type="checkbox" id="np-is-composite" style="width:18px;height:18px;cursor:pointer">
-                    <label for="np-is-composite" style="font-size:13px;font-weight:900;color:var(--wine-900);cursor:pointer">
-                        📦 ¿Es Producto Compuesto? (Descontar automáticamente vasos, cucharas, charolas o insumos al cobrar en POS)
-                    </label>
+            <div style="background:#fffcf0;border:1.5px solid #f2e6b5;border-radius:14px;padding:16px;margin-bottom:16px">
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <input type="checkbox" id="np-is-composite" style="width:19px;height:19px;cursor:pointer">
+                        <label for="np-is-composite" style="font-size:13.5px;font-weight:900;color:var(--wine-900);cursor:pointer">
+                            📦 ¿Es Producto Compuesto? (Descontar automáticamente vasos, cucharas, charolas o insumos al cobrar en POS)
+                        </label>
+                    </div>
+                    <button type="button" id="btn-quick-new-supply" style="padding:6px 12px;background:#fef3c7;color:#92400e;border:1.5px solid #fcd34d;border-radius:8px;font-size:11.5px;font-weight:900;cursor:pointer">
+                        ➕ Crear Nuevo Insumo / Desechable
+                    </button>
                 </div>
-                <div id="composite-builder" style="display:none;padding-top:10px;border-top:1px dashed #e5e7eb">
-                    <div style="font-size:11px;color:var(--text-muted);font-weight:700;margin-bottom:10px">
+
+                <div id="composite-builder" style="display:none;padding-top:12px;border-top:1.5px dashed #d1d5db">
+                    <div style="font-size:11.5px;color:var(--wine-800);font-weight:800;margin-bottom:10px">
                         Selecciona los insumos/desechables que se consumen en cada venta de este producto:
                     </div>
                     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-                        <select id="comp-supply-select" style="padding:9px 12px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:700;background:#fff;max-width:320px">
+                        <select id="comp-supply-select" style="padding:10px 12px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12.5px;font-weight:700;background:#fff;max-width:360px;flex:1">
                             ${availableSupplies.map(s => `<option value="${esc(s.product_id)}">${esc(s.product_name)} (${s.units_per_package || 50} pz/paq)</option>`).join("")}
                         </select>
-                        <input id="comp-supply-qty" type="number" min="1" step="1" value="1" placeholder="Cant." style="width:70px;padding:9px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:800">
-                        <button type="button" id="btn-add-comp-item" style="padding:9px 16px;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer">
-                            + Agregar Insumo
+                        <div style="display:flex;align-items:center;gap:6px">
+                            <label style="font-size:11px;font-weight:800;color:var(--wine-800)">Cant:</label>
+                            <input id="comp-supply-qty" type="number" min="1" step="1" value="1" placeholder="1" style="width:65px;padding:9px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:13px;font-weight:900;text-align:center">
+                        </div>
+                        <button type="button" id="btn-add-comp-item" style="padding:10px 18px;background:linear-gradient(135deg,#dcfce7,#bbf7d0);color:#15803d;border:1.5px solid #86efac;border-radius:8px;font-weight:900;font-size:12.5px;cursor:pointer;box-shadow:0 2px 6px rgba(21,128,61,0.15)">
+                            + Agregar a Receta
                         </button>
                     </div>
-                    <div id="comp-items-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+                    
+                    <div style="font-size:11px;font-weight:800;color:var(--wine-900);margin-bottom:6px">INSUMOS EN LA RECETA ACTUAL:</div>
+                    <div id="comp-items-list" style="display:flex;flex-wrap:wrap;gap:8px;min-height:36px;padding:8px;background:#fff;border-radius:10px;border:1px solid #e5e7eb"></div>
                 </div>
             </div>
 
             <button type="button" id="btn-add-prod"
-                style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer">
+                style="padding:13px 32px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:900;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(112,23,33,0.3)">
                 ✓ Guardar Producto / Compuesto en Catálogo</button>
         </div>
 
+        <!-- SECCIÓN: ADMINISTRACIÓN & EDICIÓN RÁPIDA DE INSUMOS Y DESECHABLES -->
+        <div class="dashboard-card" style="padding:18px 22px;border-radius:16px;margin-bottom:24px;background:linear-gradient(145deg,#2a060c,#1b0205);border:1.5px solid var(--gold-400);box-shadow:var(--shadow-card)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+                <div>
+                    <h3 style="color:#ffffff;margin:0;font-weight:900;font-size:16px">🧤 Catálogo de Insumos, Desechables & Complementos (${availableSupplies.length})</h3>
+                    <small style="color:#fcebd2;font-weight:600">Administra o elimina los desechables que aparecen en las recetas</small>
+                </div>
+                <button type="button" id="btn-open-new-supply-modal" style="padding:7px 14px;background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;border:1.5px solid #fcd34d;border-radius:8px;font-weight:900;font-size:12px;cursor:pointer">
+                    ➕ + Agregar Nuevo Insumo
+                </button>
+            </div>
+            
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+                ${availableSupplies.map(sup => {
+                    const st = getStock(sup.product_id);
+                    return `
+                    <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);padding:10px 12px;border-radius:10px;display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                            <strong style="color:#ffffff;font-size:12.5px;display:block">${esc(sup.product_name)}</strong>
+                            <small style="color:#fcebd2;font-size:10.5px">${sup.units_per_package || 50} pz/paq • Stock: ${st} pz</small>
+                        </div>
+                        <div style="display:flex;gap:4px">
+                            <button type="button" class="btn-edit-sup" data-id="${esc(sup.product_id)}" title="Editar Insumo"
+                                style="padding:5px 8px;background:#dbeafe;color:#1e40af;border:none;border-radius:6px;font-size:11px;font-weight:900;cursor:pointer">✎</button>
+                            <button type="button" class="btn-del-sup" data-id="${esc(sup.product_id)}" data-name="${esc(sup.product_name)}" title="Eliminar Insumo"
+                                style="padding:5px 8px;background:#fee2e2;color:#991b1b;border:none;border-radius:6px;font-size:11px;font-weight:900;cursor:pointer">✕</button>
+                        </div>
+                    </div>`;
+                }).join("")}
+            </div>
+        </div>
+
+        <!-- LISTA GENERAL DE PRODUCTOS EN CATÁLOGO -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">Catálogo General e Insumos en ${esc(S.branchName)} (${S.products.length})</h3>
+            <h3 style="color:#ffffff;margin:0;font-weight:900">Catálogo de Productos en ${esc(S.branchName)} (${S.products.length})</h3>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${adminBranchSelectHtml}
                 <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
@@ -1576,11 +1837,11 @@
             </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
             ${S.products.map(p => {
                 const stock = getStock(p.product_id);
                 const isGeneral = !p.branch_name || p.branch_name === "General" || p.branch_id === "all";
-                const bTag = isGeneral ? "🏢 Catálogo General" : `📍 Solo ${p.branch_name}`;
+                const bTag = isGeneral ? "🏢 Catálogo General" : ("📍 Solo " + p.branch_name);
                 const isComp = p.is_composite && Array.isArray(p.components) && p.components.length > 0;
                 const isSupply = p.is_supply || p.category === "desechables";
                 const unitsPack = p.units_per_package || (isSupply ? 50 : 1);
@@ -1595,12 +1856,12 @@
                             <small style="color:var(--text-muted);font-size:11px;font-weight:700">${esc(p.product_code||"S/C")} • <strong>${esc(p.category)}</strong></small>
                             <span style="font-size:9px;padding:2px 6px;border-radius:6px;background:${isGeneral?'#fef3c7':'#dbeafe'};color:${isGeneral?'#92400e':'#1e40af'};font-weight:800">${esc(bTag)}</span>
                         </div>
-                        <h4 style="margin:4px 0;color:var(--wine-900);font-size:14px;font-weight:900">${esc(p.product_name)}</h4>
+                        <h4 style="margin:4px 0;color:var(--wine-900);font-size:14.5px;font-weight:900">${esc(p.product_name)}</h4>
                         ${p.price > 0 ? `<strong style="color:var(--wine-700);font-size:15px;display:block">${money(p.price)}</strong>` : '<span style="color:#15803d;font-size:12px;font-weight:800">Insumo / Desechable</span>'}
                         
                         ${isComp ? `
-                        <div style="margin-top:6px;padding:6px 8px;background:#fdf4ff;border:1px solid #f0abfc;border-radius:8px;font-size:10.5px;color:#86198f">
-                            <strong>📦 Compuesto (${p.components.length} insumos):</strong>
+                        <div style="margin-top:6px;padding:6px 8px;background:#fdf4ff;border:1px solid #f0abfc;border-radius:8px;font-size:11px;color:#86198f">
+                            <strong>📦 Receta Compuesto (${p.components.length} insumos):</strong>
                             <div style="margin-top:2px">${p.components.map(c => `• ${c.qty}x ${esc(c.supply_name || c.supply_id)}`).join("<br>")}</div>
                         </div>` : ''}
 
@@ -1612,14 +1873,19 @@
                             Stock: ${stock} unidades ${stock<=STOCK_LOW?"⚠":'✓'}
                         </div>`}
                     </div>
-                    <button type="button" class="btn-del-prod" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}"
-                        style="margin-top:12px;padding:8px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer">
-                        🗑 Eliminar Producto</button>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px">
+                        <button type="button" class="btn-edit-prod" data-id="${esc(p.product_id)}"
+                            style="padding:8px;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:8px;font-size:11.5px;font-weight:900;cursor:pointer">
+                            ✎ Editar / Receta</button>
+                        <button type="button" class="btn-del-prod" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}"
+                            style="padding:8px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-size:11.5px;font-weight:900;cursor:pointer">
+                            🗑 Eliminar</button>
+                    </div>
                 </article>`;
             }).join("")}
         </div>`;
 
-        // Lógica de constructor de compuestos
+        // Lógica de componentes temporales
         let tempComponents = [];
         const chkComposite = document.getElementById("np-is-composite");
         const builderBox = document.getElementById("composite-builder");
@@ -1632,15 +1898,35 @@
         function renderTempComponents() {
             if (!itemsList) return;
             if (!tempComponents.length) {
-                itemsList.innerHTML = '<span style="font-size:11px;color:var(--text-muted);font-style:italic">Ningún insumo agregado todavía.</span>';
+                itemsList.innerHTML = '<span style="font-size:11.5px;color:var(--text-muted);font-style:italic">Ningún insumo agregado a la receta aún.</span>';
                 return;
             }
             itemsList.innerHTML = tempComponents.map((item, idx) => `
-                <span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--gold-500);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:800;color:var(--wine-900)">
-                    ${item.qty}x ${esc(item.supply_name)}
-                    <button type="button" class="btn-rm-comp" data-idx="${idx}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-weight:900;font-size:12px">✕</button>
+                <span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1.5px solid var(--gold-500);padding:5px 10px;border-radius:20px;font-size:11.5px;font-weight:800;color:var(--wine-900)">
+                    <span>${item.qty}x ${esc(item.supply_name)}</span>
+                    <button type="button" class="btn-comp-minus" data-idx="${idx}" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;font-weight:900;width:18px;height:18px;line-height:14px;text-align:center">-</button>
+                    <button type="button" class="btn-comp-plus" data-idx="${idx}" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;font-weight:900;width:18px;height:18px;line-height:14px;text-align:center">+</button>
+                    <button type="button" class="btn-rm-comp" data-idx="${idx}" title="Quitar insumo" style="background:#fee2e2;border:none;border-radius:4px;color:#ef4444;cursor:pointer;font-weight:900;font-size:11px;padding:2px 5px">✕ Quitar</button>
                 </span>
             `).join("");
+
+            itemsList.querySelectorAll(".btn-comp-minus").forEach(b => b.addEventListener("click", () => {
+                const idx = parseInt(b.dataset.idx, 10);
+                if (tempComponents[idx]) {
+                    tempComponents[idx].qty--;
+                    if (tempComponents[idx].qty <= 0) tempComponents.splice(idx, 1);
+                    renderTempComponents();
+                }
+            }));
+
+            itemsList.querySelectorAll(".btn-comp-plus").forEach(b => b.addEventListener("click", () => {
+                const idx = parseInt(b.dataset.idx, 10);
+                if (tempComponents[idx]) {
+                    tempComponents[idx].qty++;
+                    renderTempComponents();
+                }
+            }));
+
             itemsList.querySelectorAll(".btn-rm-comp").forEach(b => b.addEventListener("click", () => {
                 tempComponents.splice(parseInt(b.dataset.idx, 10), 1);
                 renderTempComponents();
@@ -1662,6 +1948,129 @@
                 tempComponents.push({ supply_id: supplyId, supply_name: supplyName, qty: qty });
             }
             renderTempComponents();
+        });
+
+        // Crear nuevo insumo modal/prompt
+        async function createNewSupplyPrompt() {
+            const name = await toastPrompt("Nombre del nuevo Insumo / Desechable (ej: Vaso #10, Cuchara Pastelera, Bolsa 30x40):", "Nombre del insumo…");
+            if (!name || !name.trim()) return;
+            const unitsStr = await toastPrompt("¿Cuántas piezas vienen por paquete/bolsa de '" + name.trim() + "'?:", "50");
+            const packUnits = parseInt(unitsStr, 10) || 50;
+
+            const newSupplyObj = {
+                product_id: "sup_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
+                product_name: name.trim(),
+                product_code: "INS-" + Math.floor(Math.random()*900+100),
+                category: "desechables",
+                price: 0,
+                is_supply: true,
+                units_per_package: packUnits,
+                initial_stock: packUnits * 2,
+                branch_name: "General",
+                is_active: true,
+                created_at: now()
+            };
+
+            const customList = gr("custom_products", []);
+            customList.push(newSupplyObj);
+            gw("custom_products", customList);
+
+            toast("✓ Insumo '" + name.trim() + "' registrado correctamente con " + packUnits + " pz/paq.", "success", 4000);
+            await loadProducts();
+            await loadProductsAdmin();
+        }
+
+        document.getElementById("btn-quick-new-supply")?.addEventListener("click", createNewSupplyPrompt);
+        document.getElementById("btn-open-new-supply-modal")?.addEventListener("click", createNewSupplyPrompt);
+
+        // Editar insumo
+        c.querySelectorAll(".btn-edit-sup").forEach(btn => btn.addEventListener("click", async () => {
+            const supId = btn.dataset.id;
+            const sup = S.products.find(p => String(p.product_id) === String(supId));
+            if (!sup) return;
+
+            const newName = await toastPrompt("Editar nombre de '" + sup.product_name + "':", sup.product_name);
+            if (!newName || !newName.trim()) return;
+
+            const newUnitsStr = await toastPrompt("Piezas por paquete/bolsa de '" + newName.trim() + "':", String(sup.units_per_package || 50));
+            const newUnits = parseInt(newUnitsStr, 10) || sup.units_per_package || 50;
+
+            sup.product_name = newName.trim();
+            sup.units_per_package = newUnits;
+
+            const customList = gr("custom_products", []);
+            const exIdx = customList.findIndex(p => String(p.product_id) === String(supId));
+            if (exIdx >= 0) {
+                customList[exIdx].product_name = newName.trim();
+                customList[exIdx].units_per_package = newUnits;
+            } else {
+                customList.push(sup);
+            }
+            gw("custom_products", customList);
+
+            toast("✓ Insumo actualizado.", "success");
+            await loadProducts();
+            await loadProductsAdmin();
+        }));
+
+        // Eliminar insumo
+        c.querySelectorAll(".btn-del-sup").forEach(btn => btn.addEventListener("click", async () => {
+            const supId = btn.dataset.id;
+            const supName = btn.dataset.name;
+            const ok = await toastConfirm("¿Eliminar el insumo '" + supName + "' del catálogo?");
+            if (!ok) return;
+
+            const deletedIds = gr("deleted_product_ids", []);
+            deletedIds.push(String(supId));
+            gw("deleted_product_ids", deletedIds);
+
+            toast("✓ Insumo '" + supName + "' eliminado.", "info");
+            await loadProducts();
+            await loadProductsAdmin();
+        }));
+
+        // Editar producto existente
+        c.querySelectorAll(".btn-edit-prod").forEach(btn => btn.addEventListener("click", () => {
+            const p = S.products.find(x => String(x.product_id) === String(btn.dataset.id));
+            if (!p) return;
+
+            editingProductId = p.product_id;
+            document.getElementById("np-name").value = p.product_name || "";
+            document.getElementById("np-code").value = p.product_code || "";
+            document.getElementById("np-cat").value = p.category || "helados";
+            document.getElementById("np-price").value = p.price || 0;
+            document.getElementById("np-pack-units").value = p.units_per_package || 50;
+
+            const isComp = !!p.is_composite;
+            const chk = document.getElementById("np-is-composite");
+            if (chk) {
+                chk.checked = isComp;
+                if (builderBox) builderBox.style.display = isComp ? "block" : "none";
+            }
+
+            tempComponents = isComp && Array.isArray(p.components) ? JSON.parse(JSON.stringify(p.components)) : [];
+            renderTempComponents();
+
+            document.getElementById("form-product-title").textContent = "✏️ Modificando Producto: " + p.product_name;
+            document.getElementById("btn-add-prod").textContent = "💾 Guardar Cambios en Producto";
+            document.getElementById("btn-cancel-edit").style.display = "inline-block";
+
+            document.getElementById("form-product-card")?.scrollIntoView({ behavior: "smooth" });
+        }));
+
+        document.getElementById("btn-cancel-edit")?.addEventListener("click", () => {
+            editingProductId = null;
+            document.getElementById("np-name").value = "";
+            document.getElementById("np-code").value = "";
+            document.getElementById("np-price").value = "";
+            document.getElementById("np-pack-units").value = "50";
+            if (chkComposite) chkComposite.checked = false;
+            if (builderBox) builderBox.style.display = "none";
+            tempComponents = [];
+            renderTempComponents();
+            document.getElementById("form-product-title").textContent = "➕ Agregar Nuevo Producto / Compuesto / Insumo";
+            document.getElementById("btn-add-prod").textContent = "✓ Guardar Producto / Compuesto en Catálogo";
+            document.getElementById("btn-cancel-edit").style.display = "none";
         });
 
         document.getElementById("admin-branch-filter")?.addEventListener("change", async e => {
@@ -1688,52 +2097,80 @@
 
             const bId = (targetBranch === "all") ? "all" : (S.branches.find(b => b.name.toLowerCase().includes(targetBranch.toLowerCase()))?.id || S.branchId);
 
-            const newProd = {
-                product_id: "prod_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
-                product_name: name,
-                product_code: code || ("LF-" + Math.floor(Math.random()*900+100)),
-                category: cat,
-                price: price,
-                branch_id: bId,
-                branch_name: targetBranch === "all" ? "General" : targetBranch,
-                is_active: true,
-                is_composite: isComp,
-                components: isComp ? [...tempComponents] : [],
-                is_supply: (cat === "desechables" || price === 0),
-                units_per_package: packUnits,
-                created_at: now()
-            };
+            if (editingProductId) {
+                // MODIFICAR PRODUCTO EXISTENTE
+                const customList = gr("custom_products", []);
+                let prodToEdit = customList.find(p => String(p.product_id) === String(editingProductId));
+                if (!prodToEdit) {
+                    const existingInCatalog = S.products.find(p => String(p.product_id) === String(editingProductId));
+                    prodToEdit = Object.assign({}, existingInCatalog || {});
+                    customList.push(prodToEdit);
+                }
 
-            const customList = gr("custom_products", []);
-            customList.push(newProd);
-            gw("custom_products", customList);
+                prodToEdit.product_name = name;
+                prodToEdit.product_code = code || prodToEdit.product_code || ("LF-" + Math.floor(Math.random()*900+100));
+                prodToEdit.category = cat;
+                prodToEdit.price = price;
+                prodToEdit.units_per_package = packUnits;
+                prodToEdit.branch_id = bId;
+                prodToEdit.branch_name = targetBranch === "all" ? "General" : targetBranch;
+                prodToEdit.is_composite = isComp;
+                prodToEdit.components = isComp ? [...tempComponents] : [];
+                prodToEdit.is_supply = (cat === "desechables" || price === 0);
 
-            if (db) {
-                try {
-                    await db.from("products").insert({
-                        product_name: name,
-                        product_code: newProd.product_code,
-                        category: cat,
-                        price: price,
-                        is_active: true
-                    });
-                } catch(e) {}
+                gw("custom_products", customList);
+                editingProductId = null;
+                toast("✓ Cambios guardados exitosamente en '" + name + "'.", "success", 4000);
+            } else {
+                // CREAR NUEVO PRODUCTO
+                const newProd = {
+                    product_id: "prod_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
+                    product_name: name,
+                    product_code: code || ("LF-" + Math.floor(Math.random()*900+100)),
+                    category: cat,
+                    price: price,
+                    branch_id: bId,
+                    branch_name: targetBranch === "all" ? "General" : targetBranch,
+                    is_active: true,
+                    is_composite: isComp,
+                    components: isComp ? [...tempComponents] : [],
+                    is_supply: (cat === "desechables" || price === 0),
+                    units_per_package: packUnits,
+                    created_at: now()
+                };
+
+                const customList = gr("custom_products", []);
+                customList.push(newProd);
+                gw("custom_products", customList);
+
+                if (db) {
+                    try {
+                        await db.from("products").insert({
+                            product_name: name,
+                            product_code: newProd.product_code,
+                            category: cat,
+                            price: price,
+                            is_active: true
+                        });
+                    } catch(e) {}
+                }
+
+                toast("✓ Producto '" + name + "' guardado con éxito.", "success", 4000);
             }
 
-            toast(`✓ Producto '${name}' guardado con éxito.`, "success", 4000);
             await loadProducts();
             await loadProductsAdmin();
         });
 
         c.querySelectorAll(".btn-del-prod").forEach(btn => btn.addEventListener("click", async () => {
-            const reason = await toastPrompt(`Motivo para eliminar "${btn.dataset.name}":`, "Escribe el motivo obligatorio…");
+            const reason = await toastPrompt("Motivo para eliminar '" + btn.dataset.name + "':", "Escribe el motivo obligatorio…");
             if (!reason) return;
 
             const deletedIds = gr("deleted_product_ids", []);
             deletedIds.push(String(btn.dataset.id));
             gw("deleted_product_ids", deletedIds);
 
-            toast(`✓ Producto '${btn.dataset.name}' eliminado del catálogo.`, "info", 4000);
+            toast("✓ Producto '" + btn.dataset.name + "' eliminado del catálogo.", "info", 4000);
             await loadProducts();
             await loadProductsAdmin();
         }));
