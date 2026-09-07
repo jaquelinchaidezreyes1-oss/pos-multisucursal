@@ -1266,6 +1266,621 @@
         }));
     }
 
+    /* ── MIS VENTAS (FILTRO POR FECHA, TURNOS, MÉTODO DE PAGO Y CANCELACIONES) ── */
+    async function loadSales(silent = false) {
+        const c = $("#sales-container");
+        if (!c || !S.branchId) return;
+        if (!silent && !c.children.length) {
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
+        }
+
+        const consolidated = await getConsolidatedSalesForChain();
+        const allRecordedSales = gr("all_sales", []).concat(lr("sales", []));
+        
+        // Filtrar ventas que corresponden a la sucursal activa
+        const branchSales = consolidated.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
+        
+        const todayStr = toDateKey();
+        const datesMap = new Map();
+        branchSales.forEach(s => {
+            const d = toDateKey(s.created_at);
+            if (d) {
+                if (!datesMap.has(d)) datesMap.set(d, []);
+                datesMap.get(d).push(s);
+            }
+        });
+        if (!datesMap.has(todayStr)) datesMap.set(todayStr, []);
+
+        if (S.salesFilterDate === undefined) S.salesFilterDate = "today";
+        if (!S.salesFilterShift) S.salesFilterShift = "all";
+        if (!S.salesTab) S.salesTab = "active";
+
+        const selectedDate = S.salesFilterDate || "today";
+        const selectedShift = S.salesFilterShift || "all";
+
+        let daySales = (selectedDate === "all")
+            ? branchSales
+            : (selectedDate === "today" ? (datesMap.get(todayStr) || []) : (datesMap.get(selectedDate) || []));
+
+        if (selectedShift !== "all") {
+            daySales = daySales.filter(s => getShiftCategory(s) === selectedShift);
+        }
+
+        const activeSales = daySales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
+        const cancelledSales = daySales.filter(s => String(s.status||"").toUpperCase() === "CANCELLED");
+
+        const targetList = S.salesTab === "cancelled" ? cancelledSales : activeSales;
+
+        const totalActive = activeSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+        const cashSales = activeSales.filter(s => (s.payment_method || "cash") === "cash");
+        const cardSales = activeSales.filter(s => s.payment_method === "card");
+        const totalCash = cashSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+        const totalCard = cardSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+
+        const branchSelectHtml = S.isSU ? `
+            <div style="display:flex;align-items:center;gap:8px">
+                <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 SUCURSAL:</label>
+                <select id="sales-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(S.branchId)?' selected':''}>${esc(b.name)}</option>`).join("")}
+                </select>
+            </div>` : '';
+
+        const dateOptions = Array.from(datesMap.keys()).sort().reverse();
+
+        c.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+            <div>
+                <strong style="font-size:17px;color:#ffffff;font-weight:900">Historial de Ventas — ${esc(S.branchName)}</strong>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Tickets cobrados, turnos y métodos de pago</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                ${branchSelectHtml}
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+                <button type="button" id="btn-ref-sales"
+                    style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
+                    🔄 Actualizar Ventas</button>
+            </div>
+        </div>
+
+        <!-- FILTROS Y RESUMEN DE VENTAS -->
+        <div class="dashboard-card" style="padding:18px;border-radius:16px;margin-bottom:20px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <label style="font-size:12px;font-weight:900;color:var(--wine-800)">FECHA:</label>
+                    <select id="sales-date-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12.5px;font-weight:700;background:#fff;outline:none">
+                        <option value="today"${selectedDate==='today'?' selected':''}>📅 Hoy (${fd(todayStr)})</option>
+                        <option value="all"${selectedDate==='all'?' selected':''}>🌐 Todo el Histórico</option>
+                        ${dateOptions.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?' selected':''}>📅 ${fd(d)}</option>`).join("")}
+                    </select>
+
+                    <label style="font-size:12px;font-weight:900;color:var(--wine-800);margin-left:8px">TURNO:</label>
+                    <select id="sales-shift-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12.5px;font-weight:700;background:#fff;outline:none">
+                        <option value="all"${selectedShift==='all'?' selected':''}>Todos los Turnos</option>
+                        <option value="matutino"${selectedShift==='matutino'?' selected':''}>🌅 Matutino</option>
+                        <option value="vespertino"${selectedShift==='vespertino'?' selected':''}>🌇 Vespertino</option>
+                    </select>
+                </div>
+
+                <div style="display:flex;gap:6px">
+                    <button type="button" class="sales-tab-btn${S.salesTab==='active'?' active-stab':''}" data-tab="active"
+                        style="padding:8px 14px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;${S.salesTab==='active'?'background:#15803d;color:#fff;border:none':'background:#f3f4f6;color:#374151;border:1px solid #d1d5db'}">
+                        ✓ Ventas Activas (${activeSales.length})
+                    </button>
+                    <button type="button" class="sales-tab-btn${S.salesTab==='cancelled'?' active-stab':''}" data-tab="cancelled"
+                        style="padding:8px 14px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;${S.salesTab==='cancelled'?'background:#b91c1c;color:#fff;border:none':'background:#f3f4f6;color:#374151;border:1px solid #d1d5db'}">
+                        🚫 Canceladas (${cancelledSales.length})
+                    </button>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+                <div style="background:#fff;padding:12px 16px;border-radius:12px;border:1.5px solid rgba(188,132,10,.35)">
+                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);display:block">TOTAL VENDIDO</small>
+                    <strong style="font-size:22px;color:var(--wine-900);display:block;margin:2px 0">${money(totalActive)}</strong>
+                    <small style="color:var(--emerald);font-weight:800">${activeSales.length} tickets</small>
+                </div>
+                <div style="background:#f0fdf4;padding:12px 16px;border-radius:12px;border:1.5px solid #86efac">
+                    <small style="font-size:10px;font-weight:900;color:#166534;display:block">💵 EFECTIVO</small>
+                    <strong style="font-size:20px;color:#15803d;display:block;margin:2px 0">${money(totalCash)}</strong>
+                    <small style="color:#166534;font-weight:700">${cashSales.length} tickets</small>
+                </div>
+                <div style="background:#eff6ff;padding:12px 16px;border-radius:12px;border:1.5px solid #93c5fd">
+                    <small style="font-size:10px;font-weight:900;color:#1e40af;display:block">💳 TARJETA</small>
+                    <strong style="font-size:20px;color:#1d4ed8;display:block;margin:2px 0">${money(totalCard)}</strong>
+                    <small style="color:#1e40af;font-weight:700">${cardSales.length} tickets</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- LISTA DE TICKETS Y VENTAS -->
+        ${targetList.length ? `
+        <div style="display:flex;flex-direction:column;gap:12px">
+            ${targetList.map(s => {
+                const isCan = String(s.status||"").toUpperCase() === "CANCELLED";
+                const isCard = s.payment_method === "card";
+                const timeStr = s.created_at ? fdt(s.created_at) : "--:--";
+                return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                    <div>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                            <strong style="font-size:15px;color:var(--wine-900)">Ticket #${esc(s.sale_number || s.id)}</strong>
+                            <span style="font-size:10px;padding:2px 8px;border-radius:12px;font-weight:800;${isCard?'background:#eff6ff;color:#1d4ed8':'background:#f0fdf4;color:#15803d'}">
+                                ${isCard ? '💳 Tarjeta' : '💵 Efectivo'}
+                            </span>
+                            ${isCan ? '<span style="font-size:10px;padding:2px 8px;border-radius:12px;font-weight:900;background:#fee2e2;color:#991b1b">🚫 CANCELADA</span>' : ''}
+                        </div>
+                        <div style="font-size:11.5px;color:var(--text-muted);font-weight:600">
+                            ${timeStr} • Por: <strong>${esc(s.cashier_name || "Encargada")}</strong> (${esc(s.shift_name || "Turno")})
+                        </div>
+                        ${Array.isArray(s.items) && s.items.length ? `
+                        <div style="font-size:11px;color:#4b5563;margin-top:6px">
+                            ${s.items.map(i => `• ${i.quantity}x ${esc(i.product_name || 'Producto')} (${money(i.subtotal || i.price*i.quantity)})`).join("<br>")}
+                        </div>` : ''}
+                    </div>
+
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <div style="text-align:right">
+                            <div style="font-size:20px;font-weight:900;color:var(--wine-700)">${money(s.total)}</div>
+                        </div>
+                        <button type="button" class="btn-print-sale" data-id="${esc(s.id)}"
+                            style="padding:8px 12px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
+                            🖨️ Re-Imprimir
+                        </button>
+                        ${!isCan ? `
+                        <button type="button" class="btn-cancel-sale" data-id="${esc(s.id)}" data-num="${esc(s.sale_number || s.id)}"
+                            style="padding:8px 12px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
+                            🚫 Cancelar
+                        </button>` : ''}
+                        ${S.isSU ? `
+                        <button type="button" class="btn-delete-sale" data-id="${esc(s.id)}"
+                            style="padding:8px 12px;background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
+                            🗑 Borrar
+                        </button>` : ''}
+                    </div>
+                </article>`;
+            }).join("")}
+        </div>` : `
+        <div class="empty-state" style="padding:34px;text-align:center">
+            <p style="color:var(--text-muted)">No hay ventas registradas con los filtros seleccionados.</p>
+        </div>`}
+        `;
+
+        c.querySelectorAll(".sales-tab-btn").forEach(btn => btn.addEventListener("click", () => {
+            S.salesTab = btn.dataset.tab;
+            loadSales();
+        }));
+
+        document.getElementById("sales-date-filter")?.addEventListener("change", e => {
+            S.salesFilterDate = e.target.value;
+            loadSales();
+        });
+
+        document.getElementById("sales-shift-filter")?.addEventListener("change", e => {
+            S.salesFilterShift = e.target.value;
+            loadSales();
+        });
+
+        document.getElementById("sales-branch-filter")?.addEventListener("change", async e => {
+            await changeBranch(e.target.value);
+            await loadSales();
+        });
+
+        document.getElementById("btn-ref-sales")?.addEventListener("click", async () => {
+            await loadSales();
+            toast("Ventas actualizadas.", "info");
+        });
+
+        c.querySelectorAll(".btn-print-sale").forEach(btn => btn.addEventListener("click", () => {
+            const sid = String(btn.dataset.id);
+            const targetSale = branchSales.find(x => String(x.id) === sid) || allRecordedSales.find(x => String(x.id) === sid);
+            if (!targetSale) return toast("No se encontró el ticket para imprimir.", "warn");
+            printReceipt(targetSale);
+            toast(`🖨️ Re-imprimiendo ticket #${targetSale.sale_number || targetSale.id}…`, "info", 3000);
+        }));
+
+        c.querySelectorAll(".btn-cancel-sale").forEach(btn => btn.addEventListener("click", async () => {
+            const sid = String(btn.dataset.id);
+            const snum = btn.dataset.num;
+            const reason = await toastPrompt(`Cancelar venta #${snum}:\nEscribe el motivo obligatorio:`, "Error de cobro / Devolución…");
+            if (!reason) return;
+
+            let lSales = lr("sales", []);
+            const target = lSales.find(x => String(x.id) === sid);
+            if (target) { target.status = "CANCELLED"; target.cancel_reason = reason; lw("sales", lSales); }
+
+            let gSales = gr("all_sales", []);
+            const gTarget = gSales.find(x => String(x.id) === sid);
+            if (gTarget) { gTarget.status = "CANCELLED"; gTarget.cancel_reason = reason; gw("all_sales", gSales); }
+
+            if (db) {
+                try {
+                    await db.from("sales").update({ status: "CANCELLED", cancel_reason: reason }).eq("id", sid);
+                } catch(e) {}
+            }
+
+            toast(`✓ Venta #${snum} cancelada con éxito.`, "info", 4000);
+            await loadSales();
+        }));
+
+        c.querySelectorAll(".btn-delete-sale").forEach(btn => btn.addEventListener("click", async () => {
+            const sid = String(btn.dataset.id);
+            const ok = await toastConfirm("👑 [Superusuario] ¿Deseas eliminar definitivamente este registro de venta?");
+            if (!ok) return;
+
+            let lSales = lr("sales", []).filter(x => String(x.id) !== sid);
+            lw("sales", lSales);
+            let gSales = gr("all_sales", []).filter(x => String(x.id) !== sid);
+            gw("all_sales", gSales);
+
+            if (db) {
+                try { await db.from("sales").delete().eq("id", sid); } catch(e) {}
+            }
+
+            toast("✓ Registro eliminado de la base de datos.", "info", 4000);
+            await loadSales();
+        }));
+    }
+
+    /* ── CORTES DE CAJA (ARQUEOS Y CIERRES DE TURNO) ── */
+    async function loadCuts(silent = false) {
+        const c = $("#cuts-container");
+        if (!c || !S.branchId) return;
+        if (!silent && !c.children.length) {
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando cortes de caja de ${esc(S.branchName)}…</p></div>`;
+        }
+
+        let remoteCuts = [];
+        if (db) {
+            try {
+                const {data} = await db.from("cash_cuts").select("*").order("created_at", {ascending:false});
+                remoteCuts = data || [];
+            } catch(e) {}
+        }
+
+        const localCuts = lr("cuts", []);
+        const allGlobalCuts = gr("all_cuts", []);
+        const cutsMap = new Map();
+        localCuts.forEach(ct => cutsMap.set(String(ct.id), ct));
+        allGlobalCuts.forEach(ct => cutsMap.set(String(ct.id), ct));
+        remoteCuts.forEach(ct => {
+            let obs = {};
+            try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
+            cutsMap.set(String(ct.id), {
+                id: ct.id,
+                branch_name: obs.branch_name || S.branchName,
+                shift_name: obs.shift_name || "Turno",
+                performed_by_name: obs.performed_by_name || "Encargada",
+                opening_amount: Number(obs.opening_amount || 0),
+                cash_sales: Number(obs.cash_sales || 0),
+                card_sales: Number(obs.card_sales || 0),
+                total_sales: Number(ct.total_sales || 0),
+                expected_cash: Number(ct.expected_cash || 0),
+                counted_cash: Number(ct.counted_cash || 0),
+                difference: Number(ct.difference || 0),
+                net_sales_without_fund: Number(obs.net_sales_without_fund || 0),
+                created_at: ct.created_at
+            });
+        });
+
+        const cutsList = Array.from(cutsMap.values())
+            .filter(ct => S.isSU || matchesBranch(ct, { id: S.branchId, name: S.branchName }))
+            .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+        // Calcular ventas activas del turno actual para el corte
+        const consolidated = await getConsolidatedSalesForChain();
+        const branchSales = consolidated.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
+        const todayStr = toDateKey();
+        const todayActiveSales = branchSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
+        
+        const currentCategory = (S.shift.toLowerCase().includes("tarde") || S.shift.toLowerCase().includes("vesp")) ? "vespertino" : "matutino";
+        const currentTurnSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory);
+
+        const currentCashSales = currentTurnSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s)=>a+Number(s.total||0), 0);
+        const currentCardSales = currentTurnSales.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0), 0);
+        const currentTotalSold = currentCashSales + currentCardSales;
+        const initialFund = Number(S.currentShift?.opening_amount || 0);
+        const expectedCashInDrawer = initialFund + currentCashSales;
+
+        const branchSelectHtml = S.isSU ? `
+            <div style="display:flex;align-items:center;gap:8px">
+                <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 SUCURSAL:</label>
+                <select id="cuts-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(S.branchId)?' selected':''}>${esc(b.name)}</option>`).join("")}
+                </select>
+            </div>` : '';
+
+        c.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+            <div>
+                <strong style="font-size:17px;color:#ffffff;font-weight:900">Cortes de Caja — ${esc(S.branchName)} (${esc(S.shift)})</strong>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, terminal y balance de turnos</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                ${branchSelectHtml}
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+                <button type="button" id="btn-ref-cuts"
+                    style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
+                    🔄 Actualizar Cortes</button>
+            </div>
+        </div>
+
+        <!-- FORMULARIO NUEVO CORTE DE CAJA -->
+        <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+                <h3 style="color:var(--wine-900);margin:0;font-weight:900">✂️ Realizar Corte de Turno Actual (${esc(S.shift)})</h3>
+                <span style="font-size:11px;background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:12px;font-weight:800">
+                    🟢 Turno Activo: ${esc(S.shift)}
+                </span>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:16px">
+                <div style="background:#fff;padding:12px 16px;border-radius:12px;border:1.5px solid var(--gold-400)">
+                    <small style="font-size:10.5px;font-weight:900;color:var(--text-muted);display:block">FONDO INICIAL</small>
+                    <strong style="font-size:20px;color:var(--wine-900)">${money(initialFund)}</strong>
+                </div>
+                <div style="background:#f0fdf4;padding:12px 16px;border-radius:12px;border:1.5px solid #86efac">
+                    <small style="font-size:10.5px;font-weight:900;color:#166534;display:block">💵 COBRADO EFECTIVO</small>
+                    <strong style="font-size:20px;color:#15803d">${money(currentCashSales)}</strong>
+                </div>
+                <div style="background:#eff6ff;padding:12px 16px;border-radius:12px;border:1.5px solid #93c5fd">
+                    <small style="font-size:10.5px;font-weight:900;color:#1e40af;display:block">💳 COBRADO TARJETA</small>
+                    <strong style="font-size:20px;color:#1d4ed8">${money(currentCardSales)}</strong>
+                </div>
+                <div style="background:#fdf4ff;padding:12px 16px;border-radius:12px;border:1.5px solid #f0abfc">
+                    <small style="font-size:10.5px;font-weight:900;color:#86198f;display:block">EFECTIVO ESPERADO EN CAJA</small>
+                    <strong style="font-size:20px;color:#86198f">${money(expectedCashInDrawer)}</strong>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+                <div style="flex:1;min-width:220px">
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">
+                        EFECTIVO CONTADO EN CAJA ($) *
+                    </label>
+                    <input id="cut-counted-cash" type="number" step="0.5" min="0" placeholder="Ej: 1500.00"
+                        style="width:100%;padding:11px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:14px;font-weight:900;box-sizing:border-box">
+                </div>
+                <button type="button" id="btn-save-cut"
+                    style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13px;cursor:pointer">
+                    ✓ Confirmar Corte & Imprimir Ticket
+                </button>
+            </div>
+        </div>
+
+        <!-- HISTORIAL DE CORTES REGISTRADOS -->
+        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Historial de Cortes de Caja</h3>
+        ${cutsList.length ? `
+        <div style="display:flex;flex-direction:column;gap:12px">
+            ${cutsList.map(ct => {
+                const diff = Number(ct.difference || 0);
+                const isOk = diff >= 0;
+                return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                    <div>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                            <strong style="font-size:15px;color:var(--wine-900)">✂️ Corte — ${esc(ct.branch_name)} (${esc(ct.shift_name)})</strong>
+                            <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;${isOk?'background:#dcfce7;color:#15803d':'background:#fee2e2;color:#991b1b'}">
+                                ${isOk ? '✓ Cuadrado' : '⚠ Diferencia: ' + money(diff)}
+                            </span>
+                        </div>
+                        <div style="font-size:11.5px;color:var(--text-muted);font-weight:600">
+                            ${fdt(ct.created_at)} • Por: <strong>${esc(ct.performed_by_name)}</strong>
+                        </div>
+                        <div style="font-size:11px;color:#4b5563;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap">
+                            <span>Fondo: <strong>${money(ct.opening_amount)}</strong></span>
+                            <span>Efectivo: <strong style="color:#15803d">${money(ct.cash_sales)}</strong></span>
+                            <span>Tarjeta: <strong style="color:#1d4ed8">${money(ct.card_sales)}</strong></span>
+                            <span>Total Vendido: <strong style="color:var(--wine-700)">${money(ct.total_sales)}</strong></span>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <div style="text-align:right">
+                            <small style="font-size:10px;color:var(--text-muted);display:block">CORTE NETO EFECTIVO</small>
+                            <strong style="font-size:20px;color:var(--wine-700);font-weight:900">${money(ct.net_sales_without_fund || (ct.counted_cash - ct.opening_amount))}</strong>
+                        </div>
+                        <button type="button" class="btn-reprint-cut" data-id="${esc(ct.id)}"
+                            style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
+                            🖨️ Imprimir
+                        </button>
+                    </div>
+                </article>`;
+            }).join("")}
+        </div>` : `
+        <div class="empty-state" style="padding:34px;text-align:center">
+            <p style="color:var(--text-muted)">No hay cortes de caja registrados aún en esta sucursal.</p>
+        </div>`}
+        `;
+
+        document.getElementById("cuts-branch-filter")?.addEventListener("change", async e => {
+            await changeBranch(e.target.value);
+            await loadCuts();
+        });
+
+        document.getElementById("btn-ref-cuts")?.addEventListener("click", async () => {
+            await loadCuts();
+            toast("Cortes actualizados.", "info");
+        });
+
+        document.getElementById("btn-save-cut")?.addEventListener("click", async () => {
+            const countedVal = Number(document.getElementById("cut-counted-cash")?.value);
+            if (countedVal === undefined || isNaN(countedVal) || countedVal < 0) {
+                return toast("Ingresa el monto de efectivo contado en caja.", "warn");
+            }
+
+            const diff = countedVal - expectedCashInDrawer;
+            const netWithoutFund = countedVal - initialFund;
+
+            const ok = await toastConfirm(`Confirmar Corte de Turno (${S.shift}):\n• Fondo Inicial: ${money(initialFund)}\n• Cobrado Efectivo: ${money(currentCashSales)}\n• Cobrado Tarjeta: ${money(currentCardSales)}\n• Total Vendido: ${money(currentTotalSold)}\n• Efectivo Contado: ${money(countedVal)}\n• Diferencia: ${diff>=0?'+':''}${money(diff)}\n• Corte Neto Efectivo: ${money(netWithoutFund)}`);
+            if (!ok) return;
+
+            const cutRecord = {
+                id: "cut_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
+                branch_id: S.branchId,
+                branch_name: S.branchName,
+                shift_name: S.shift,
+                performed_by_name: S.profile?.full_name || S.user?.email || "Encargada",
+                opening_amount: initialFund,
+                cash_sales: currentCashSales,
+                card_sales: currentCardSales,
+                total_sales: currentTotalSold,
+                expected_cash: expectedCashInDrawer,
+                counted_cash: countedVal,
+                difference: diff,
+                net_sales_without_fund: netWithoutFund,
+                created_at: now()
+            };
+
+            const lCuts = lr("cuts", []);
+            lCuts.unshift(cutRecord);
+            lw("cuts", lCuts);
+
+            const gCuts = gr("all_cuts", []);
+            gCuts.unshift(cutRecord);
+            gw("all_cuts", gCuts);
+
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "cut_created",
+                        payload: { cut: cutRecord }
+                    });
+                } catch(e) {}
+            }
+
+            if (db) {
+                try {
+                    const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
+                    const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
+                    const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
+
+                    const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
+                    const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
+                    const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
+
+                    await db.from("cash_cuts").insert({
+                        company_id: cId,
+                        branch_id: bId,
+                        cash_register_id: bId,
+                        performed_by: uId,
+                        total_sales: currentTotalSold,
+                        expected_cash: expectedCashInDrawer,
+                        counted_cash: countedVal,
+                        difference: diff,
+                        observations: JSON.stringify(cutRecord),
+                        created_at: cutRecord.created_at
+                    });
+                } catch(e) {}
+            }
+
+            try { printCutReceipt(cutRecord); } catch(e) {}
+
+            toast(`✓ Corte registrado con éxito. Neto: ${money(netWithoutFund)}`, "success", 5000);
+            await loadCuts();
+        });
+
+        c.querySelectorAll(".btn-reprint-cut").forEach(btn => btn.addEventListener("click", () => {
+            const cid = String(btn.dataset.id);
+            const target = cutsList.find(x => String(x.id) === cid);
+            if (!target) return toast("No se encontró el corte.", "warn");
+            try { printCutReceipt(target); } catch(e) {}
+            toast(`🖨️ Imprimiendo ticket de corte…`, "info", 3000);
+        }));
+    }
+
+    /* ── CAMBIO DE TURNO & APERTURA DE FONDO DE CAJA ── */
+    async function loadShiftView() {
+        const c = $("#shift-container");
+        if (!c) return;
+
+        const shiftsHistory = lr("shifts", []);
+        const uname = S.profile?.full_name || S.user?.email || "Encargada";
+
+        c.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+            <div>
+                <strong style="font-size:17px;color:#ffffff;font-weight:900">Cambio de Turno & Apertura — ${esc(S.branchName)}</strong>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Apertura de turno, asignación de fondo inicial de caja y traspaso de turno</div>
+            </div>
+            <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+        </div>
+
+        <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
+            <h3 style="color:var(--wine-900);margin:0 0 14px;font-weight:900">🌅 Apertura de Turno & Fondo Inicial</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px">
+                <div>
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">SUCURSAL</label>
+                    <input type="text" value="${esc(S.branchName)}" readonly style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;background:#f9f9f9;font-weight:800;color:var(--wine-900);box-sizing:border-box">
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">TURNO A ABRIR</label>
+                    <select id="open-shift-name" style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:800;background:#fff;box-sizing:border-box">
+                        <option value="Mañana"${S.shift==='Mañana'?' selected':''}>🌅 Turno Matutino (Mañana)</option>
+                        <option value="Tarde"${S.shift==='Tarde'?' selected':''}>🌇 Turno Vespertino (Tarde)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">FONDO INICIAL EN CAJA ($) *</label>
+                    <input id="open-shift-amount" type="number" step="10" min="0" placeholder="Ej: 500.00" value="${S.currentShift?.opening_amount || 500}"
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:900;box-sizing:border-box">
+                </div>
+            </div>
+            <button type="button" id="btn-open-shift"
+                style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer">
+                ✓ Iniciar Turno con este Fondo
+            </button>
+        </div>
+
+        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Historial de Aperturas de Turno</h3>
+        ${shiftsHistory.length ? `
+        <div style="display:flex;flex-direction:column;gap:12px">
+            ${shiftsHistory.map(sh => `
+            <article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+                <div>
+                    <strong style="font-size:15px;color:var(--wine-900)">Turno ${esc(sh.shift_name)}</strong>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">
+                        Iniciado: ${fdt(sh.opened_at || sh.created_at)} • Encargada: <strong>${esc(sh.cashier_name)}</strong>
+                    </div>
+                </div>
+                <div style="text-align:right">
+                    <small style="font-size:10px;color:var(--text-muted);display:block">FONDO INICIAL</small>
+                    <strong style="font-size:18px;color:#15803d;font-weight:900">${money(sh.opening_amount)}</strong>
+                </div>
+            </article>`).join("")}
+        </div>` : `
+        <div class="empty-state" style="padding:30px;text-align:center">
+            <p style="color:var(--text-muted)">No hay registros previos de apertura de turno.</p>
+        </div>`}
+        `;
+
+        document.getElementById("btn-open-shift")?.addEventListener("click", async () => {
+            const shiftName = document.getElementById("open-shift-name")?.value || "Mañana";
+            const amount = Number(document.getElementById("open-shift-amount")?.value || 0);
+
+            S.shift = shiftName;
+            const shiftObj = {
+                id: "shift_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
+                branch_id: S.branchId,
+                branch_name: S.branchName,
+                shift_name: shiftName,
+                cashier_name: uname,
+                opening_amount: amount,
+                opened_at: now(),
+                is_active: true
+            };
+
+            S.currentShift = shiftObj;
+            lw("current_shift", shiftObj);
+
+            const shifts = lr("shifts", []);
+            shifts.unshift(shiftObj);
+            lw("shifts", shifts);
+
+            updateUI();
+            toast(`✓ Turno ${shiftName} iniciado con fondo de ${money(amount)}.`, "success", 4000);
+            await loadShiftView();
+        });
+    }
+
     /* ── DAÑOS & AVISOS DIRECTIVOS ── */
     async function loadDamageReports(silent = false) {
         const c = document.getElementById("damage-reports-container");
