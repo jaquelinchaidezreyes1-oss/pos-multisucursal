@@ -512,11 +512,15 @@
         S.branchName = b.name;
         S.currentShift = null;
         S.cart = [];
+        initInv(); // Recargar el inventario exacto de la sucursal seleccionada
         updateUI();
         renderSel();
         renderCart();
+        alertInv();
         await loadCurrentShift();
         await loadProducts();
+        if (S.view === "pos")            renderPOS(filtered());
+        if (S.view === "products")       await loadProductsAdmin();
         if (S.view === "sales")          await loadSales();
         if (S.view === "cuts")           await loadCuts();
         if (S.view === "inventory")      await loadInventory();
@@ -524,6 +528,7 @@
         if (S.view === "private-access") await loadPrivateAccess();
         if (S.view === "damage-reports") await loadDamageReports();
         if (S.view === "accounting")     await loadAccounting();
+        toast("📍 Sucursal cambiada a: " + S.branchName + " (Inventario actualizado)", "info", 3000);
     }
 
     function updateUI() {
@@ -592,13 +597,50 @@
         if (e.target.closest("#logout-btn,#btn-logout,[data-logout]")) logout();
     });
 
-    /* ── INVENTARIO CON SOPORTE INDEPENDIENTE POR SUCURSAL ── */
+    /* ── INVENTARIO CON SOPORTE INDEPENDIENTE POR SUCURSAL EN TIEMPO REAL ── */
+    function saveBranchInv(customInv = null) {
+        const invToSave = customInv || S.inv;
+        lw("inv", invToSave);
+        gw("inv_" + (S.branchId || "x"), invToSave);
+        gw("inv_" + normalizeBranchName(S.branchName).replace(/\s+/g, "_"), invToSave);
+        
+        // Difundir en tiempo real a todas las pantallas activas
+        if (realtimeChannel) {
+            try {
+                realtimeChannel.send({
+                    type: "broadcast",
+                    event: "inventory_updated",
+                    payload: {
+                        branch_id: S.branchId,
+                        branch_name: S.branchName,
+                        inv: invToSave
+                    }
+                });
+            } catch(e) {}
+        }
+    }
+
     function initInv() { 
-        S.inv = lr("inv", {}); 
-        // Respetar stock inicial asignado si aún no se ha guardado localmente en esta sucursal
+        // 1. Intentar leer del almacenamiento específico de esta sucursal
+        let stored = lr("inv", null);
+        if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+            stored = gr("inv_" + (S.branchId || "x"), null);
+        }
+        if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+            stored = gr("inv_" + normalizeBranchName(S.branchName).replace(/\s+/g, "_"), null);
+        }
+
+        S.inv = stored && typeof stored === "object" ? { ...stored } : {};
+
+        // 2. Respetar stock inicial asignado si aún no se ha guardado localmente en esta sucursal
         S.products.forEach(p => {
-            if (S.inv[p.product_id] === undefined && p.initial_stock !== undefined && p.initial_stock !== null) {
-                S.inv[p.product_id] = Number(p.initial_stock);
+            if (S.inv[p.product_id] === undefined) {
+                if (p.initial_stock !== undefined && p.initial_stock !== null) {
+                    S.inv[p.product_id] = Number(p.initial_stock);
+                } else {
+                    const maxS = getMaxStock(p);
+                    S.inv[p.product_id] = Math.min(500, maxS);
+                }
             }
         });
     }
@@ -635,14 +677,14 @@
             });
         }
 
-        lw("inv", S.inv); 
+        saveBranchInv(); 
         alertInv(); 
     }
 
     function addStock(id, qty = 1) { 
         const maxS = getMaxStock(id);
         S.inv[id] = Math.min(maxS, getStock(id) + qty); 
-        lw("inv", S.inv); 
+        saveBranchInv(); 
         alertInv(); 
     }
 
@@ -2342,8 +2384,7 @@
                 prodToEdit.is_supply = (cat === "desechables" || price === 0);
 
                 // Actualizar stock directamente
-                S.inv[editingProductId] = stockInp;
-                lw("inv", S.inv);
+                S.inv[editingProductId] = stockInp; saveBranchInv();
                 alertInv();
 
                 gw("custom_products", customList);
@@ -2369,8 +2410,7 @@
                     created_at: now()
                 };
 
-                S.inv[newProdId] = stockInp;
-                lw("inv", S.inv);
+                S.inv[newProdId] = stockInp; saveBranchInv();
                 alertInv();
 
                 const customList = gr("custom_products", []);
@@ -2414,6 +2454,8 @@
     async function loadInventory() {
         const c = $("#inventory-container");
         if (!c) return;
+
+        initInv();
 
         if (!S.invTab) S.invTab = "all";
 
@@ -2581,8 +2623,7 @@
             const val = await toastPrompt(`Ajustar stock total de '${name}':\nActual: ${cur}\nNuevo valor total:`, String(cur));
             const n = parseInt(val, 10);
             if (!Number.isFinite(n) || n < 0) return;
-            S.inv[pid] = n;
-            lw("inv", S.inv);
+            S.inv[pid] = n; saveBranchInv();
             alertInv();
             toast(`✓ Stock de '${name}' ajustado a ${n} unidades.`, "success");
             loadInventory();
@@ -4182,6 +4223,24 @@
                         toast(`✂️ Nuevo Corte de Caja: ${c.branch_name || 'Sucursal'} (${c.shift_name || 'Turno'}) — Total: ${money(c.total_sales || c.net_sales_without_fund || 0)}`, "info", 5000);
                     }
                     safeSilentRefresh();
+                })
+                // 2.1 RECEPCIÓN DIRECTA DE INVENTARIOS EN TIEMPO REAL (MESH BROADCAST)
+                .on("broadcast", { event: "inventory_updated" }, async ({ payload }) => {
+                    if (!payload || !payload.inv) return;
+                    if (payload.branch_id) {
+                        gw("inv_" + payload.branch_id, payload.inv);
+                    }
+                    if (payload.branch_name) {
+                        gw("inv_" + normalizeBranchName(payload.branch_name).replace(/\s+/g, "_"), payload.inv);
+                    }
+                    if (matchesBranch({ branch_id: payload.branch_id, branch_name: payload.branch_name }, { id: S.branchId, name: S.branchName })) {
+                        S.inv = { ...payload.inv };
+                        lw("inv", S.inv);
+                        alertInv();
+                        if (S.view === "inventory") await loadInventory();
+                        else if (S.view === "pos") renderPOS(filtered());
+                        else if (S.view === "products") await loadProductsAdmin();
+                    }
                 })
                 // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS
                 .on("broadcast", { event: "request_sync" }, async () => {
