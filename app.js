@@ -560,22 +560,45 @@
         });
     }
 
+    function getMaxStock(prodOrId) {
+        let p = (typeof prodOrId === "object" && prodOrId) ? prodOrId : S.products.find(x => String(x.product_id) === String(prodOrId));
+        if (p && (p.category === "desechables" || p.is_supply)) return 10000;
+        return 500;
+    }
+
     function getStock(id) { 
         if (S.inv[id] === undefined) {
             const prod = S.products.find(p => String(p.product_id) === String(id));
-            S.inv[id] = (prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : STOCK_MAX; 
+            const maxS = getMaxStock(prod);
+            S.inv[id] = (prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : Math.min(100, maxS); 
         }
         return S.inv[id]; 
     }
 
-    function deductStock(id, qty) { 
-        S.inv[id] = Math.max(0, getStock(id) - qty); 
+    function deductStock(id, qty = 1, name = "") { 
+        // 1. Descontar el producto base
+        const cur = getStock(id);
+        S.inv[id] = Math.max(0, cur - qty); 
+
+        // 2. Si es un Producto Compuesto, descontar automáticamente todos sus insumos/desechables asociados
+        const prod = S.products.find(p => String(p.product_id) === String(id));
+        if (prod && prod.is_composite && Array.isArray(prod.components) && prod.components.length) {
+            prod.components.forEach(comp => {
+                if (comp.supply_id) {
+                    const compReq = (Number(comp.qty) || 1) * qty;
+                    const compCur = getStock(comp.supply_id);
+                    S.inv[comp.supply_id] = Math.max(0, compCur - compReq);
+                }
+            });
+        }
+
         lw("inv", S.inv); 
         alertInv(); 
     }
 
-    function addStock(id, qty) { 
-        S.inv[id] = Math.min(STOCK_MAX, getStock(id) + qty); 
+    function addStock(id, qty = 1) { 
+        const maxS = getMaxStock(id);
+        S.inv[id] = Math.min(maxS, getStock(id) + qty); 
         lw("inv", S.inv); 
         alertInv(); 
     }
@@ -583,8 +606,8 @@
     function alertInv() {
         const banner = document.getElementById("inventory-alert-banner");
         if (!banner) return;
-        const out = S.products.filter(p => getStock(p.product_id) === 0);
-        const low = S.products.filter(p => getStock(p.product_id) > 0 && getStock(p.product_id) <= STOCK_LOW);
+        const out = S.products.filter(p => !p.is_supply && getStock(p.product_id) === 0);
+        const low = S.products.filter(p => !p.is_supply && getStock(p.product_id) > 0 && getStock(p.product_id) <= STOCK_LOW);
         const txt = document.getElementById("inventory-alert-text");
         if (out.length) {
             banner.style.display = "flex";
@@ -599,11 +622,38 @@
 
     function checkBlock() { return S.cart.some(i => i.quantity > getStock(i.product_id)); }
 
-    /* ── CATÁLOGO OFICIAL LA FUENTE (SOLO PRODUCTOS AUTÉNTICOS) ── */
+    /* ── CATÁLOGO OFICIAL LA FUENTE & INSUMOS/DESECHABLES DE BODEGA ── */
     const DEFAULT_PRODUCTS = [
-        { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25, branch_name: "La Fuente Calzada", initial_stock: 99 },
-        { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45, branch_name: "La Fuente Calzada", initial_stock: 100 },
-        { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45, branch_name: "La Fuente Calzada", initial_stock: 100 }
+        // Productos terminados de venta
+        { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25, branch_name: "General", initial_stock: 99, is_composite: true, components: [{supply_id: "sup_cono_sencillo", supply_name: "Cono Sencillo (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
+        { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_cono_dv", supply_name: "Cono Doble Vainilla (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
+        { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_cono_dch", supply_name: "Cono Doble Chocolate (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
+
+        // Insumos y Desechables de Bodega (Paquetes / Bolsas y Unidades de referencia)
+        { product_id: "sup_vaso_1lt", product_code: "VASO-1L", product_name: "Vaso 1 Lt (Transparente)", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 125, branch_name: "General" },
+        { product_id: "sup_tapa_1lt", product_code: "TAPA-1L", product_name: "Tapas Vaso 1 Lt", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 550, branch_name: "General" },
+        { product_id: "sup_vaso_20", product_code: "VASO-20", product_name: "Vasos #20", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
+        { product_id: "sup_tapa_20", product_code: "TAPA-20", product_name: "Tapas Vaso #20", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 550, branch_name: "General" },
+        { product_id: "sup_vaso_half", product_code: "VASO-1/2L", product_name: "Vaso 1/2 Lt", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 100, branch_name: "General" },
+        { product_id: "sup_tapa_fresas", product_code: "TAPA-FRESA", product_name: "Tapas para Fresas", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 100, branch_name: "General" },
+        { product_id: "sup_vaso_6oz", product_code: "VASO-6OZ", product_name: "Vaso #6 oz", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 50, branch_name: "General" },
+        { product_id: "sup_vaso_1lt_unicel", product_code: "VASO-1L-UNI", product_name: "Vaso 1 Lt Unicel", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 50, branch_name: "General" },
+        { product_id: "sup_vaso_14", product_code: "VASO-14", product_name: "Vaso #14", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 100, branch_name: "General" },
+        { product_id: "sup_vaso_12", product_code: "VASO-12", product_name: "Vaso #12", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 150, branch_name: "General" },
+        { product_id: "sup_vaso_4", product_code: "VASO-4", product_name: "Vaso #4", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 25, branch_name: "General" },
+        { product_id: "sup_charola_banana", product_code: "CHAR-BANANA", product_name: "Charola para Banana Split", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 83, branch_name: "General" },
+        { product_id: "sup_tapa_unicel", product_code: "TAPA-UNI", product_name: "Tapas Vaso Unicel", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 700, branch_name: "General" },
+        { product_id: "sup_cucharas", product_code: "CUCHARA", product_name: "Cucharas para Nieve", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 250, branch_name: "General" },
+        { product_id: "sup_tenedores", product_code: "TENEDOR", product_name: "Tenedores Desechables", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 200, branch_name: "General" },
+        { product_id: "sup_servilletas", product_code: "SERVILLETAS", product_name: "Servilletas", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 500, branch_name: "General" },
+        { product_id: "sup_sabritas", product_code: "BOT-SAB", product_name: "Sabritas / Barcel (Botana)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 159, branch_name: "General" },
+        { product_id: "sup_tostitos", product_code: "TOST-VERDE", product_name: "Tostitos Verdes", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 7, branch_name: "General" },
+        { product_id: "sup_doritos", product_code: "BOT-DOR", product_name: "Doritos", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 27, branch_name: "General" },
+        { product_id: "sup_cheetos", product_code: "BOT-CHE", product_name: "Cheetos", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 35, branch_name: "General" },
+        { product_id: "sup_cono_sencillo", product_code: "CONO-SENC", product_name: "Cono Sencillo (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 99, branch_name: "General" },
+        { product_id: "sup_cono_dv", product_code: "CONO-DV", product_name: "Cono Doble Vainilla (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 70, branch_name: "General" },
+        { product_id: "sup_cono_dch", product_code: "CONO-DCH", product_name: "Cono Doble Chocolate (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 23, branch_name: "General" },
+        { product_id: "sup_cono_trip", product_code: "CONO-TRIP", product_name: "Cono Triple (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 63, branch_name: "General" }
     ];
 
     /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
@@ -626,7 +676,14 @@
         const deletedIds  = gr("deleted_product_ids", []);
         const combinedMap = new Map();
 
-        // 1. Cargar productos remotos de Supabase si existen
+        // 1. Iniciar con el catálogo base e insumos oficiales
+        DEFAULT_PRODUCTS.forEach(p => {
+            if (!deletedIds.includes(String(p.product_id))) {
+                combinedMap.set(String(p.product_id), { ...p });
+            }
+        });
+
+        // 2. Cargar productos remotos de Supabase si existen
         if (remoteProducts.length) {
             remoteProducts.forEach(p => {
                 const pid = String(p.product_id || p.id);
@@ -642,57 +699,57 @@
                     else if (cat.includes("congelado")) cat = "congelados";
                     else if (!cat || cat.length > 20) cat = "helados";
 
+                    let existing = combinedMap.get(pid) || {};
+
                     combinedMap.set(pid, {
+                        ...existing,
                         product_id: pid,
                         product_name: p.product_name,
-                        product_code: p.product_code || p.code || "",
+                        product_code: p.product_code || p.code || existing.product_code || "",
                         category: cat,
                         price: Number(p.price || 0),
-                        image_url: p.image_url || null,
-                        branch_id: p.branch_id || "all",
-                        branch_name: p.branch_name || "General",
-                        initial_stock: p.stock != null ? Number(p.stock) : undefined
-                    });
-                }
-            });
-        } else {
-            // Catálogo base si aún no se conecta con Supabase
-            DEFAULT_PRODUCTS.forEach(p => {
-                if (!deletedIds.includes(String(p.product_id))) {
-                    combinedMap.set(String(p.product_id), {
-                        product_id: p.product_id,
-                        product_name: p.product_name,
-                        product_code: p.product_code || "",
-                        category: p.category,
-                        price: Number(p.price || 0),
-                        image_url: p.image_url || null,
-                        branch_id: p.branch_id || "all",
-                        branch_name: p.branch_name || "General",
-                        initial_stock: p.initial_stock
+                        image_url: p.image_url || existing.image_url || null,
+                        branch_id: p.branch_id || existing.branch_id || "all",
+                        branch_name: p.branch_name || existing.branch_name || "General",
+                        initial_stock: p.stock != null ? Number(p.stock) : existing.initial_stock,
+                        is_composite: (p.is_composite !== undefined) ? p.is_composite : existing.is_composite,
+                        components: p.components || existing.components || [],
+                        is_supply: (p.is_supply !== undefined) ? p.is_supply : (cat === "desechables"),
+                        units_per_package: p.units_per_package || existing.units_per_package || (cat === "desechables" ? 50 : 1)
                     });
                 }
             });
         }
 
-        // 2. Fusionar productos personalizados creados por los administradores
+        // 3. Fusionar productos personalizados creados por los administradores
         customProds.forEach(p => {
             const pid = String(p.product_id);
             if (!deletedIds.includes(pid)) {
+                let existing = combinedMap.get(pid) || {};
                 combinedMap.set(pid, {
+                    ...existing,
+                    ...p,
                     product_id: pid,
                     product_name: p.product_name,
-                    product_code: p.product_code || "",
-                    category: (p.category || "helados").toLowerCase().trim(),
-                    price: Number(p.price || 0),
-                    image_url: p.image_url || null,
-                    branch_id: p.branch_id || "all",
-                    branch_name: p.branch_name || "General",
-                    initial_stock: p.stock != null ? Number(p.stock) : undefined
+                    product_code: p.product_code || existing.product_code || "",
+                    category: (p.category || existing.category || "helados").toLowerCase().trim(),
+                    price: Number(p.price != null ? p.price : (existing.price || 0)),
+                    image_url: p.image_url || existing.image_url || null,
+                    branch_id: p.branch_id || existing.branch_id || "all",
+                    branch_name: p.branch_name || existing.branch_name || "General",
+                    initial_stock: p.stock != null ? Number(p.stock) : existing.initial_stock,
+                    is_composite: !!p.is_composite,
+                    components: Array.isArray(p.components) ? p.components : (existing.components || []),
+                    is_supply: !!p.is_supply,
+                    units_per_package: Number(p.units_per_package || existing.units_per_package || 1)
                 });
             }
         });
 
-        S.products = Array.from(combinedMap.values()).sort((a,b) => a.product_name.localeCompare(b.product_name));
+        S.products = Array.from(combinedMap.values()).sort((a,b) => {
+            if (a.is_supply !== b.is_supply) return a.is_supply ? 1 : -1;
+            return a.product_name.localeCompare(b.product_name);
+        });
 
         initInv();
         renderCatTabs();
@@ -704,6 +761,11 @@
     function filtered() {
         let p = S.products;
         
+        // En el POS no mostramos los insumos puros para venta directa a menos que estén en desechables
+        if (S.cat !== "desechables") {
+            p = p.filter(x => !x.is_supply || x.price > 0);
+        }
+
         // Mostrar productos generales en todas las sucursales o productos exclusivos por sucursal
         if (S.branchId || S.branchName) {
             p = p.filter(x => {
@@ -799,53 +861,104 @@
                 </select>
             </div>` : '';
 
+        // Lista de insumos/desechables disponibles para ser componentes
+        const availableSupplies = S.products.filter(p => p.is_supply || p.category === "desechables");
+
         c.innerHTML = `
         <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
-            <h3 style="color:var(--wine-900);margin:0 0 16px">➕ Agregar Nuevo Producto al Catálogo</h3>
+            <h3 style="color:var(--wine-900);margin:0 0 16px;font-weight:900">➕ Agregar Nuevo Producto / Compuesto / Insumo</h3>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:16px">
                 <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">NOMBRE DEL PRODUCTO *</label>
-                    <input id="np-name" type="text" placeholder="Ej: Vaso Preparado Especial"
+                    <input id="np-name" type="text" placeholder="Ej: Nieve en Vaso #12"
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
                 <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">CÓDIGO / CLAVE</label>
-                    <input id="np-code" type="text" placeholder="PREP-01"
+                    <input id="np-code" type="text" placeholder="NV-12"
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
                 <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">CATEGORÍA EXACTA *</label>
                     <select id="np-cat" style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box">${catOpts}</select></div>
                 <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">PRECIO ($) *</label>
                     <input id="np-price" type="number" step="0.5" min="0" placeholder="Ej: 35.00"
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
+                <div><label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">PIEZAS POR PAQUETE (Desechables)</label>
+                    <input id="np-pack-units" type="number" step="1" min="1" placeholder="Ej: 50" value="50"
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
                 ${branchSelectHtml}
             </div>
+
+            <!-- SECCIÓN PRODUCTO COMPUESTO / RECETA -->
+            <div style="background:#fffcf0;border:1.5px solid #f2e6b5;border-radius:12px;padding:16px;margin-bottom:16px">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                    <input type="checkbox" id="np-is-composite" style="width:18px;height:18px;cursor:pointer">
+                    <label for="np-is-composite" style="font-size:13px;font-weight:900;color:var(--wine-900);cursor:pointer">
+                        📦 ¿Es Producto Compuesto? (Descontar automáticamente vasos, cucharas, charolas o insumos al cobrar en POS)
+                    </label>
+                </div>
+                <div id="composite-builder" style="display:none;padding-top:10px;border-top:1px dashed #e5e7eb">
+                    <div style="font-size:11px;color:var(--text-muted);font-weight:700;margin-bottom:10px">
+                        Selecciona los insumos/desechables que se consumen en cada venta de este producto:
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+                        <select id="comp-supply-select" style="padding:9px 12px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:700;background:#fff;max-width:320px">
+                            ${availableSupplies.map(s => `<option value="${esc(s.product_id)}">${esc(s.product_name)} (${s.units_per_package || 50} pz/paq)</option>`).join("")}
+                        </select>
+                        <input id="comp-supply-qty" type="number" min="1" step="1" value="1" placeholder="Cant." style="width:70px;padding:9px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:800">
+                        <button type="button" id="btn-add-comp-item" style="padding:9px 16px;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer">
+                            + Agregar Insumo
+                        </button>
+                    </div>
+                    <div id="comp-items-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+                </div>
+            </div>
+
             <button type="button" id="btn-add-prod"
                 style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer">
-                ✓ Guardar Producto en Catálogo</button>
+                ✓ Guardar Producto / Compuesto en Catálogo</button>
         </div>
+
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">Productos Disponibles en ${esc(S.branchName)} (${S.products.length})</h3>
+            <h3 style="color:#ffffff;margin:0;font-weight:900">Catálogo General e Insumos en ${esc(S.branchName)} (${S.products.length})</h3>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${adminBranchSelectHtml}
                 <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
                 <button type="button" id="btn-reload-admin-prods" style="padding:8px 16px;background:#fff;border:1.5px solid var(--gold-500);border-radius:8px;cursor:pointer;font-weight:bold">🔄 Actualizar</button>
             </div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px">
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px">
             ${S.products.map(p => {
                 const stock = getStock(p.product_id);
                 const isGeneral = !p.branch_name || p.branch_name === "General" || p.branch_id === "all";
-                const bTag = isGeneral ? "🏢 Todas las Sucursales" : `📍 Solo ${p.branch_name}`;
-                return `<article style="background:#fff;border:1px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:var(--shadow-sm)">
+                const bTag = isGeneral ? "🏢 Catálogo General" : `📍 Solo ${p.branch_name}`;
+                const isComp = p.is_composite && Array.isArray(p.components) && p.components.length > 0;
+                const isSupply = p.is_supply || p.category === "desechables";
+                const unitsPack = p.units_per_package || (isSupply ? 50 : 1);
+                const packs = Math.floor(stock / unitsPack);
+
+                return `<article style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:var(--shadow-sm)">
                     <div>
-                        <div style="height:90px;display:flex;align-items:center;justify-content:center;background:#fffcf0;border-radius:10px;margin-bottom:10px">
-                            ${p.image_url ? `<img src="${esc(p.image_url)}" style="max-height:100%;max-width:100%;object-fit:contain">` : '<span style="font-size:36px">🍦</span>'}
+                        <div style="height:70px;display:flex;align-items:center;justify-content:center;background:#fffcf0;border-radius:10px;margin-bottom:10px">
+                            ${p.image_url ? `<img src="${esc(p.image_url)}" style="max-height:100%;max-width:100%;object-fit:contain">` : (isSupply ? '<span style="font-size:32px">🧤</span>' : '<span style="font-size:32px">🍦</span>')}
                         </div>
                         <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:4px">
                             <small style="color:var(--text-muted);font-size:11px;font-weight:700">${esc(p.product_code||"S/C")} • <strong>${esc(p.category)}</strong></small>
                             <span style="font-size:9px;padding:2px 6px;border-radius:6px;background:${isGeneral?'#fef3c7':'#dbeafe'};color:${isGeneral?'#92400e':'#1e40af'};font-weight:800">${esc(bTag)}</span>
                         </div>
-                        <h4 style="margin:4px 0;color:var(--wine-900);font-size:14px">${esc(p.product_name)}</h4>
-                        <strong style="color:var(--wine-700);font-size:15px">${money(p.price)}</strong>
+                        <h4 style="margin:4px 0;color:var(--wine-900);font-size:14px;font-weight:900">${esc(p.product_name)}</h4>
+                        ${p.price > 0 ? `<strong style="color:var(--wine-700);font-size:15px;display:block">${money(p.price)}</strong>` : '<span style="color:#15803d;font-size:12px;font-weight:800">Insumo / Desechable</span>'}
+                        
+                        ${isComp ? `
+                        <div style="margin-top:6px;padding:6px 8px;background:#fdf4ff;border:1px solid #f0abfc;border-radius:8px;font-size:10.5px;color:#86198f">
+                            <strong>📦 Compuesto (${p.components.length} insumos):</strong>
+                            <div style="margin-top:2px">${p.components.map(c => `• ${c.qty}x ${esc(c.supply_name || c.supply_id)}`).join("<br>")}</div>
+                        </div>` : ''}
+
+                        ${isSupply ? `
+                        <div style="margin-top:6px;font-size:11px;color:#1e40af;background:#eff6ff;padding:4px 8px;border-radius:6px;font-weight:700">
+                            📦 Paquete: ${unitsPack} pzas c/u | Stock: ${stock} pzas (${packs} paq)
+                        </div>` : `
                         <div style="font-size:11px;margin-top:6px;color:${stock<=STOCK_LOW?"#b45309":"#15803d"};font-weight:700">
-                            Stock: ${stock} unidades ${stock<=STOCK_LOW?"⚠":'✓'}</div>
+                            Stock: ${stock} unidades ${stock<=STOCK_LOW?"⚠":'✓'}
+                        </div>`}
                     </div>
                     <button type="button" class="btn-del-prod" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}"
                         style="margin-top:12px;padding:8px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer">
@@ -853,6 +966,51 @@
                 </article>`;
             }).join("")}
         </div>`;
+
+        // Lógica de constructor de compuestos
+        let tempComponents = [];
+        const chkComposite = document.getElementById("np-is-composite");
+        const builderBox = document.getElementById("composite-builder");
+        const itemsList = document.getElementById("comp-items-list");
+
+        chkComposite?.addEventListener("change", () => {
+            if (builderBox) builderBox.style.display = chkComposite.checked ? "block" : "none";
+        });
+
+        function renderTempComponents() {
+            if (!itemsList) return;
+            if (!tempComponents.length) {
+                itemsList.innerHTML = '<span style="font-size:11px;color:var(--text-muted);font-style:italic">Ningún insumo agregado todavía.</span>';
+                return;
+            }
+            itemsList.innerHTML = tempComponents.map((item, idx) => `
+                <span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--gold-500);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:800;color:var(--wine-900)">
+                    ${item.qty}x ${esc(item.supply_name)}
+                    <button type="button" class="btn-rm-comp" data-idx="${idx}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-weight:900;font-size:12px">✕</button>
+                </span>
+            `).join("");
+            itemsList.querySelectorAll(".btn-rm-comp").forEach(b => b.addEventListener("click", () => {
+                tempComponents.splice(parseInt(b.dataset.idx, 10), 1);
+                renderTempComponents();
+            }));
+        }
+
+        document.getElementById("btn-add-comp-item")?.addEventListener("click", () => {
+            const selectEl = document.getElementById("comp-supply-select");
+            const qtyEl = document.getElementById("comp-supply-qty");
+            if (!selectEl || !qtyEl) return;
+            const supplyId = selectEl.value;
+            const supplyName = selectEl.options[selectEl.selectedIndex]?.text?.split(" (")[0] || "Insumo";
+            const qty = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+
+            const existing = tempComponents.find(c => c.supply_id === supplyId);
+            if (existing) {
+                existing.qty += qty;
+            } else {
+                tempComponents.push({ supply_id: supplyId, supply_name: supplyName, qty: qty });
+            }
+            renderTempComponents();
+        });
 
         document.getElementById("admin-branch-filter")?.addEventListener("change", async e => {
             await changeBranch(e.target.value);
@@ -869,11 +1027,12 @@
             const name  = document.getElementById("np-name")?.value.trim();
             const code  = document.getElementById("np-code")?.value.trim();
             const cat   = document.getElementById("np-cat")?.value;
-            const price = Number(document.getElementById("np-price")?.value);
+            const price = Number(document.getElementById("np-price")?.value || 0);
+            const packUnits = parseInt(document.getElementById("np-pack-units")?.value, 10) || 50;
             const targetBranch = document.getElementById("np-branch")?.value || S.branchName;
+            const isComp = !!document.getElementById("np-is-composite")?.checked;
 
             if (!name) return toast("Escribe el nombre del producto.", "warn");
-            if (!price || price <= 0) return toast("Ingresa un precio válido.", "warn");
 
             const bId = (targetBranch === "all") ? "all" : (S.branches.find(b => b.name.toLowerCase().includes(targetBranch.toLowerCase()))?.id || S.branchId);
 
@@ -886,6 +1045,10 @@
                 branch_id: bId,
                 branch_name: targetBranch === "all" ? "General" : targetBranch,
                 is_active: true,
+                is_composite: isComp,
+                components: isComp ? [...tempComponents] : [],
+                is_supply: (cat === "desechables" || price === 0),
+                units_per_package: packUnits,
                 created_at: now()
             };
 
@@ -905,7 +1068,7 @@
                 } catch(e) {}
             }
 
-            toast(`✓ Producto '${name}' guardado para: ${newProd.branch_name}.`, "success", 4000);
+            toast(`✓ Producto '${name}' guardado con éxito.`, "success", 4000);
             await loadProducts();
             await loadProductsAdmin();
         });
@@ -918,2176 +1081,19 @@
             deletedIds.push(String(btn.dataset.id));
             gw("deleted_product_ids", deletedIds);
 
-            if (db) {
-                try {
-                    await db.from("products").update({is_active: false, delete_reason: reason}).eq("product_id", btn.dataset.id);
-                } catch(e) {}
-            }
-
-            toast(`'${btn.dataset.name}' eliminado. Motivo: ${reason}`, "info");
+            toast(`✓ Producto '${btn.dataset.name}' eliminado del catálogo.`, "info", 4000);
             await loadProducts();
             await loadProductsAdmin();
         }));
     }
 
-    /* ── CARRITO & COBRO DE ÓRDENES ── */
-    function addToCart(pid) {
-        const p = S.products.find(x => String(x.product_id) === String(pid));
-        if (!p) return;
-        const stock = getStock(pid);
-        const ex = S.cart.find(i => String(i.product_id) === String(pid));
-        const qty = ex ? ex.quantity : 0;
-        if (qty >= stock) {
-            toast(`Solo hay ${stock} unidades de "${p.product_name}" en inventario.`, "warn");
-            return;
-        }
-        if (ex) ex.quantity++;
-        else S.cart.push({product_id: p.product_id, product_name: p.product_name, price: Number(p.price||0), quantity: 1});
-        renderCart();
-    }
-
-    function renderCart() {
-        const c = $("#order-items");
-        if (!c) return;
-        if (!S.cart.length) {
-            c.innerHTML = '<div class="empty-cart" style="text-align:center;padding:30px;color:var(--text-muted)">🛒 Orden vacía</div>';
-            setT("#subtotal,#total,#pay-total", money(0));
-            return;
-        }
-        c.innerHTML = S.cart.map(i => {
-            const stock = getStock(i.product_id);
-            const over  = i.quantity > stock;
-            return `<div class="cart-item"${over ? ' style="border-left:3px solid #ef4444"' : ""}>
-                <div>
-                    <strong style="font-size:13px;color:var(--wine-900)">${esc(i.product_name)}</strong>
-                    <div style="font-size:11px;color:var(--text-muted)">${money(i.price)} c/u</div>
-                    ${over ? `<div style="font-size:10px;color:#b91c1c;font-weight:900">⚠ Solo hay ${stock} en stock</div>` : ""}
-                </div>
-                <div class="cart-item-actions">
-                    <button type="button" data-minus="${esc(i.product_id)}">−</button>
-                    <span style="font-weight:bold;padding:0 6px">${i.quantity}</span>
-                    <button type="button" data-plus="${esc(i.product_id)}">+</button>
-                </div>
-                <strong style="color:${over ? "#b91c1c" : "var(--wine-700)"}">${money(i.price * i.quantity)}</strong>
-            </div>`;
-        }).join("");
-
-        const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
-        setT("#subtotal,#total,#pay-total", money(total));
-
-        c.querySelectorAll("[data-minus]").forEach(b => b.addEventListener("click", () => {
-            const i = S.cart.find(x => String(x.product_id) === String(b.dataset.minus));
-            if (!i) return;
-            i.quantity--;
-            if (i.quantity <= 0) S.cart = S.cart.filter(x => x.product_id !== i.product_id);
-            renderCart();
-        }));
-
-        c.querySelectorAll("[data-plus]").forEach(b => b.addEventListener("click", () => {
-            const i = S.cart.find(x => String(x.product_id) === String(b.dataset.plus));
-            if (!i) return;
-            const stock = getStock(i.product_id);
-            if (i.quantity >= stock) {
-                toast(`Solo hay ${stock} unidades de "${i.product_name}".`, "warn");
-                return;
-            }
-            i.quantity++;
-            renderCart();
-        }));
-    }
-
-    /* ── MOTOR UNIVERSAL DE IMPRESIÓN DE TICKETS & CORTES (58MM / 80MM) ── */
-    let directUsbDevice = null;
-    let directUsbEndpoint = null;
-    let directBtChar = null;
-
-    function getPrinterConfig() {
-        return gr("printer_config", {
-            model: "Ghia POS Thermal (58mm / 80mm)",
-            paperWidth: "58mm",
-            autoPrint: true,
-            connectionType: "browser"
-        });
-    }
-
-    function savePrinterConfig(cfg) {
-        gw("printer_config", cfg);
-    }
-
-    async function connectUsbDirect() {
-        if (!navigator.usb) {
-            toast("WebUSB no está disponible en este navegador. Usa Google Chrome.", "warn");
-            return false;
-        }
-        try {
-            const device = await navigator.usb.requestDevice({ filters: [] });
-            await device.open();
-            if (device.configuration === null) {
-                await device.selectConfiguration(1);
-            }
-            try { await device.claimInterface(0); } catch(e) {}
-            
-            let epNum = 1;
-            if (device.configuration && device.configuration.interfaces) {
-                for (const iface of device.configuration.interfaces) {
-                    for (const alt of iface.alternates) {
-                        for (const ep of alt.endpoints) {
-                            if (ep.direction === "out") {
-                                epNum = ep.endpointNumber;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            directUsbDevice = device;
-            directUsbEndpoint = epNum;
-            const cfg = getPrinterConfig();
-            cfg.connectionType = "usb_direct";
-            savePrinterConfig(cfg);
-            toast(`✓ Conectada exitosamente por USB: ${device.productName || 'Impresora Ghia'}`, "success", 5000);
-            return true;
-        } catch(err) {
-            console.warn("USB connect error:", err);
-            toast(`No se seleccionó impresora USB: ${err.message || ''}`, "warn");
-            return false;
-        }
-    }
-
-    async function connectBluetoothDirect() {
-        if (!navigator.bluetooth) {
-            toast("WebBluetooth no está disponible en este navegador. Usa Google Chrome.", "warn");
-            return false;
-        }
-        try {
-            const device = await navigator.bluetooth.requestDevice({
-                acceptAllDevices: true,
-                optionalServices: [
-                    "000018f0-0000-1000-8000-00805f9b34fb",
-                    "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
-                    "49535343-fe7d-4ae5-8fa9-9fafd205e455",
-                    "0000ffe0-0000-1000-8000-00805f9b34fb",
-                    "0000ff00-0000-1000-8000-00805f9b34fb"
-                ]
-            });
-            const server = await device.gatt.connect();
-            const services = await server.getPrimaryServices();
-            for (const service of services) {
-                const characteristics = await service.getCharacteristics();
-                for (const char of characteristics) {
-                    if (char.properties.write || char.properties.writeWithoutResponse) {
-                        directBtChar = char;
-                        break;
-                    }
-                }
-                if (directBtChar) break;
-            }
-            if (directBtChar) {
-                const cfg = getPrinterConfig();
-                cfg.connectionType = "bt_direct";
-                savePrinterConfig(cfg);
-                toast(`✓ Conectada por Bluetooth: ${device.name || 'Impresora Ghia'}`, "success", 5000);
-                return true;
-            } else {
-                toast("No se encontró canal de impresión en el dispositivo Bluetooth seleccionado.", "warn");
-                return false;
-            }
-        } catch(err) {
-            console.warn("Bluetooth connect error:", err);
-            toast(`No se conectó Bluetooth: ${err.message || ''}`, "warn");
-            return false;
-        }
-    }
-
-    async function sendEscPosBytes(bytes) {
-        if (directUsbDevice && directUsbEndpoint) {
-            try {
-                await directUsbDevice.transferOut(directUsbEndpoint, bytes);
-                return true;
-            } catch(e) {
-                console.warn("Fallo al enviar por USB directo, reintentando...", e);
-                try {
-                    await directUsbDevice.open();
-                    await directUsbDevice.claimInterface(0);
-                    await directUsbDevice.transferOut(directUsbEndpoint, bytes);
-                    return true;
-                } catch(e2) {
-                    console.warn("Error definitivo USB:", e2);
-                }
-            }
-        }
-        if (directBtChar) {
-            try {
-                const CHUNK_SIZE = 256;
-                for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-                    const chunk = bytes.slice(i, i + CHUNK_SIZE);
-                    if (directBtChar.writeValueWithoutResponse) {
-                        await directBtChar.writeValueWithoutResponse(chunk);
-                    } else {
-                        await directBtChar.writeValue(chunk);
-                    }
-                }
-                return true;
-            } catch(e) {
-                console.warn("Error Bluetooth:", e);
-            }
-        }
-        return false;
-    }
-
-    function buildEscPos(lines) {
-        const encoder = new TextEncoder();
-        const chunks = [];
-        const ESC = 0x1B;
-        const GS = 0x1D;
-
-        // Init
-        chunks.push(new Uint8Array([ESC, 0x40]));
-
-        lines.forEach(item => {
-            if (typeof item === "string") {
-                chunks.push(encoder.encode(item + "\n"));
-            } else if (item.align) {
-                const code = item.align === "center" ? 1 : (item.align === "right" ? 2 : 0);
-                chunks.push(new Uint8Array([ESC, 0x61, code]));
-            } else if (item.bold !== undefined) {
-                chunks.push(new Uint8Array([ESC, 0x45, item.bold ? 1 : 0]));
-            } else if (item.size) {
-                const s = item.size === "double" ? 0x11 : (item.size === "wide" ? 0x20 : (item.size === "tall" ? 0x01 : 0x00));
-                chunks.push(new Uint8Array([GS, 0x21, s]));
-            } else if (item.text !== undefined) {
-                chunks.push(encoder.encode(item.text + (item.noNewline ? "" : "\n")));
-            } else if (item.feed) {
-                chunks.push(new Uint8Array([ESC, 0x64, item.feed || 3]));
-            } else if (item.cut) {
-                chunks.push(new Uint8Array([ESC, 0x64, 4, GS, 0x56, 0x41, 0x00]));
-            }
-        });
-
-        let totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
-        const result = new Uint8Array(totalLen);
-        let offset = 0;
-        for (const chunk of chunks) {
-            result.set(chunk, offset);
-            offset += chunk.length;
-        }
-        return result;
-    }
-
-    async function triggerUniversalPrint(htmlContent, rawEscPosBytes = null) {
-        if (rawEscPosBytes && (directUsbDevice || directBtChar)) {
-            const success = await sendEscPosBytes(rawEscPosBytes);
-            if (success) {
-                toast("✓ Ticket impreso físicamente en la mini impresora.", "success", 3000);
-                return;
-            }
-        }
-
-        try {
-            let iframe = document.getElementById("pos-print-iframe");
-            if (!iframe) {
-                iframe = document.createElement("iframe");
-                iframe.id = "pos-print-iframe";
-                iframe.style.position = "fixed";
-                iframe.style.bottom = "0";
-                iframe.style.right = "0";
-                iframe.style.width = "10px";
-                iframe.style.height = "10px";
-                iframe.style.opacity = "0.001";
-                iframe.style.pointerEvents = "none";
-                iframe.style.zIndex = "-1";
-                document.body.appendChild(iframe);
-            }
-            const doc = iframe.contentWindow.document;
-            doc.open();
-            doc.write(htmlContent);
-            doc.close();
-            setTimeout(() => {
-                try {
-                    iframe.contentWindow.focus();
-                    iframe.contentWindow.print();
-                } catch(e) {
-                    console.error("Iframe print error:", e);
-                }
-            }, 300);
-        } catch(err) {
-            console.error("Print execution failed:", err);
-        }
-    }
-
-    function printSaleReceipt(s) {
-        if (!s) return;
-        const cfg = getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
-        const isCard = s.payment_method === "card";
-        const payLabel = isCard ? "TARJETA / TERMINAL" : "EFECTIVO";
-        const tickNum = s.sale_number || ("TICK-" + String(s.id).substring(0,8));
-        const itemsHtml = (s.items || []).map(it => `
-            <tr>
-                <td style="text-align:left;padding:3px 0;">${esc(it.quantity)}x ${esc(it.product_name)}</td>
-                <td style="text-align:right;padding:3px 0;">${money(it.subtotal || (it.price * it.quantity))}</td>
-            </tr>
-        `).join("");
-
-        const ticketHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Ticket #${esc(tickNum)}</title>
-    <style>
-        @page { margin: 0; size: ${pWidth} auto; }
-        * { box-sizing: border-box; }
-        html, body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: ${pWidth === "80mm" ? "13px" : "12px"};
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 5px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 6px 0; }
-        table { width: 100%; border-collapse: collapse; font-size: ${pWidth === "80mm" ? "12px" : "11px"}; }
-        @media print {
-            @page { margin: 0; size: ${pWidth} auto; }
-            html, body { width: 100% !important; max-width: ${pWidth} !important; margin: 0 auto !important; padding: 1mm !important; }
-        }
-    </style>
-    <script>
-        window.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() { window.focus(); window.print(); }, 150);
-        });
-    </script>
-</head>
-<body onload="window.print();">
-    <div class="center bold" style="font-size:15px;">NEVERIA LA FUENTE</div>
-    <div class="center" style="font-size:10px;">PALETERIA &amp; HELADERIA</div>
-    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
-    <div class="divider"></div>
-    <div><strong>SUCURSAL:</strong> ${esc(s.branch_name || S.branchName)}</div>
-    <div><strong>TURNO:</strong> ${esc(s.shift_name || S.shift)}</div>
-    <div><strong>FECHA:</strong> ${fdt(s.created_at)}</div>
-    <div><strong>CAJERA:</strong> ${esc(s.cashier_name || "Encargada")}</div>
-    <div><strong>TICKET:</strong> #${esc(tickNum)}</div>
-    <div class="divider"></div>
-    <table>
-        <thead>
-            <tr style="border-bottom: 1px solid #000;">
-                <th style="text-align:left;">CANT / PROD</th>
-                <th style="text-align:right;">IMPORTE</th>
-            </tr>
-        </thead>
-        <tbody>
-            ${itemsHtml}
-        </tbody>
-    </table>
-    <div class="divider"></div>
-    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:bold;">
-        <span>TOTAL:</span>
-        <span>${money(s.total)}</span>
-    </div>
-    <div style="font-size:11px;margin-top:4px;"><strong>FORMA DE PAGO:</strong> ${payLabel}</div>
-    <div class="double-divider"></div>
-    <div class="center" style="font-size:10px;margin-top:6px;">
-        ¡GRACIAS POR SU PREFERENCIA!<br>
-        La Fuente Paletería &amp; Heladería
-    </div>
-    <div style="height: 18mm;"></div>
-</body>
-</html>`;
-
-        // ESC/POS Crudo
-        const escLines = [
-            { align: "center" },
-            { bold: true },
-            { size: "double" },
-            { text: "NEVERIA LA FUENTE" },
-            { size: "normal" },
-            { bold: false },
-            { text: "PALETERIA Y HELADERIA" },
-            { text: "-- DESDE 1962 --" },
-            { text: "--------------------------------" },
-            { align: "left" },
-            { text: `SUCURSAL: ${s.branch_name || S.branchName}` },
-            { text: `TURNO:    ${s.shift_name || S.shift}` },
-            { text: `FECHA:    ${fdt(s.created_at)}` },
-            { text: `CAJERA:   ${s.cashier_name || "Encargada"}` },
-            { text: `TICKET:   #${tickNum}` },
-            { text: "--------------------------------" }
-        ];
-
-        (s.items || []).forEach(it => {
-            const lineName = `${it.quantity}x ${it.product_name}`.substring(0, 22);
-            const linePrice = money(it.subtotal || (it.price * it.quantity));
-            const pad = Math.max(1, 32 - lineName.length - linePrice.length);
-            escLines.push({ text: lineName + " ".repeat(pad) + linePrice });
-        });
-
-        escLines.push(
-            { text: "--------------------------------" },
-            { bold: true },
-            { text: `TOTAL:                  ${money(s.total)}` },
-            { bold: false },
-            { text: `PAGO: ${payLabel}` },
-            { text: "================================" },
-            { align: "center" },
-            { text: "¡GRACIAS POR SU COMPRA!" },
-            { text: "La Fuente Paleteria" },
-            { feed: 4 },
-            { cut: true }
-        );
-
-        const rawBytes = buildEscPos(escLines);
-        triggerUniversalPrint(ticketHtml, rawBytes);
-    }
-
-    function printCutReceipt(ct) {
-        if (!ct) return;
-        const cfg = getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
-        const diff = Number(ct.difference || 0);
-        const diffLabel = diff === 0 ? "CUADRE EXACTO ($0.00)" : (diff > 0 ? `SOBRANTE (+${money(diff)})` : `FALTANTE (${money(diff)})`);
-        const isMorning = String(ct.shift_name || "").toLowerCase().includes("mañana") || String(ct.shift_name || "").toLowerCase().includes("matutino");
-        const shiftLabel = isMorning ? "MATUTINO (MAÑANA)" : "VESPERTINO (TARDE)";
-
-        // Calcular ventas acumuladas de todo el día para esta sucursal
-        const cutDate = toDateKey(ct.created_at);
-        const allRecordedSales = gr("all_sales", []).concat(lr("sales", []));
-        const uniqueSalesMap = new Map();
-        allRecordedSales.forEach(s => {
-            const sameBranch = (String(s.branch_id) === String(ct.branch_id)) ||
-                               (s.branch_name && ct.branch_name && s.branch_name.toLowerCase().includes(ct.branch_name.toLowerCase())) ||
-                               (ct.branch_name && s.branch_name && ct.branch_name.toLowerCase().includes(s.branch_name.toLowerCase()));
-            const sameDate = toDateKey(s.created_at) === cutDate;
-            const notCan = String(s.status || "").toUpperCase() !== "CANCELLED";
-            if (sameBranch && sameDate && notCan) {
-                uniqueSalesMap.set(String(s.id), s);
-            }
-        });
-        const daySales = Array.from(uniqueSalesMap.values());
-
-        const morningSales = daySales.filter(s => getShiftCategory(s) === "matutino");
-        const afternoonSales = daySales.filter(s => getShiftCategory(s) === "vespertino");
-
-        const dayTotalMorning = morningSales.reduce((a,s) => a + Number(s.total||0), 0);
-        const dayTotalAfternoon = afternoonSales.reduce((a,s) => a + Number(s.total||0), 0);
-        const dayTotalAll = daySales.reduce((a,s) => a + Number(s.total||0), 0);
-        const dayCashAll = daySales.filter(s => (s.payment_method||"cash") === "cash").reduce((a,s) => a + Number(s.total||0), 0);
-        const dayCardAll = daySales.filter(s => s.payment_method === "card").reduce((a,s) => a + Number(s.total||0), 0);
-
-        const cutHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Recibo de Corte de Caja</title>
-    <style>
-        @page { margin: 0; size: ${pWidth} auto; }
-        * { box-sizing: border-box; }
-        html, body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: ${pWidth === "80mm" ? "12px" : "11px"};
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 5px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 6px 0; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        @media print {
-            @page { margin: 0; size: ${pWidth} auto; }
-            html, body { width: 100% !important; max-width: ${pWidth} !important; margin: 0 auto !important; padding: 1mm !important; }
-        }
-    </style>
-    <script>
-        window.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() { window.focus(); window.print(); }, 150);
-        });
-    </script>
-</head>
-<body onload="window.print();">
-    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-    <div class="center bold" style="font-size:12px;">CORTE DE CAJA OFICIAL</div>
-    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
-    <div class="divider"></div>
-    <div><strong>SUCURSAL:</strong> ${esc(ct.branch_name || S.branchName)}</div>
-    <div><strong>TURNO:</strong> ${shiftLabel}</div>
-    <div><strong>FECHA/HORA:</strong> ${fdt(ct.created_at)}</div>
-    <div><strong>ENCARGADA:</strong> ${esc(ct.performed_by_name || "Encargada")}</div>
-    <div class="divider"></div>
-    <div class="bold" style="font-size:11px;margin-bottom:3px;">DESGLOSE FINANCIERO TURNO:</div>
-    <div class="row">
-        <span>Fondo Inicial:</span>
-        <span>${money(ct.opening_amount || 0)}</span>
-    </div>
-    <div class="row">
-        <span>Ventas Efectivo:</span>
-        <span>${money(ct.cash_sales || (Number(ct.total_sales||0) - Number(ct.card_sales||0)))}</span>
-    </div>
-    <div class="row">
-        <span>Ventas Tarjeta:</span>
-        <span>${money(ct.card_sales || 0)}</span>
-    </div>
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:12px;">
-        <span>TOTAL VENDIDO TURNO:</span>
-        <span>${money(ct.total_sales || 0)}</span>
-    </div>
-    <div class="divider"></div>
-    <div class="bold" style="font-size:11px;margin-bottom:3px;">ARQUEO DE CAJA FISICA:</div>
-    <div class="row">
-        <span>Efectivo Esperado:</span>
-        <span>${money(ct.expected_cash || (Number(ct.opening_amount||0) + Number(ct.cash_sales||0)))}</span>
-    </div>
-    <div class="row bold">
-        <span>Efectivo Contado:</span>
-        <span>${money(ct.counted_cash || 0)}</span>
-    </div>
-    <div class="row bold" style="font-size:12px;margin-top:2px;">
-        <span>CORTE NETO ENTREGAR:</span>
-        <span>${money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash||0) - Number(ct.opening_amount||0)))}</span>
-    </div>
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:11px;">
-        <span>DIFERENCIA:</span>
-        <span>${diffLabel}</span>
-    </div>
-    <div class="double-divider"></div>
-    <div class="bold center" style="font-size:11.5px;margin:5px 0 3px;">*** RESUMEN TOTAL DEL DÍA ***</div>
-    <div class="center" style="font-size:9.5px;color:#333;margin-bottom:4px;">(Fecha: ${fd(cutDate)})</div>
-    <div class="row">
-        <span>Matutino (${morningSales.length} tickets):</span>
-        <span>${money(dayTotalMorning)}</span>
-    </div>
-    <div class="row">
-        <span>Vespertino (${afternoonSales.length} tickets):</span>
-        <span>${money(dayTotalAfternoon)}</span>
-    </div>
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:12.5px;">
-        <span>TOTAL VENDIDO HOY:</span>
-        <span>${money(dayTotalAll)}</span>
-    </div>
-    <div class="row" style="font-size:10px;margin-top:2px;">
-        <span>Efectivo Total Hoy:</span>
-        <span>${money(dayCashAll)}</span>
-    </div>
-    <div class="row" style="font-size:10px;">
-        <span>Tarjetas Total Hoy:</span>
-        <span>${money(dayCardAll)}</span>
-    </div>
-    <div class="row" style="font-size:10px;">
-        <span>Total Tickets Hoy:</span>
-        <span>${daySales.length} órdenes</span>
-    </div>
-    <div class="double-divider"></div>
-    <div style="margin-top:22px;text-align:center;">
-        ___________________________<br>
-        <span style="font-size:10px;">Firma de la Encargada</span>
-    </div>
-    <div style="margin-top:20px;text-align:center;">
-        ___________________________<br>
-        <span style="font-size:10px;">Firma Supervisión / Dirección</span>
-    </div>
-    <div style="height: 18mm;"></div>
-</body>
-</html>`;
-
-        const escLines = [
-            { align: "center" },
-            { bold: true },
-            { text: "NEVERIA LA FUENTE" },
-            { text: "CORTE DE CAJA OFICIAL" },
-            { bold: false },
-            { text: "--------------------------------" },
-            { align: "left" },
-            { text: `SUCURSAL:  ${ct.branch_name || S.branchName}` },
-            { text: `TURNO:     ${shiftLabel}` },
-            { text: `FECHA:     ${fdt(ct.created_at)}` },
-            { text: `ENCARGADA: ${ct.performed_by_name || "Encargada"}` },
-            { text: "--------------------------------" },
-            { text: `FONDO INICIAL:   ${money(ct.opening_amount || 0)}` },
-            { text: `VENTAS EFECTIVO: ${money(ct.cash_sales || 0)}` },
-            { text: `VENTAS TARJETA:  ${money(ct.card_sales || 0)}` },
-            { text: "--------------------------------" },
-            { bold: true },
-            { text: `TOTAL TURNO:     ${money(ct.total_sales || 0)}` },
-            { text: `EFECTIVO ESP:    ${money(ct.expected_cash || 0)}` },
-            { text: `EFECTIVO CONT:   ${money(ct.counted_cash || 0)}` },
-            { text: `CORTE NETO:      ${money(ct.net_sales_without_fund || 0)}` },
-            { text: `DIFERENCIA:      ${diffLabel}` },
-            { bold: false },
-            { text: "================================" },
-            { align: "center" },
-            { bold: true },
-            { text: "*** RESUMEN TOTAL DEL DIA ***" },
-            { text: `(Fecha: ${cutDate})` },
-            { align: "left" },
-            { bold: false },
-            { text: `Matutino (${morningSales.length} tks):  ${money(dayTotalMorning)}` },
-            { text: `Vespertino (${afternoonSales.length} tks):${money(dayTotalAfternoon)}` },
-            { text: "--------------------------------" },
-            { bold: true },
-            { text: `TOTAL VENDIDO HOY:${money(dayTotalAll)}` },
-            { bold: false },
-            { text: `Efectivo Hoy:     ${money(dayCashAll)}` },
-            { text: `Tarjeta Hoy:      ${money(dayCardAll)}` },
-            { text: `Total Tickets:    ${daySales.length}` },
-            { text: "================================" },
-            { feed: 4 },
-            { cut: true }
-        ];
-
-        const rawBytes = buildEscPos(escLines);
-        triggerUniversalPrint(cutHtml, rawBytes);
-    }
-
-    function printDailyAccountingReceipt(reportData) {
-        if (!reportData) return;
-        const cfg = getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
-
-        const branchesHtml = (reportData.branchBreakdown || []).map(b => `
-            <div style="margin: 4px 0; padding-bottom: 4px; border-bottom: 1px dotted #888;">
-                <div style="font-weight:bold; display:flex; justify-content:space-between;">
-                    <span>📍 ${esc(b.name)}:</span>
-                    <span>${money(b.total)}</span>
-                </div>
-                <div style="font-size:10px; display:flex; justify-content:space-between; color:#333;">
-                    <span>Efectivo: ${money(b.cash)}</span>
-                    <span>Tarjeta: ${money(b.card)}</span>
-                </div>
-                <div style="font-size:9.5px; color:#555;">
-                    Tickets: ${b.tickets} | Mat: ${money(b.mat)} | Ves: ${money(b.ves)}
-                </div>
-            </div>
-        `).join("");
-
-        const dailyHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Corte Diario Consolidado — ${esc(reportData.date)}</title>
-    <style>
-        @page { margin: 0; size: ${pWidth} auto; }
-        * { box-sizing: border-box; }
-        html, body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: ${pWidth === "80mm" ? "12px" : "11px"};
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 5px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 6px 0; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        @media print {
-            @page { margin: 0; size: ${pWidth} auto; }
-            html, body { width: 100% !important; max-width: ${pWidth} !important; margin: 0 auto !important; padding: 1mm !important; }
-        }
-    </style>
-    <script>
-        window.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() { window.focus(); window.print(); }, 150);
-        });
-    </script>
-</head>
-<body onload="window.print();">
-    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-    <div class="center bold" style="font-size:12px;">CORTE DIARIO CONSOLIDADO</div>
-    <div class="center" style="font-size:9px;">-- AUDITORIA GENERAL DE RED --</div>
-    <div class="divider"></div>
-    <div><strong>FECHA AUDITADA:</strong> ${fd(reportData.date)}</div>
-    <div><strong>EMISIÓN:</strong> ${fdt(now())}</div>
-    <div><strong>AUDITOR / DIRECCIÓN:</strong> ${esc(S.profile?.full_name || S.user?.email || "Dirección General")}</div>
-    <div class="divider"></div>
-    <div class="bold" style="font-size:11px; margin-bottom:3px;">BALANCE GENERAL DE LA CADENA:</div>
-    <div class="row bold" style="font-size:13px;">
-        <span>VENTA TOTAL RED:</span>
-        <span>${money(reportData.totalChain)}</span>
-    </div>
-    <div class="row">
-        <span>💵 Total Efectivo:</span>
-        <span>${money(reportData.cashTotal)}</span>
-    </div>
-    <div class="row">
-        <span>💳 Total Tarjetas:</span>
-        <span>${money(reportData.cardTotal)}</span>
-    </div>
-    <div class="row">
-        <span>🌅 Total Matutino:</span>
-        <span>${money(reportData.matTotal)}</span>
-    </div>
-    <div class="row">
-        <span>🌇 Total Vespertino:</span>
-        <span>${money(reportData.vesTotal)}</span>
-    </div>
-    <div class="row">
-        <span>🧾 Total Tickets:</span>
-        <span>${reportData.totalTickets} emitidos</span>
-    </div>
-    <div class="divider"></div>
-    <div class="bold" style="font-size:11px; margin-bottom:4px;">DESGLOSE POR SUCURSAL:</div>
-    ${branchesHtml}
-    <div class="double-divider"></div>
-    <div style="margin-top:24px; text-align:center;">
-        ___________________________<br>
-        <span style="font-size:10px;">Firma Dirección General (Jaquelin / Ignacio)</span>
-    </div>
-    <div style="margin-top:16px; text-align:center; font-size:9px; color:#555;">
-        La Fuente Paletería &amp; Heladería — Desde 1962
-    </div>
-    <div style="height: 18mm;"></div>
-</body>
-</html>`;
-
-        triggerUniversalPrint(dailyHtml);
-    }
-
-    function printShiftOpeningReceipt(sh) {
-        if (!sh) return;
-        const cfg = getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
-
-        const shiftHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Comprobante de Apertura de Turno</title>
-    <style>
-        @page { margin: 0; size: ${pWidth} auto; }
-        * { box-sizing: border-box; }
-        html, body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px;
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 5px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 6px 0; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        @media print {
-            @page { margin: 0; size: ${pWidth} auto; }
-            html, body { width: 100% !important; max-width: ${pWidth} !important; margin: 0 auto !important; padding: 1mm !important; }
-        }
-    </style>
-    <script>
-        window.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() { window.focus(); window.print(); }, 150);
-        });
-    </script>
-</head>
-<body onload="window.print();">
-    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-    <div class="center bold" style="font-size:11px;">APERTURA &amp; CAMBIO DE TURNO</div>
-    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
-    <div class="divider"></div>
-    <div><strong>SUCURSAL:</strong> ${esc(sh.branch || S.branchName)}</div>
-    <div><strong>TURNO:</strong> ${esc(sh.shift || S.shift)}</div>
-    <div><strong>FECHA / HORA:</strong> ${esc(sh.datetime || fdt(sh.created_at))}</div>
-    <div><strong>ENCARGADA:</strong> ${esc(sh.user_name || "Encargada")}</div>
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:13px;">
-        <span>FONDO INICIAL RECIBIDO:</span>
-        <span>${money(sh.amount)}</span>
-    </div>
-    <div class="divider"></div>
-    <div style="margin-top:20px; text-align:center;">
-        ___________________________<br>
-        <span style="font-size:10px;">Firma Encargada Entrante</span>
-    </div>
-    <div style="height: 18mm;"></div>
-</body>
-</html>`;
-
-        triggerUniversalPrint(shiftHtml);
-    }
-
-    function printTestReceipt(customConfig = null) {
-        const cfg = customConfig || getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
-
-        const testHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Ticket de Prueba de Impresora</title>
-    <style>
-        @page { margin: 0; size: ${pWidth} auto; }
-        * { box-sizing: border-box; }
-        html, body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: ${pWidth === "80mm" ? "12px" : "11px"};
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 5px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 6px 0; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        @media print {
-            @page { margin: 0; size: ${pWidth} auto; }
-            html, body { width: 100% !important; max-width: ${pWidth} !important; margin: 0 auto !important; padding: 1mm !important; }
-        }
-    </style>
-    <script>
-        window.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() { window.focus(); window.print(); }, 150);
-        });
-    </script>
-</head>
-<body onload="window.print();">
-    <div class="center bold" style="font-size:15px;">*** TEST DE IMPRESIÓN ***</div>
-    <div class="center bold" style="font-size:13px;">NEVERIA LA FUENTE POS</div>
-    <div class="center" style="font-size:9px;">-- SISTEMA MULTISUCURSAL --</div>
-    <div class="double-divider"></div>
-    <div><strong>MODELO SELECCIONADO:</strong> ${esc(cfg.model || "Ghia POS Thermal")}</div>
-    <div><strong>ANCHO DE ROLLO:</strong> ${esc(pWidth)}</div>
-    <div><strong>FECHA Y HORA:</strong> ${fdt(now())}</div>
-    <div><strong>SUCURSAL:</strong> ${esc(S.branchName)}</div>
-    <div><strong>USUARIO:</strong> ${esc(S.profile?.full_name || S.user?.email || "Usuario")}</div>
-    <div class="divider"></div>
-    <div class="bold center" style="font-size:12px; margin:4px 0;">¡CALIBRACIÓN CORRECTA!</div>
-    <div class="center" style="font-size:10px;">
-        Esta impresora está lista para imprimir:<br>
-        ✓ Tickets de Venta a Clientes<br>
-        ✓ Cortes de Caja por Turno<br>
-        ✓ Reportes Diarios Consolidados<br>
-        ✓ Aperturas de Turno con Firma
-    </div>
-    <div class="divider"></div>
-    <div class="center bold" style="font-size:10px;">
-        1234567890 ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>
-        áéíóú ÁÉÍÓÚ ñÑ $12,345.67
-    </div>
-    <div class="double-divider"></div>
-    <div class="center bold" style="font-size:11px; margin-top:6px;">
-        [ CORTAR AQUI ]
-    </div>
-    <div style="height: 20mm;"></div>
-</body>
-</html>`;
-
-        const escLines = [
-            { align: "center" },
-            { bold: true },
-            { size: "double" },
-            { text: "*** TEST DE IMPRESION ***" },
-            { size: "normal" },
-            { text: "NEVERIA LA FUENTE POS" },
-            { text: "-- SISTEMA MULTISUCURSAL --" },
-            { text: "================================" },
-            { align: "left" },
-            { bold: false },
-            { text: `MODELO:   ${cfg.model || 'Ghia POS Thermal'}` },
-            { text: `ROLLO:    ${pWidth}` },
-            { text: `FECHA:    ${fdt(now())}` },
-            { text: `SUCURSAL: ${S.branchName}` },
-            { text: "--------------------------------" },
-            { align: "center" },
-            { bold: true },
-            { text: "¡CALIBRACION CORRECTA!" },
-            { bold: false },
-            { text: "Lista para ventas y cortes" },
-            { text: "================================" },
-            { feed: 4 },
-            { cut: true }
-        ];
-
-        const rawBytes = buildEscPos(escLines);
-        triggerUniversalPrint(testHtml, rawBytes);
-    }
-
-    /* ── MODAL CONFIGURADOR DE IMPRESORA TÉRMICA ── */
-    function openPrinterSetupModal() {
-        const curCfg = getPrinterConfig();
-        const isUsbConnected = Boolean(directUsbDevice);
-        const isBtConnected = Boolean(directBtChar);
-
-        const overlay = document.createElement("div");
-        overlay.id = "printer-modal-overlay";
-        overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px);";
-        overlay.innerHTML = `
-            <div style="background:#fffef8;border:2px solid var(--gold-500);border-radius:22px;padding:26px 22px;max-width:500px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.45);color:#1a0205">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1.5px solid rgba(188,132,10,.3);padding-bottom:10px">
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <span style="font-size:26px">🖨️</span>
-                        <div>
-                            <h3 style="margin:0;color:var(--wine-950);font-size:17px;font-weight:900">Configurar Impresora Térmica</h3>
-                            <small style="color:var(--text-muted);font-weight:700">Mini impresora Ghia (100% Gratis - Sin pagar apps)</small>
-                        </div>
-                    </div>
-                    <button id="p-close-btn" type="button" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--wine-900);font-weight:900">✕</button>
-                </div>
-
-                <!-- CONEXIÓN DIRECTA GRATUITA SIN APPS DE PAGO -->
-                <div style="background:#f0fdf4;border:1.5px solid #86efac;padding:12px 14px;border-radius:14px;margin-bottom:14px">
-                    <div style="font-size:12px;font-weight:900;color:#166534;margin-bottom:6px;display:flex;align-items:center;gap:6px">
-                        <span>⚡ CONEXIÓN DIRECTA (GRATIS Y DIRECTA)</span>
-                        <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${(isUsbConnected||isBtConnected)?'#dcfce7;color:#15803d':'#fee2e2;color:#991b1b'}">
-                            ${isUsbConnected ? '🟢 USB Conectada' : (isBtConnected ? '🟢 Bluetooth Conectada' : '⚪ No vinculada')}
-                        </span>
-                    </div>
-                    <p style="margin:0 0 10px;font-size:11px;color:#166534;line-height:1.4">
-                        Conecta tu impresora directamente por USB o Bluetooth desde Chrome. <strong>No necesitas instalar ni pagar ninguna aplicación.</strong>
-                    </p>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                        <button type="button" id="btn-conn-usb" style="padding:9px;background:#15803d;color:#fff;border:none;border-radius:8px;font-size:11.5px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
-                            <span>🔌</span><span>Vincular USB</span>
-                        </button>
-                        <button type="button" id="btn-conn-bt" style="padding:9px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:11.5px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
-                            <span>📡</span><span>Vincular Bluetooth</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px">
-                    <div>
-                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">MODELO / MARCA DE IMPRESORA:</label>
-                        <select id="p-model" style="width:100%;padding:10px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none">
-                            <option value="Ghia POS Thermal (58mm / 80mm)"${curCfg.model.includes("Ghia")?' selected':''}>🖨️ Ghia Mini Impresora Térmica (USB / Bluetooth)</option>
-                            <option value="EC Line (58mm / 80mm)"${curCfg.model.includes("EC Line")?' selected':''}>🖨️ EC Line (Térmica USB / Bluetooth)</option>
-                            <option value="Ofichido (58mm / 80mm)"${curCfg.model.includes("Ofichido")?' selected':''}>🖨️ Ofichido POS Thermal</option>
-                            <option value="Caysn Thermal (POS-58)"${curCfg.model.includes("Caysn")?' selected':''}>🖨️ Caysn Thermal Printer</option>
-                            <option value="Xprinter (XP-58 / XP-80)"${curCfg.model.includes("Xprinter")?' selected':''}>🖨️ Xprinter / Gprinter</option>
-                            <option value="Impresora POS-58 Genérica"${curCfg.model.includes("POS-58") && !curCfg.model.includes("Ghia")?' selected':''}>🖨️ Impresora POS-58 (Rollo 58mm)</option>
-                            <option value="Impresora POS-80 Genérica"${curCfg.model.includes("POS-80") && !curCfg.model.includes("Ghia")?' selected':''}>🖨️ Impresora POS-80 (Rollo 80mm)</option>
-                            <option value="Epson TM-T20 / TM-T88"${curCfg.model.includes("Epson")?' selected':''}>🖨️ Epson TM-T20 / TM-T88 (ESC/POS)</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">ANCHO DE PAPEL (ROLLO TÉRMICO):</label>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                            <label style="display:flex;align-items:center;gap:8px;background:#fff;padding:10px;border:1.5px solid #d1d5db;border-radius:10px;cursor:pointer;font-weight:800;font-size:12px">
-                                <input type="radio" name="p-width" value="58mm"${curCfg.paperWidth==='58mm'?' checked':''}>
-                                <span>58 mm (Estándar mini)</span>
-                            </label>
-                            <label style="display:flex;align-items:center;gap:8px;background:#fff;padding:10px;border:1.5px solid #d1d5db;border-radius:10px;cursor:pointer;font-weight:800;font-size:12px">
-                                <input type="radio" name="p-width" value="80mm"${curCfg.paperWidth==='80mm'?' checked':''}>
-                                <span>80 mm (Ancho grande)</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                    <button id="p-test-btn" type="button"
-                        style="padding:12px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);color:#15803d;border:1.5px solid #86efac;border-radius:12px;font-weight:900;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
-                        <span>🖨️</span>
-                        <span>Ticket de Prueba</span>
-                    </button>
-                    <button id="p-save-btn" type="button"
-                        style="padding:12px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:none;border-radius:12px;font-weight:900;font-size:12.5px;cursor:pointer">
-                        ✓ Guardar Ajustes
-                    </button>
-                </div>
-            </div>`;
-        document.body.appendChild(overlay);
-
-        overlay.querySelector("#p-close-btn").onclick = () => overlay.remove();
-
-        overlay.querySelector("#btn-conn-usb").onclick = async () => {
-            const ok = await connectUsbDirect();
-            if (ok) {
-                overlay.remove();
-                openPrinterSetupModal();
-            }
-        };
-
-        overlay.querySelector("#btn-conn-bt").onclick = async () => {
-            const ok = await connectBluetoothDirect();
-            if (ok) {
-                overlay.remove();
-                openPrinterSetupModal();
-            }
-        };
-
-        overlay.querySelector("#p-test-btn").onclick = () => {
-            const selectedWidth = overlay.querySelector("input[name='p-width']:checked")?.value || "58mm";
-            const selectedModel = overlay.querySelector("#p-model")?.value || "Ghia POS Thermal (58mm / 80mm)";
-            printTestReceipt({ model: selectedModel, paperWidth: selectedWidth });
-            toast("🖨️ Enviando ticket de prueba a la impresora…", "info", 3000);
-        };
-
-        overlay.querySelector("#p-save-btn").onclick = () => {
-            const selectedWidth = overlay.querySelector("input[name='p-width']:checked")?.value || "58mm";
-            const selectedModel = overlay.querySelector("#p-model")?.value || "Ghia POS Thermal (58mm / 80mm)";
-            savePrinterConfig({ model: selectedModel, paperWidth: selectedWidth, autoPrint: true });
-            overlay.remove();
-            toast("✓ Impresora configurada correctamente.", "success", 4000);
-        };
-    }
-
-    async function directPrintTicketAction() {
-        const lastSale = lr("last_printed_sale", null) || lr("sales", [])[0];
-        if (!directUsbDevice && !directBtChar) {
-            if (navigator.usb) {
-                toast("🔌 Conectando con impresora Ghia por USB…", "info", 3000);
-                const ok = await connectUsbDirect();
-                if (ok) {
-                    if (lastSale) printSaleReceipt(lastSale);
-                    else printTestReceipt();
-                    return;
-                }
-            }
-        }
-        if (lastSale) {
-            printSaleReceipt(lastSale);
-            toast(`🖨️ Imprimiendo Ticket #${lastSale.sale_number || ''} en físico…`, "info", 3000);
-        } else {
-            printTestReceipt();
-            toast("🖨️ Imprimiendo ticket de prueba en físico…", "info", 3000);
-        }
-    }
-
-    async function autoReconnectUsbPrinter() {
-        if (!navigator.usb) return;
-        try {
-            const devices = await navigator.usb.getDevices();
-            if (devices.length > 0) {
-                const device = devices[0];
-                await device.open();
-                if (device.configuration === null) await device.selectConfiguration(1);
-                try { await device.claimInterface(0); } catch(e) {}
-                let epNum = 1;
-                if (device.configuration && device.configuration.interfaces) {
-                    for (const iface of device.configuration.interfaces) {
-                        for (const alt of iface.alternates) {
-                            for (const ep of alt.endpoints) {
-                                if (ep.direction === "out") {
-                                    epNum = ep.endpointNumber;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                directUsbDevice = device;
-                directUsbEndpoint = epNum;
-                console.log("✓ Impresora Ghia USB reconectada automáticamente:", device.productName);
-            }
-        } catch(err) {
-            console.warn("Auto-reconnect USB:", err);
-        }
-    }
-
-    document.addEventListener("click", e => {
-        if (e.target.closest("#btn-open-printer-modal,.btn-open-printer-modal")) {
-            openPrinterSetupModal();
-        }
-        if (e.target.closest("#btn-direct-print-ticket")) {
-            directPrintTicketAction();
-        }
-        if (e.target.closest("#pay-button,.pay-button")) {
-            processSale();
-        }
-    });
-
-    async function processSale() {
-        if (!S.cart.length) return toast("No hay productos en la orden.", "warn");
-        if (checkBlock())   return toast("Hay productos sin stock suficiente. Revisa el inventario antes de cobrar.", "error");
-        const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
-
-        // Selección de método de pago interactiva (Efectivo vs Tarjeta)
-        const payMethod = await toastPaymentMethod(total);
-        if (!payMethod) return;
-
-        const cashierEmail = S.user?.email || "";
-        const cashierName = S.profile?.full_name || cashierEmail || "Encargada";
-
-        const saleRecord = {
-            id: "sale_" + Date.now() + "_" + Math.random().toString(36).substring(2,7),
-            sale_number: "TICK-" + Math.floor(100000 + Math.random() * 900000),
-            branch_id: S.branchId,
-            branch_name: S.branchName,
-            shift_name: S.shift,
-            cashier_id: S.user?.id || "offline",
-            cashier_name: cashierEmail ? `${cashierName} (${cashierEmail})` : cashierName,
-            total: total,
-            payment_method: payMethod, // 'cash' o 'card'
-            status: "COMPLETADA",
-            items: S.cart.map(i => ({product_id: i.product_id, product_name: i.product_name, quantity: i.quantity, price: i.price, subtotal: i.price*i.quantity})),
-            created_at: now()
-        };
-
-        // 1. GUARDADO LOCAL INSTANTÁNEO
-        const localSales = lr("sales", []);
-        localSales.unshift(saleRecord);
-        lw("sales", localSales);
-
-        const allGlobalSales = gr("all_sales", []);
-        allGlobalSales.unshift(saleRecord);
-        gw("all_sales", allGlobalSales);
-
-        // Guardar última venta registrada para impresión física directa sólo cuando se presione el botón
-        lw("last_printed_sale", saleRecord);
-        gw("last_printed_sale", saleRecord);
-
-        // 2. ACTUALIZACIÓN INMEDIATA DE LA UI (0ms de retraso para la encargada)
-        const cartItemsSnapshot = [...S.cart];
-        cartItemsSnapshot.forEach(i => deductStock(i.product_id, i.quantity, i.product_name));
-        S.cart = [];
-        renderCart();
-        renderPOS(filtered());
-        alertInv();
-        const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
-        toast(`✓ Venta de ${money(total)} cobrada en ${payLabel}. Ticket #${saleRecord.sale_number}`, "success", 3000);
-
-        // 2.1 TRANSMISIÓN INSTANTÁNEA EN VIVO A SUPERUSUARIOS Y SUCURSALES (0ms MESH)
-        if (realtimeChannel) {
-            try {
-                realtimeChannel.send({
-                    type: "broadcast",
-                    event: "sale_created",
-                    payload: { sale: saleRecord }
-                });
-            } catch(e) {
-                console.warn("Mesh broadcast error:", e);
-            }
-        }
-
-        // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO (Fire-and-forget sin bloquear la pantalla)
-        (async () => {
-            if (db) {
-                try {
-                    const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
-                    const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
-                    const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
-                    const defaultShiftUUID = "1dabe6df-2ce6-4e3a-97df-b81e179898ab";
-
-                    const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
-                    const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
-                    const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
-                    const sId = uuid(S.currentShift?.id) ? S.currentShift.id : defaultShiftUUID;
-
-                    const observationsObj = {
-                        branch_name: S.branchName,
-                        shift_name: S.shift,
-                        cashier_name: saleRecord.cashier_name,
-                        payment_method: payMethod,
-                        items: saleRecord.items,
-                        local_id: saleRecord.id
-                    };
-
-                    const insertPayload = {
-                        company_id: cId,
-                        branch_id: bId,
-                        shift_id: sId,
-                        user_id: uId,
-                        sale_number: saleRecord.sale_number,
-                        subtotal: total,
-                        discount: 0,
-                        tax: 0,
-                        total: total,
-                        status: "COMPLETED",
-                        observations: JSON.stringify(observationsObj),
-                        created_at: saleRecord.created_at
-                    };
-
-                    const { data, error } = await db.from("sales").insert(insertPayload).select();
-
-                    if (!error && data && data.length) {
-                        const syncedIds = new Set(gr("synced_sales_ids", []));
-                        syncedIds.add(String(saleRecord.id));
-                        if (data[0]?.id) syncedIds.add(String(data[0].id));
-                        gw("synced_sales_ids", Array.from(syncedIds));
-                    } else if (error) {
-                        console.warn("Venta pendiente de sincronizar en cola:", error);
-                    }
-                } catch(e) {
-                    console.warn("Red lenta/offline, guardado en cola para reintentar:", e);
-                }
-            }
-            syncPendingSalesToSupabase();
-        })();
-    }
-
-    /* ── MIS VENTAS (FILTRO POR CALENDARIO, TURNOS Y ACUMULADOR PARA CAJA) ── */
-    async function loadSales(silent = false) {
-        const c = $("#sales-container");
-        if (!c || !S.branchId) return;
-        if (!silent && !c.children.length) {
-            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
-        }
-
-        let remoteSales = [];
-        if (db) {
-            try {
-                const {data, error} = await db.from("sales").select("id,company_id,branch_id,shift_id,user_id,sale_number,total,status,observations,created_at").order("created_at", {ascending:false});
-                if (data && data.length) {
-                    remoteSales = data.map(s => {
-                        let obs = {};
-                        try {
-                            obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
-                        } catch(e) {}
-                        return {
-                            id: s.id,
-                            sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                            branch_id: s.branch_id,
-                            branch_name: obs.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "Sucursal",
-                            shift_name: obs.shift_name || "Mañana",
-                            cashier_id: s.user_id,
-                            cashier_name: obs.cashier_name || "Encargada",
-                            total: Number(s.total || 0),
-                            payment_method: obs.payment_method || "cash",
-                            status: String(s.status||"").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETADA",
-                            items: obs.items || [],
-                            created_at: s.created_at,
-                            local_id: obs.local_id || s.id
-                        };
-                    });
-                }
-            } catch(e) {
-                console.warn("Error cargando ventas remotas:", e);
-            }
-        }
-
-        const localSales = lr("sales", []);
-        const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
-
-        const salesMap = new Map();
-        localSales.forEach(s => {
-            if (matchesBranch(s, { id: S.branchId, name: S.branchName })) {
-                salesMap.set(String(s.id), s);
-            }
-        });
-
-        remoteSales.forEach(s => {
-            if (matchesBranch(s, { id: S.branchId, name: S.branchName })) {
-                const sid = String(s.id);
-                let matchedKey = null;
-                for (const [key, existing] of salesMap.entries()) {
-                    if (key === sid || (s.local_id && (key === s.local_id || existing.local_id === s.local_id)) || (s.sale_number && existing.sale_number === s.sale_number)) {
-                        matchedKey = key;
-                        break;
-                    }
-                }
-                if (matchedKey) {
-                    salesMap.set(matchedKey, { ...salesMap.get(matchedKey), ...s });
-                } else {
-                    salesMap.set(sid, s);
-                }
-            }
-        });
-
-        // Asegurar que ventas globales de la sucursal también se unan localmente
-        const allGlobalSales = gr("all_sales", []);
-        allGlobalSales.forEach(s => {
-            if (matchesBranch(s, { id: S.branchId, name: S.branchName })) {
-                const sid = String(s.id);
-                if (!salesMap.has(sid)) {
-                    salesMap.set(sid, s);
-                }
-            }
-        });
-
-        const allSales = Array.from(salesMap.values()).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-
-        // Fechas disponibles usando hora local
-        const datesSet = new Set();
-        allSales.forEach(s => {
-            const d = toDateKey(s.created_at);
-            if (d) datesSet.add(d);
-        });
-        const todayStr = toDateKey();
-        datesSet.add(todayStr);
-
-        const availableDates = Array.from(datesSet).sort().reverse();
-        const selectedDate = S.salesFilterDate !== undefined ? S.salesFilterDate : todayStr;
-        const selectedShiftFilter = S.salesFilterShift || "all";
-
-        // Ventas del día seleccionado (o todas si se selecciona ver todo)
-        const daySales = (selectedDate === "all") 
-            ? allSales 
-            : allSales.filter(s => toDateKey(s.created_at) === selectedDate);
-        
-        const activeDaySales = daySales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED" && !cancelledReasons[String(s.id)]);
-        const cancelledDaySales = daySales.filter(s => String(s.status||"").toUpperCase() === "CANCELLED" || cancelledReasons[String(s.id)]);
-
-        // Acumulado por turnos del día seleccionado
-        const matSales = activeDaySales.filter(s => getShiftCategory(s) === "matutino");
-        const vesSales = activeDaySales.filter(s => getShiftCategory(s) === "vespertino");
-        
-        // Ventas del turno en curso del usuario
-        const isCurrentMat = String(S.shift||"").toLowerCase().includes("mañana") || String(S.shift||"").toLowerCase().includes("matutino");
-        const isCurrentVes = String(S.shift||"").toLowerCase().includes("tarde") || String(S.shift||"").toLowerCase().includes("vespertino");
-        const currentTurnSales = S.isSU 
-            ? activeDaySales 
-            : (isCurrentMat ? matSales : (isCurrentVes ? vesSales : activeDaySales.filter(s => String(s.shift_name||"").toLowerCase() === String(S.shift||"").toLowerCase())));
-
-        const totalDayActive = activeDaySales.reduce((acc,s) => acc + Number(s.total||0), 0);
-        const cashDaySales = activeDaySales.filter(s => (s.payment_method || "cash") === "cash");
-        const cardDaySales = activeDaySales.filter(s => s.payment_method === "card");
-        const totalCashDay = cashDaySales.reduce((acc,s) => acc + Number(s.total||0), 0);
-        const totalCardDay = cardDaySales.reduce((acc,s) => acc + Number(s.total||0), 0);
-        const totalCurrentTurn = currentTurnSales.reduce((acc,s) => acc + Number(s.total||0), 0);
-
-        // Filtrado de lista a mostrar
-        const isShowingCancelled = S.salesTab === "cancelled";
-        let targetList = isShowingCancelled ? cancelledDaySales : activeDaySales;
-
-        if (selectedShiftFilter !== "all") {
-            targetList = targetList.filter(s => getShiftCategory(s) === selectedShiftFilter);
-        }
-
-        c.innerHTML = `
-        <!-- TARJETAS DE CONTROL DE CAJA Y ACUMULADOS POR TURNO Y MÉTODO DE PAGO -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px">
-            <div class="dashboard-card" style="background:linear-gradient(135deg,#230408,#5c121b);color:#fff;border:1.5px solid var(--gold-400);padding:18px;border-radius:16px;box-shadow:var(--shadow-card)">
-                <span style="font-size:9.5px;font-weight:900;color:#fef08a;letter-spacing:1px;display:block">${selectedDate==='all'?'TOTAL HISTÓRICO':'TOTAL VENDIDO HOY'}</span>
-                <div style="font-size:26px;font-weight:900;color:#ffffff;margin:4px 0">${money(totalDayActive)}</div>
-                <small style="color:#fde68a">${activeDaySales.length} tickets activos ${selectedDate==='all'?'en total':'en el día'}</small>
-            </div>
-            <div class="dashboard-card" style="padding:18px;border-radius:16px;background:linear-gradient(145deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;box-shadow:var(--shadow-card)">
-                <span style="font-size:9.5px;font-weight:900;color:#166534;letter-spacing:1px;display:block">💵 COBRADO EN EFECTIVO</span>
-                <div style="font-size:22px;font-weight:900;color:#15803d;margin:4px 0">${money(totalCashDay)}</div>
-                <small style="color:#166534;font-weight:800">${cashDaySales.length} tickets en caja física</small>
-            </div>
-            <div class="dashboard-card" style="padding:18px;border-radius:16px;background:linear-gradient(145deg,#eff6ff,#dbeafe);border:1.5px solid #93c5fd;box-shadow:var(--shadow-card)">
-                <span style="font-size:9.5px;font-weight:900;color:#1e40af;letter-spacing:1px;display:block">💳 COBRADO CON TARJETA</span>
-                <div style="font-size:22px;font-weight:900;color:#1d4ed8;margin:4px 0">${money(totalCardDay)}</div>
-                <small style="color:#1e40af;font-weight:800">${cardDaySales.length} tickets en terminal</small>
-            </div>
-            <div class="dashboard-card" style="padding:18px;border-radius:16px;background:linear-gradient(145deg,#fffef9,#fceecc);border:1.5px solid #d9c7a9;box-shadow:var(--shadow-card)">
-                <span style="font-size:9.5px;font-weight:900;color:#854d0e;letter-spacing:1px;display:block">✨ EN TU TURNO (${esc(S.shift)})</span>
-                <div style="font-size:22px;font-weight:900;color:var(--wine-900);margin:4px 0">${money(totalCurrentTurn)}</div>
-                <small style="color:var(--wine-800);font-weight:800">${currentTurnSales.length} tickets en tu jornada</small>
-            </div>
-        </div>
-
-        <!-- BARRA DE FILTRO POR CALENDARIO Y ESTADOS -->
-        <div class="dashboard-card" style="padding:14px 18px;border-radius:16px;margin-bottom:18px;background:linear-gradient(145deg,#fffef9,#fceecc);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <div style="display:flex;align-items:center;gap:6px">
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-900)">📅 FILTRAR FECHA:</label>
-                    <select id="sales-date-picker" style="padding:6px 10px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:800;background:#fff;outline:none;color:#1a0205">
-                        <option value="${todayStr}"${selectedDate===todayStr?' selected':''}>📅 Hoy (${fd(todayStr)})</option>
-                        <option value="all"${selectedDate==='all'?' selected':''}>📜 Ver Todo el Histórico</option>
-                        ${availableDates.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?' selected':''}>📅 ${fd(d)}</option>`).join("")}
-                    </select>
-                </div>
-                <div style="display:flex;align-items:center;gap:6px">
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-900)">FILTRAR TURNO:</label>
-                    <select id="sales-shift-filter" style="padding:6px 10px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:800;background:#fff;outline:none;color:#1a0205">
-                        <option value="all"${selectedShiftFilter==='all'?' selected':''}>Todos los turnos</option>
-                        <option value="matutino"${selectedShiftFilter==='matutino'?' selected':''}>Solo Matutino</option>
-                        <option value="vespertino"${selectedShiftFilter==='vespertino'?' selected':''}>Solo Vespertino</option>
-                    </select>
-                </div>
-            </div>
-
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <div style="display:flex;gap:4px;background:#fff;padding:4px;border-radius:20px;border:1px solid rgba(188,132,10,.35)">
-                    <button type="button" class="btn-sales-tab" data-tab="active" style="padding:6px 14px;border-radius:15px;border:none;font-weight:800;font-size:11px;cursor:pointer;background:${!isShowingCancelled?'var(--wine-700)':'transparent'};color:${!isShowingCancelled?'#fff':'var(--wine-800)'}">✓ Activas (${activeDaySales.length})</button>
-                    <button type="button" class="btn-sales-tab" data-tab="cancelled" style="padding:6px 14px;border-radius:15px;border:none;font-weight:800;font-size:11px;cursor:pointer;background:${isShowingCancelled?'#b91c1c':'transparent'};color:${isShowingCancelled?'#fff':'var(--wine-800)'}">🚫 Canceladas (${cancelledDaySales.length})</button>
-                </div>
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
-                <button type="button" id="btn-rel-sales" style="padding:8px 16px;background:#fff;border:1.5px solid var(--gold-500);border-radius:8px;cursor:pointer;font-weight:bold">🔄 Actualizar</button>
-            </div>
-        </div>
-
-        <!-- LISTA DE TICKETS Y VENTAS -->
-        ${targetList.length
-            ? `<div style="display:flex;flex-direction:column;gap:12px">
-                ${targetList.map(s => {
-                    const isCan = String(s.status||"").toUpperCase() === "CANCELLED" || cancelledReasons[String(s.id)];
-                    const reason = s.cancel_reason || cancelledReasons[String(s.id)] || "Sin motivo especificado";
-                    const tickNum = s.sale_number || ("TICK-" + String(s.id).substring(0,8));
-                    const isCard = s.payment_method === "card";
-                    return `<article class="sale-card" style="background:#fff;border:1px solid rgba(188,132,10,.35);border-radius:12px;padding:16px${isCan ? ";border-left:5px solid #b91c1c" : ""}">
-                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-                            <div>
-                                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                                    <span style="font-size:18px">${isCan?'🚫':'🧾'}</span>
-                                    <strong style="font-size:14px;color:var(--wine-900)">Ticket #${esc(tickNum)}</strong>
-                                    <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:bold;
-                                        background:${isCan ? "#fee2e2;color:#991b1b" : "#dcfce7;color:#15803d"}">
-                                        ${isCan ? "CANCELADA" : "COMPLETADA"}</span>
-                                    <span style="font-size:10px;background:${isCard?'#dbeafe;color:#1e40af;border:1px solid #93c5fd':'#dcfce7;color:#166534;border:1px solid #86efac'};padding:2px 8px;border-radius:6px;font-weight:900">
-                                        ${isCard ? '💳 TARJETA' : '💵 EFECTIVO'}
-                                    </span>
-                                    <span style="font-size:10px;background:#fef3c7;color:#854d0e;padding:2px 8px;border-radius:6px;font-weight:800">
-                                        Turno: ${esc(s.shift_name || S.shift)}</span>
-                                </div>
-                                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">🕐 <strong>${fdt(s.created_at)}</strong> • Cobrado por: <strong>${esc(s.cashier_name || "Encargada")}</strong></div>
-                                ${s.items && s.items.length ? `
-                                    <div style="font-size:11px;color:#4b5563;margin-top:4px">
-                                        📦 ${s.items.map(it => `${it.quantity}x ${esc(it.product_name)}`).join(", ")}
-                                    </div>` : ""}
-                                ${isCan ? `<div style="font-size:12px;color:#991b1b;background:#fef2f2;padding:6px 10px;border-radius:6px;margin-top:6px;font-weight:700">
-                                    Motivo de cancelación: ${esc(reason)}</div>` : ''}
-                            </div>
-                            <div style="display:flex;align-items:center;gap:12px">
-                                <div style="text-align:right">
-                                    <div style="font-size:18px;font-weight:900;color:${isCan ? "#b91c1c" : "var(--wine-700)"}">${money(s.total)}</div>
-                                    <small style="color:${isCard?'#1e40af':'#166534'};font-weight:800">${isCard?'💳 Pago Tarjeta':'💵 Pago Efectivo'}</small>
-                                </div>
-                                <button type="button" class="btn-print-sale" data-id="${esc(s.id)}"
-                                    style="padding:6px 12px;background:#fef3c7;color:#854d0e;border:1.5px solid #fcd34d;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px">
-                                    🖨️ Ticket
-                                </button>
-                                ${!isCan ? `<button type="button" class="btn-can-sale"
-                                    data-id="${esc(s.id)}" data-num="${esc(tickNum)}"
-                                    style="padding:6px 14px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">
-                                    Cancelar</button>` : ""}
-                                ${S.isSU ? `<button type="button" class="btn-del-sale-perm" data-id="${esc(s.id)}" data-num="${esc(tickNum)}"
-                                    style="padding:5px 10px;background:#fef2f2;color:#b91c1c;border:1px dashed #f87171;border-radius:6px;font-weight:800;font-size:10px;cursor:pointer" title="Eliminar registro (Solo Superusuarios)">
-                                    🗑 Borrar</button>` : ''}
-                            </div>
-                        </div>
-                    </article>`;
-                }).join("")}
-               </div>`
-            : `<div class="empty-state" style="padding:40px;text-align:center">
-                <div style="font-size:40px">${isShowingCancelled?'🚫':'🪙'}</div>
-                <h3 style="color:#ffffff;margin:6px 0">${isShowingCancelled?'No hay ventas canceladas en esta fecha y turno':'Sin ventas registradas en esta fecha y turno'}</h3>
-               </div>`}`;
-
-        document.getElementById("sales-date-picker")?.addEventListener("change", async e => {
-            S.salesFilterDate = e.target.value;
-            await loadSales();
-        });
-
-        document.getElementById("sales-shift-filter")?.addEventListener("change", async e => {
-            S.salesFilterShift = e.target.value;
-            await loadSales();
-        });
-
-        c.querySelectorAll(".btn-sales-tab").forEach(btn => btn.addEventListener("click", async () => {
-            S.salesTab = btn.dataset.tab;
-            await loadSales();
-        }));
-
-        document.getElementById("btn-rel-sales")?.addEventListener("click", async () => {
-            await loadSales();
-            toast("Ventas actualizadas.", "info");
-        });
-
-        c.querySelectorAll(".btn-print-sale").forEach(btn => btn.addEventListener("click", () => {
-            const sid = String(btn.dataset.id);
-            const targetSale = targetList.find(x => String(x.id) === sid) || allSales.find(x => String(x.id) === sid);
-            if (targetSale) printSaleReceipt(targetSale);
-        }));
-
-        c.querySelectorAll(".btn-can-sale").forEach(btn => btn.addEventListener("click", async () => {
-            const reason = await toastPrompt(`Motivo de cancelación del Ticket #${btn.dataset.num}:\n(Quedará archivado en el apartado de canceladas y no afectará el corte)`, "Escribe el motivo…");
-            if (!reason) return;
-
-            const reasons = lr("cancelled_reasons", {});
-            reasons[String(btn.dataset.id)] = reason;
-            lw("cancelled_reasons", reasons);
-            gw("cancelled_reasons", reasons);
-
-            const lSales = lr("sales", []);
-            const target = lSales.find(x => String(x.id) === String(btn.dataset.id));
-            if (target) {
-                target.status = "CANCELLED";
-                target.cancel_reason = reason;
-                lw("sales", lSales);
-            }
-
-            const gSales = gr("all_sales", []);
-            const gTarget = gSales.find(x => String(x.id) === String(btn.dataset.id));
-            if (gTarget) {
-                gTarget.status = "CANCELLED";
-                gTarget.cancel_reason = reason;
-                gw("all_sales", gSales);
-            }
-
-            if (db) {
-                try {
-                    await db.from("sales").update({status: "CANCELLED"}).eq("id", btn.dataset.id);
-                } catch(e) {}
-            }
-
-            toast(`Ticket #${btn.dataset.num} cancelado. Motivo registrado en el apartado de canceladas.`, "info", 5000);
-            await loadSales();
-            if (S.isSU) {
-                await loadPrivateAccess(true);
-                await loadAccounting(true);
-            }
-        }));
-
-        c.querySelectorAll(".btn-del-sale-perm").forEach(btn => btn.addEventListener("click", async () => {
-            const ok = await toastConfirm(`[Superusuario] ¿Eliminar permanentemente el registro del Ticket #${btn.dataset.num}?`);
-            if (!ok) return;
-
-            let lSales = lr("sales", []);
-            lSales = lSales.filter(x => String(x.id) !== String(btn.dataset.id));
-            lw("sales", lSales);
-
-            let gSales = gr("all_sales", []);
-            gSales = gSales.filter(x => String(x.id) !== String(btn.dataset.id));
-            gw("all_sales", gSales);
-
-            if (db) {
-                try { await db.from("sales").delete().eq("id", btn.dataset.id); } catch(e) {}
-            }
-            toast(`Registro del ticket #${btn.dataset.num} eliminado.`, "success");
-            await loadSales();
-            if (S.isSU) {
-                await loadPrivateAccess(true);
-                await loadAccounting(true);
-            }
-        }));
-    }
-
-    /* ── CORTES DE CAJA (ALERTA ROJA POR DESCUADRE & FILTRO DOBLE) ── */
-    async function loadCuts(silent = false) {
-        const c = $("#cuts-container");
-        if (!c || !S.branchId) return;
-        if (!silent && !c.children.length) {
-            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div></div>`;
-        }
-
-        const cancelled = lr("cancelled_reasons", {});
-        const todayStr = toDateKey();
-
-        const allRecordedSales = gr("all_sales", []).concat(lr("sales", []));
-        const uniqueBranchSalesMap = new Map();
-        allRecordedSales.forEach(s => {
-            const sameBranch = (String(s.branch_id) === String(S.branchId)) ||
-                               (s.branch_name && S.branchName && s.branch_name.toLowerCase().includes(S.branchName.toLowerCase())) ||
-                               (S.branchName && s.branch_name && S.branchName.toLowerCase().includes(s.branch_name.toLowerCase()));
-            const sameDate = toDateKey(s.created_at) === todayStr;
-            const notCan = !cancelled[String(s.id)] && String(s.status||"").toUpperCase() !== "CANCELLED";
-            if (sameBranch && sameDate && notCan) {
-                uniqueBranchSalesMap.set(String(s.id), s);
-            }
-        });
-        const dayBranchSales = Array.from(uniqueBranchSalesMap.values());
-
-        // Ventas del turno actual
-        const systemSalesToday = dayBranchSales.filter(s => {
-            const curShiftCat = S.shift.toLowerCase().includes("mañana") ? "matutino" : (S.shift.toLowerCase().includes("tarde") ? "vespertino" : "");
-            const sCat = getShiftCategory(s);
-            return (curShiftCat && sCat === curShiftCat) || String(s.shift_name || "").toLowerCase() === S.shift.toLowerCase();
-        });
-
-        const systemCashSales = systemSalesToday.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s) => a + Number(s.total||0), 0);
-        const systemCardSales = systemSalesToday.filter(s => s.payment_method === "card").reduce((a,s) => a + Number(s.total||0), 0);
-        const systemTotalSold = systemSalesToday.reduce((acc,s) => acc + Number(s.total||0), 0);
-
-        // Ventas de todo el día (Matutino + Vespertino)
-        const morningDaySales = dayBranchSales.filter(s => getShiftCategory(s) === "matutino");
-        const afternoonDaySales = dayBranchSales.filter(s => getShiftCategory(s) === "vespertino");
-        const dayTotalMorning = morningDaySales.reduce((a,s) => a + Number(s.total||0), 0);
-        const dayTotalAfternoon = afternoonDaySales.reduce((a,s) => a + Number(s.total||0), 0);
-        const dayTotalAll = dayBranchSales.reduce((a,s) => a + Number(s.total||0), 0);
-        const dayCashAll = dayBranchSales.filter(s => (s.payment_method||"cash") === "cash").reduce((a,s) => a + Number(s.total||0), 0);
-        const dayCardAll = dayBranchSales.filter(s => s.payment_method === "card").reduce((a,s) => a + Number(s.total||0), 0);
-
-        let remoteCuts = [];
-        if (db) {
-            try {
-                const {data, error} = await db.from("cash_cuts").select("*").order("created_at", {ascending:false});
-                if (data && data.length) {
-                    remoteCuts = data.map(ct => {
-                        let obs = {};
-                        try {
-                            obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {});
-                        } catch(e) {}
-                        return {
-                            id: ct.id,
-                            company_id: ct.company_id,
-                            branch_id: ct.branch_id,
-                            branch_name: obs.branch_name || S.branches.find(b=>String(b.id)===String(ct.branch_id))?.name || "Sucursal",
-                            shift_name: obs.shift_name || "Mañana",
-                            performed_by: ct.performed_by,
-                            performed_by_name: obs.performed_by_name || "Encargada",
-                            opening_amount: obs.opening_amount != null ? Number(obs.opening_amount) : (Number(ct.counted_cash||0) - Number(ct.total_sales||0)),
-                            total_sales: Number(ct.total_sales || 0),
-                            cash_sales: obs.cash_sales != null ? Number(obs.cash_sales) : Number(ct.total_sales || 0),
-                            card_sales: obs.card_sales != null ? Number(obs.card_sales) : 0,
-                            system_total_sales: obs.system_total_sales != null ? Number(obs.system_total_sales) : Number(ct.total_sales || 0),
-                            expected_cash: Number(ct.expected_cash || 0),
-                            counted_cash: Number(ct.counted_cash || 0),
-                            net_sales_without_fund: obs.net_sales_without_fund != null ? Number(obs.net_sales_without_fund) : (Number(ct.counted_cash||0) - Number(obs.opening_amount||0)),
-                            difference: Number(ct.difference || 0),
-                            created_at: ct.created_at,
-                            local_id: obs.local_id || ct.id
-                        };
-                    });
-                }
-            } catch(e) {
-                console.warn("Error cargando cortes de Supabase:", e);
-            }
-        }
-        const localCuts = lr("cuts", []);
-        const globalCuts = gr("all_cuts", []);
-
-        const cutsMap = new Map();
-        localCuts.forEach(ct => cutsMap.set(String(ct.id), ct));
-        globalCuts.forEach(ct => { if(!cutsMap.has(String(ct.id))) cutsMap.set(String(ct.id), ct); });
-        remoteCuts.forEach(ct => { if(!cutsMap.has(String(ct.id))) cutsMap.set(String(ct.id), ct); });
-
-        let allCuts = Array.from(cutsMap.values()).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-
-        if (S.cutBranchFilter !== "all") {
-            allCuts = allCuts.filter(x => String(x.branch_id) === String(S.cutBranchFilter) || String(x.branch_name).toLowerCase().includes(String(S.cutBranchFilter).toLowerCase()));
-        } else if (!S.isSU) {
-            allCuts = allCuts.filter(x => String(x.branch_id) === String(S.branchId));
-        }
-
-        let filteredCuts = allCuts;
-        if (S.cutShiftTab === "Mañana") {
-            filteredCuts = allCuts.filter(x => String(x.shift_name||"").toLowerCase().includes("mañana") || String(x.shift_name||"").toLowerCase().includes("matutino"));
-        } else if (S.cutShiftTab === "Tarde") {
-            filteredCuts = allCuts.filter(x => String(x.shift_name||"").toLowerCase().includes("tarde") || String(x.shift_name||"").toLowerCase().includes("vespertino"));
-        }
-
-        c.innerHTML = `
-        <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc)">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-                <div>
-                    <h3 style="color:var(--wine-900);margin:0 0 4px">✂️ Realizar Corte de Caja</h3>
-                    <p style="color:var(--text-muted);font-size:12px;margin:0">
-                        Sucursal: <strong>${esc(S.branchName)}</strong> • Turno Actual: <strong style="color:var(--wine-700)">${esc(S.shift)}</strong></p>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <div style="background:#f0fdf4;border:1.5px solid #86efac;padding:8px 12px;border-radius:10px;text-align:right">
-                        <small style="color:#166534;font-size:9.5px;font-weight:900;display:block">💵 EFECTIVO TURNO</small>
-                        <strong style="font-size:15px;color:#15803d">${money(systemCashSales)}</strong>
-                    </div>
-                    <div style="background:#eff6ff;border:1.5px solid #93c5fd;padding:8px 12px;border-radius:10px;text-align:right">
-                        <small style="color:#1e40af;font-size:9.5px;font-weight:900;display:block">💳 TARJETAS TURNO</small>
-                        <strong style="font-size:15px;color:#1d4ed8">${money(systemCardSales)}</strong>
-                    </div>
-                    <div style="background:#fff8e0;border:1.5px solid var(--gold-400);padding:8px 12px;border-radius:10px;text-align:right">
-                        <small style="color:var(--text-muted);font-size:9.5px;font-weight:900;display:block">TOTAL TURNO (${systemSalesToday.length} TICKETS)</small>
-                        <strong style="font-size:15px;color:var(--wine-900)">${money(systemTotalSold)}</strong>
-                    </div>
-                </div>
-            </div>
-
-            <!-- RESUMEN DEL DÍA COMPLETO -->
-            <div style="background:linear-gradient(135deg,#541118,#701721);color:#fff;border:2px solid var(--gold-400);border-radius:14px;padding:14px 18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                <div>
-                    <div style="font-size:11px;font-weight:900;color:var(--gold-300);letter-spacing:1px">🌟 RESUMEN ACUMULADO DEL DÍA (HOY)</div>
-                    <div style="font-size:13px;margin-top:4px">
-                        Matutino: <strong>${money(dayTotalMorning)}</strong> (${morningDaySales.length} tks) • Vespertino: <strong>${money(dayTotalAfternoon)}</strong> (${afternoonDaySales.length} tks)
-                    </div>
-                    <div style="font-size:11px;color:#fcebd2;margin-top:2px">
-                        Efectivo Día: <strong>${money(dayCashAll)}</strong> | Tarjetas Día: <strong>${money(dayCardAll)}</strong>
-                    </div>
-                </div>
-                <div style="text-align:right">
-                    <small style="font-size:10px;font-weight:800;color:var(--gold-300);display:block">TOTAL VENDIDO HOY (${dayBranchSales.length} TICKETS):</small>
-                    <strong style="font-size:22px;color:#fff">${money(dayTotalAll)}</strong>
-                </div>
-            </div>
-
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:14px">
-                <div>
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">
-                        1. DINERO CON QUE INICIÓ EL TURNO ($)
-                    </label>
-                    <input type="number" id="cut-open" step="1" min="0" placeholder="Ej: 1500.00"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:14px;box-sizing:border-box">
-                    <small style="color:var(--text-muted);font-size:10px">Fondo inicial en efectivo</small>
-                </div>
-                <div>
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">
-                        2. TOTAL VENDIDO EN EL TURNO ($)
-                    </label>
-                    <input type="number" id="cut-sold" step="1" min="0" value="${systemTotalSold > 0 ? systemTotalSold : ''}" placeholder="Ej: 13000.00"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:14px;box-sizing:border-box">
-                    <small style="color:var(--text-muted);font-size:10px">Suma total (Efectivo + Tarjetas)</small>
-                </div>
-                <div>
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">
-                        3. EFECTIVO FÍSICO CONTADO EN CAJA ($)
-                    </label>
-                    <input type="number" id="cut-count" step="1" min="0" placeholder="Ej: 14500.00"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:14px;box-sizing:border-box">
-                    <small style="color:var(--text-muted);font-size:10px">Monedas y billetes presentes</small>
-                </div>
-            </div>
-
-            <div id="cut-preview-box" style="background:#fffcf2;border:2px solid var(--gold-400);border-radius:14px;padding:16px;margin-bottom:16px;">
-                <div style="font-size:12px;font-weight:900;color:var(--wine-800);margin-bottom:8px;letter-spacing:1px">
-                    📊 VISTA PREVIA DEL CORTE:
-                </div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
-                    <div style="background:#fff;padding:10px;border-radius:10px;border:1px solid rgba(188,132,10,.25)">
-                        <small style="color:var(--text-muted);font-size:10px;font-weight:800;display:block">EFECTIVO ESPERADO EN CAJA</small>
-                        <strong id="prev-exp" style="font-size:16px;color:var(--wine-900)">$0.00</strong>
-                        <div style="font-size:10px;color:var(--text-muted)">(Fondo + Ventas en Efectivo)</div>
-                    </div>
-                    <div style="background:#eff6ff;padding:10px;border-radius:10px;border:1.5px solid #93c5fd">
-                        <small style="color:#1e40af;font-size:10px;font-weight:800;display:block">💳 COBROS CON TARJETA (BANCO)</small>
-                        <strong style="font-size:16px;color:#1d4ed8">${money(systemCardSales)}</strong>
-                        <div style="font-size:10px;color:#1e40af">Terminal bancaria / Directo</div>
-                    </div>
-                    <div style="background:#fff;padding:10px;border-radius:10px;border:1px solid rgba(188,132,10,.25)">
-                        <small style="color:var(--text-muted);font-size:10px;font-weight:800;display:block">CORTE NETO EFECTIVO (SIN FONDO)</small>
-                        <strong id="prev-net" style="font-size:16px;color:var(--wine-700)">$0.00</strong>
-                        <div style="font-size:10px;color:var(--text-muted)">(Efectivo contado − Fondo)</div>
-                    </div>
-                    <div style="background:#fff;padding:10px;border-radius:10px;border:1px solid rgba(188,132,10,.25)">
-                        <small style="color:var(--text-muted);font-size:10px;font-weight:800;display:block">ESTATUS & DESCUADRE</small>
-                        <strong id="prev-status" style="font-size:13px;color:#15803d">Esperando datos…</strong>
-                        <div id="prev-diff" style="font-size:11px;font-weight:900;margin-top:2px"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="display:flex;gap:10px;flex-wrap:wrap">
-                <button type="button" id="btn-do-cut"
-                    style="padding:12px 32px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer">
-                    ✂️ Guardar y Cerrar Corte de Caja</button>
-            </div>
-        </div>
-
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-            <div>
-                <h3 style="color:#ffffff;margin:0;font-weight:900">Historial de Cortes Registrados</h3>
-                <small style="color:#fcebd2">Filtrado por turno y sucursal</small>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                ${S.isSU ? `
-                <select id="cut-branch-filter" style="padding:6px 12px;border-radius:12px;border:1.5px solid var(--gold-500);font-weight:700;font-size:12px;background:#fff;outline:none">
-                    <option value="all"${S.cutBranchFilter==='all'?' selected':''}>🏢 Todas las Sucursales</option>
-                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(S.cutBranchFilter)===String(b.id)?' selected':''}>${esc(b.name)}</option>`).join("")}
-                </select>` : ''}
-                <div style="display:flex;gap:4px;background:#fff;padding:4px;border-radius:20px;border:1px solid rgba(188,132,10,.35)">
-                    <button type="button" class="btn-cut-tab${S.cutShiftTab==='todos'?' cat-tab-active':''}" data-tab="todos" style="padding:5px 14px;border-radius:15px;border:none;font-weight:800;font-size:11px;cursor:pointer;background:${S.cutShiftTab==='todos'?'var(--wine-700)':'transparent'};color:${S.cutShiftTab==='todos'?'#fff':'var(--wine-800)'}">Todos (${allCuts.length})</button>
-                    <button type="button" class="btn-cut-tab${S.cutShiftTab==='Mañana'?' cat-tab-active':''}" data-tab="Mañana" style="padding:5px 14px;border-radius:15px;border:none;font-weight:800;font-size:11px;cursor:pointer;background:${S.cutShiftTab==='Mañana'?'var(--wine-700)':'transparent'};color:${S.cutShiftTab==='Mañana'?'#fff':'var(--wine-800)'}">🌅 Matutino</button>
-                    <button type="button" class="btn-cut-tab${S.cutShiftTab==='Tarde'?' cat-tab-active':''}" data-tab="Tarde" style="padding:5px 14px;border-radius:15px;border:none;font-weight:800;font-size:11px;cursor:pointer;background:${S.cutShiftTab==='Tarde'?'var(--wine-700)':'transparent'};color:${S.cutShiftTab==='Tarde'?'#fff':'var(--wine-800)'}">🌇 Vespertino</button>
-                </div>
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
-                <button type="button" id="btn-rel-cuts" style="padding:8px 16px;background:#fff;border:1.5px solid var(--gold-500);border-radius:8px;cursor:pointer;font-weight:bold">🔄 Actualizar</button>
-            </div>
-        </div>
-
-        ${filteredCuts.length
-            ? `<div style="display:flex;flex-direction:column;gap:12px">
-                ${filteredCuts.map(ct => {
-                    const diff = Number(ct.difference || 0);
-                    const hasDiff = diff !== 0;
-                    const netSale = Number(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash||0) - Number(ct.opening_amount||0)));
-                    const isMorning = String(ct.shift_name||"").toLowerCase().includes("mañana") || String(ct.shift_name||"").toLowerCase().includes("matutino");
-                    const cutCard = Number(ct.card_sales || 0);
-                    const cutCash = Number(ct.cash_sales || (Number(ct.total_sales||0) - cutCard));
-                    return `<article class="sale-card" style="background:#fff;border:1.5px solid ${hasDiff?'#f87171':'rgba(188,132,10,.35)'};border-radius:14px;padding:16px;${hasDiff?'box-shadow:0 4px 18px rgba(185,28,28,.12)':''}">
-                        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-                            <div>
-                                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                                    <span style="font-size:18px">✂️</span>
-                                    <strong style="font-size:15px;color:var(--wine-900)">Corte — ${esc(ct.branch_name || S.branchName)}</strong>
-                                    <span style="font-size:11px;padding:2px 10px;border-radius:12px;font-weight:bold;background:${isMorning?'#fef3c7;color:#92400e':'#e0e7ff;color:#3730a3'}">
-                                        ${isMorning ? '🌅 Matutino' : '🌇 Vespertino'}
-                                    </span>
-                                </div>
-                                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">🕐 <strong>${fdt(ct.created_at)}</strong> • Por: ${esc(ct.performed_by_name || "Encargada")}</div>
-                                <div style="font-size:12px;margin-top:8px;display:flex;gap:14px;flex-wrap:wrap">
-                                    <span>Fondo Inicial: <strong>${money(ct.opening_amount||0)}</strong></span>
-                                    <span>💵 Efectivo Cobrado: <strong style="color:#15803d">${money(cutCash)}</strong></span>
-                                    <span>💳 Tarjetas: <strong style="color:#1d4ed8">${money(cutCard)}</strong></span>
-                                    <span>Total Contado en Caja: <strong>${money(ct.counted_cash||0)}</strong></span>
-                                </div>
-                                <div style="font-size:13px;margin-top:6px;color:var(--wine-800);font-weight:900">
-                                    Corte Final Efectivo (sin fondo): ${money(netSale)}
-                                </div>
-                            </div>
-                            <div style="text-align:right">
-                                <div style="font-size:17px;font-weight:900;color:${diff>=0 && !hasDiff ? '#15803d' : '#b91c1c'}">
-                                    ${diff>0?'+':''}${money(diff)}
-                                </div>
-                                <div style="font-size:12px;font-weight:900;color:${diff>=0 && !hasDiff ? '#15803d' : '#b91c1c'};margin-top:2px">
-                                    ${!hasDiff ? '✓ Concuerda Exactamente' : (diff>0 ? '⚠ SOBRANTE EN CAJA' : '⚠ FALTANTE EN CAJA')}
-                                </div>
-                                <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap">
-                                    <button type="button" class="btn-print-cut" data-id="${esc(ct.id)}"
-                                        style="padding:7px 14px;background:linear-gradient(135deg,#15803d,#166534);color:#fff;border:none;border-radius:8px;font-size:11.5px;font-weight:900;cursor:pointer;display:inline-flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(21,128,61,0.2)">
-                                        🖨️ Imprimir Ticket de Corte
-                                    </button>
-                                    ${S.isSU ? `<button type="button" class="btn-del-cut" data-id="${esc(ct.id)}" style="padding:4px 10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:6px;font-size:10px;font-weight:800;cursor:pointer">🗑 Eliminar</button>` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    </article>`;
-                }).join("")}
-               </div>`
-            : `<div class="empty-state" style="padding:40px;text-align:center">
-                <div style="font-size:40px">✂️</div>
-                <h3 style="color:var(--wine-800);margin:6px 0">No hay cortes registrados con los filtros seleccionados</h3>
-               </div>`}`;
-
-        c.querySelectorAll(".btn-cut-tab").forEach(btn => btn.addEventListener("click", async () => {
-            S.cutShiftTab = btn.dataset.tab;
-            await loadCuts();
-        }));
-
-        document.getElementById("cut-branch-filter")?.addEventListener("change", async e => {
-            S.cutBranchFilter = e.target.value;
-            await loadCuts();
-        });
-
-        document.getElementById("btn-rel-cuts")?.addEventListener("click", async () => {
-            await loadCuts();
-            toast("Cortes actualizados.", "info");
-        });
-
-        c.querySelectorAll(".btn-print-cut").forEach(btn => btn.addEventListener("click", () => {
-            const cid = String(btn.dataset.id);
-            const targetCut = filteredCuts.find(x => String(x.id) === cid) || allCuts.find(x => String(x.id) === cid);
-            if (targetCut) printCutReceipt(targetCut);
-        }));
-
-        c.querySelectorAll(".btn-del-cut").forEach(btn => btn.addEventListener("click", async () => {
-            const ok = await toastConfirm("[Superusuario] ¿Eliminar este registro de corte de caja?");
-            if (!ok) return;
-
-            let lCuts = lr("cuts", []);
-            lCuts = lCuts.filter(x => String(x.id) !== String(btn.dataset.id));
-            lw("cuts", lCuts);
-
-            let gCuts = gr("all_cuts", []);
-            gCuts = gCuts.filter(x => String(x.id) !== String(btn.dataset.id));
-            gw("all_cuts", gCuts);
-
-            if (db) {
-                try { await db.from("cash_cuts").delete().eq("id", btn.dataset.id); } catch(e) {}
-            }
-            toast("Registro de corte eliminado.", "success");
-            await loadCuts();
-        }));
-
-        function recalcPreview() {
-            const o = Number(document.getElementById("cut-open")?.value) || 0;
-            const s = Number(document.getElementById("cut-sold")?.value) || 0;
-            const cnt = Number(document.getElementById("cut-count")?.value) || 0;
-
-            const exp = o + systemCashSales;
-            const net = cnt - o;
-            const diffWithExp = cnt - exp;
-            const diffWithSys = s - systemTotalSold;
-
-            const pExp = document.getElementById("prev-exp");
-            const pNet = document.getElementById("prev-net");
-            const pStat = document.getElementById("prev-status");
-            const pDiff = document.getElementById("prev-diff");
-
-            if (pExp) pExp.textContent = money(exp);
-            if (pNet) pNet.textContent = money(net);
-
-            if (pStat && pDiff) {
-                if (!s && !cnt && !o) {
-                    pStat.textContent = "Esperando datos…";
-                    pStat.style.color = "var(--text-muted)";
-                    pDiff.textContent = "";
-                } else if (diffWithSys === 0 && diffWithExp === 0) {
-                    pStat.textContent = "✓ Concuerda exactamente con el efectivo esperado";
-                    pStat.style.color = "#15803d";
-                    pDiff.textContent = "Sin diferencias.";
-                    pDiff.style.color = "#15803d";
-                } else {
-                    let msgs = [];
-                    if (diffWithSys !== 0) {
-                        msgs.push(diffWithSys > 0 ? `Sobra ${money(diffWithSys)} sobre ventas totales` : `Falta ${money(Math.abs(diffWithSys))} sobre ventas totales`);
-                    }
-                    if (diffWithExp !== 0) {
-                        msgs.push(diffWithExp > 0 ? `Sobrante en caja física: ${money(diffWithExp)}` : `Faltante en caja física: ${money(Math.abs(diffWithExp))}`);
-                    }
-                    pStat.textContent = "⚠ DESCUADRE REGISTRADO";
-                    pStat.style.color = "#b91c1c";
-                    pDiff.innerHTML = `<span style="color:#b91c1c;font-weight:900">${msgs.join(" | ")}</span>`;
-                }
-            }
-        }
-
-        ["cut-open","cut-sold","cut-count"].forEach(id => {
-            document.getElementById(id)?.addEventListener("input", recalcPreview);
-        });
-
-        document.getElementById("btn-do-cut")?.addEventListener("click", async () => {
-            const opening = Number(document.getElementById("cut-open")?.value);
-            const sold    = Number(document.getElementById("cut-sold")?.value);
-            const counted = Number(document.getElementById("cut-count")?.value);
-
-            if ([opening, sold, counted].some(v => isNaN(v) || v < 0)) {
-                return toast("Ingresa los 3 valores obligatorios del corte.", "warn");
-            }
-
-            const expected = opening + systemCashSales;
-            const diff = counted - expected;
-            const netWithoutFund = counted - opening;
-
-            const ok = await toastConfirm(`Confirmar Corte de Turno (${S.shift}):\n• Fondo Inicial: ${money(opening)}\n• Cobrado en Efectivo: ${money(systemCashSales)}\n• Cobrado con Tarjeta: ${money(systemCardSales)}\n• Total Vendido: ${money(sold)}\n• Corte Neto Efectivo: ${money(netWithoutFund)}\n• Diferencia en Caja: ${diff>=0?'+':''}${money(diff)}`);
-            if (!ok) return;
-
-            const cutRecord = {
-                id: "cut_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
-                company_id: S.companyId,
-                branch_id: S.branchId,
-                branch_name: S.branchName,
-                performed_by: S.user?.id,
-                performed_by_name: S.profile?.full_name || S.user?.email || "Encargada",
-                shift_name: S.shift,
-                opening_amount: opening,
-                total_sales: sold,
-                cash_sales: systemCashSales,
-                card_sales: systemCardSales,
-                system_total_sales: systemTotalSold,
-                expected_cash: expected,
-                counted_cash: counted,
-                net_sales_without_fund: netWithoutFund,
-                difference: diff,
-                created_at: now()
-            };
-
-            const localList = lr("cuts", []);
-            localList.unshift(cutRecord);
-            lw("cuts", localList);
-
-            const globalCuts = gr("all_cuts", []);
-            globalCuts.unshift(cutRecord);
-            gw("all_cuts", globalCuts);
-
-            if (db) {
-                try {
-                    const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
-                    const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
-                    const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
-
-                    const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
-                    const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
-                    const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
-
-                    const cutObsObj = {
-                        branch_name: S.branchName,
-                        shift_name: S.shift,
-                        performed_by_name: cutRecord.performed_by_name,
-                        opening_amount: opening,
-                        cash_sales: systemCashSales,
-                        card_sales: systemCardSales,
-                        net_sales_without_fund: netWithoutFund,
-                        system_total_sales: systemTotalSold,
-                        local_id: cutRecord.id
-                    };
-
-                    const { data, error } = await db.from("cash_cuts").insert({
-                        company_id: cId,
-                        branch_id: bId,
-                        cash_register_id: bId,
-                        performed_by: uId,
-                        total_sales: sold,
-                        expected_cash: expected,
-                        counted_cash: counted,
-                        difference: diff,
-                        observations: JSON.stringify(cutObsObj),
-                        created_at: cutRecord.created_at
-                    }).select();
-
-                    if (error) console.error("Error al registrar corte en Supabase:", error);
-                    else console.log("✓ Corte sincronizado en Supabase:", data);
-                } catch(e) {
-                    console.error("Excepción al registrar corte en Supabase:", e);
-                }
-            }
-
-            if (realtimeChannel) {
-                try {
-                    realtimeChannel.send({
-                        type: "broadcast",
-                        event: "cut_created",
-                        payload: { cut: cutRecord }
-                    });
-                } catch(e) {
-                    console.warn("Cut broadcast error:", e);
-                }
-            }
-
-            toast(`✓ Corte de ${S.shift} guardado. Corte neto: ${money(netWithoutFund)}`, diff>=0?"success":"warn", 5000);
-
-            // Imprimir recibo físico del corte de caja
-            try {
-                printCutReceipt(cutRecord);
-            } catch(e) {
-                console.warn("No se pudo disparar impresión del corte:", e);
-            }
-
-            await loadCuts();
-        });
-    }
-
-    /* ── CAMBIO DE TURNO (HISTORIAL & BORRADO SUPERUSUARIO) ── */
-    async function loadShiftView() {
-        const c = $("#shift-container");
-        if (!c) return;
-        const records = lr("shifts", []);
-        const uname = S.profile?.full_name || S.user?.email || "Encargada";
-
-        c.innerHTML = `
-        <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc)">
-            <h3 style="color:var(--wine-900);margin:0 0 6px">🔄 Registrar Cambio / Apertura de Turno</h3>
-            <p style="color:var(--text-muted);font-size:12px;margin:0 0 16px">
-                Sucursal: <strong>${esc(S.branchName)}</strong> • Turno Asignado: <strong>${esc(S.shift)}</strong></p>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:16px">
-                <div><label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">ENCARGADA EN TURNO</label>
-                    <input type="text" value="${esc(uname)}" readonly
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;background:#f8f8f8;box-sizing:border-box"></div>
-                <div><label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">FONDO DE APERTURA RECIBIDO ($)</label>
-                    <input type="number" id="sh-amount" step="1" min="0" placeholder="Ej: 500.00"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
-                <div><label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">FECHA Y HORA (AUTOMÁTICA)</label>
-                    <input type="text" value="${fdt(now())}" readonly
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;background:#f8f8f8;box-sizing:border-box"></div>
-            </div>
-            <button type="button" id="btn-reg-shift"
-                style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;cursor:pointer">
-                ✓ Confirmar e Iniciar Turno</button>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">Historial de Aperturas de Turno — ${esc(S.branchName)}</h3>
-            <div style="display:flex;gap:8px;align-items:center">
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
-                <button type="button" id="btn-rel-shifts" style="padding:8px 16px;background:#fff;border:1.5px solid var(--gold-500);border-radius:8px;cursor:pointer;font-weight:bold">🔄 Actualizar</button>
-            </div>
-        </div>
-        ${records.length
-            ? `<div style="display:flex;flex-direction:column;gap:12px">
-                ${records.slice().reverse().map((r, idx) => `
-                <article class="sale-card" style="background:#fff;border:1px solid rgba(188,132,10,.35);border-radius:12px;padding:16px;display:flex;justify-content:space-between;align-items:center">
-                    <div>
-                        <div style="display:flex;align-items:center;gap:8px">
-                            <span style="font-size:18px">🔄</span>
-                            <strong style="color:var(--wine-900)">${esc(r.user_name||"Encargada")}</strong>
-                            <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#15803d;font-weight:bold">${esc(r.shift||"Turno")}</span>
-                        </div>
-                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">🕐 ${esc(r.datetime)}</div>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                        <div style="text-align:right">
-                            <div style="font-size:18px;font-weight:900;color:var(--emerald)">${money(r.amount)}</div>
-                            <small style="color:var(--text-muted)">Fondo Inicial</small>
-                        </div>
-                        <button type="button" class="btn-print-shift" data-idx="${records.length - 1 - idx}"
-                            style="padding:6px 12px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:6px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
-                            🖨️ Ticket
-                        </button>
-                        ${S.isSU ? `<button type="button" class="btn-del-shift" data-idx="${records.length - 1 - idx}" style="padding:6px 10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">🗑 Borrar</button>` : ''}
-                    </div>
-                </article>`).join("")}
-               </div>`
-            : `<div class="empty-state" style="padding:40px;text-align:center">
-                    <div style="font-size:40px">🔄</div>
-                    <p style="color:var(--text-muted)">No hay aperturas de turno registradas aún.</p>
-               </div>`}`;
-
-        c.querySelectorAll(".btn-print-shift").forEach(btn => btn.addEventListener("click", () => {
-            const idx = parseInt(btn.dataset.idx, 10);
-            const targetRec = records[idx];
-            if (targetRec) {
-                printShiftOpeningReceipt(targetRec);
-                toast("🖨️ Imprimiendo comprobante de apertura…", "info", 3000);
-            }
-        }));
-
-        document.getElementById("btn-rel-shifts")?.addEventListener("click", async () => {
-            await loadShiftView();
-            toast("Turnos actualizados.", "info");
-        });
-
-        document.getElementById("btn-reg-shift")?.addEventListener("click", async () => {
-            const amount = Number(document.getElementById("sh-amount")?.value);
-            if (isNaN(amount) || amount < 0) return toast("Ingresa el monto del fondo de apertura.", "warn");
-            const ts = now();
-            const rec = {user_name: uname, shift: S.shift, branch: S.branchName, amount: amount, datetime: fdt(ts), created_at: ts};
-            const recs = lr("shifts", []);
-            recs.push(rec);
-            lw("shifts", recs);
-
-            if (db) {
-                try {
-                    await db.from("shift_records").insert({branch_id: S.branchId, user_id: S.user?.id, user_name: uname, shift_name: S.shift, opening_amount: amount, created_at: ts});
-                } catch(e) {}
-            }
-            toast(`✓ Turno iniciado con éxito. Fondo: ${money(amount)}`, "success");
-            try { printShiftOpeningReceipt(rec); } catch(e) {}
-            await loadShiftView();
-        });
-
-        c.querySelectorAll(".btn-del-shift").forEach(btn => btn.addEventListener("click", async () => {
-            const ok = await toastConfirm("[Superusuario] ¿Eliminar este registro de cambio de turno?");
-            if (!ok) return;
-            const idx = parseInt(btn.dataset.idx);
-            let recs = lr("shifts", []);
-            recs.splice(idx, 1);
-            lw("shifts", recs);
-            toast("Registro de turno eliminado.", "success");
-            await loadShiftView();
-        }));
-    }
-
-    /* ── CAJA ACTUAL ── */
-    async function loadCurrentShift() {
-        if (!db || !S.branchId) return null;
-        try {
-            let q = db.from("open_shift_cash_summary_view").select("*").limit(1);
-            if (uuid(S.branchId)) q = q.eq("branch_id", S.branchId);
-            const {data} = await q.maybeSingle();
-            S.currentShift = data || null;
-            const open = S.currentShift && String(S.currentShift.status||"").toUpperCase() === "OPEN";
-            setT("#cash-status-text,#cashStatus,[data-cash-status]", open ? `CAJA ABIERTA (${S.shift})` : "CAJA ABIERTA");
-            const dot = $("#cash-dot,.cash-dot");
-            if (dot) dot.style.background = "#10b981";
-        } catch {
-            setT("#cash-status-text,#cashStatus,[data-cash-status]", `CAJA ABIERTA (${S.shift})`);
-        }
-        return S.currentShift;
-    }
-
-    /* ── INVENTARIO ── */
+    /* ── INVENTARIO (CONTROL POR PAQUETES/BOLSAS Y PRODUCTOS COMPUESTOS) ── */
     async function loadInventory() {
         const c = $("#inventory-container");
         if (!c) return;
+
+        if (!S.invTab) S.invTab = "all";
+
         const branchSelectHtml = S.isSU ? `
             <div style="display:flex;align-items:center;gap:8px">
                 <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 SUCURSAL:</label>
@@ -3096,11 +1102,18 @@
                 </select>
             </div>` : '';
 
+        const saleProds = S.products.filter(p => !p.is_supply && p.category !== "desechables");
+        const supplyProds = S.products.filter(p => p.is_supply || p.category === "desechables");
+
+        let displayedList = S.products;
+        if (S.invTab === "sales") displayedList = saleProds;
+        else if (S.invTab === "supplies") displayedList = supplyProds;
+
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
                 <strong style="font-size:17px;color:#ffffff;font-weight:900">Inventario de Sucursal — ${esc(S.branchName)}</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Capacidad máxima: ${STOCK_MAX} uds. | Alerta por debajo de ${STOCK_LOW} uds.</div>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Control de piezas, paquetes/bolsas de desechables y productos compuestos</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
@@ -3110,41 +1123,92 @@
                     🔄 Actualizar Inventario</button>
             </div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">
-        ${S.products.map(p => {
+
+        <!-- PESTAÑAS DE FILTRO DE INVENTARIO -->
+        <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+            <button type="button" class="inv-tab-btn${S.invTab==='all'?' active-inv-tab':''}" data-tab="all"
+                style="padding:8px 16px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer;${S.invTab==='all'?'background:var(--gold-400);color:#1a0205;border:1.5px solid var(--gold-500)':'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2)'}">
+                🌈 Todos los Artículos (${S.products.length})
+            </button>
+            <button type="button" class="inv-tab-btn${S.invTab==='sales'?' active-inv-tab':''}" data-tab="sales"
+                style="padding:8px 16px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer;${S.invTab==='sales'?'background:var(--gold-400);color:#1a0205;border:1.5px solid var(--gold-500)':'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2)'}">
+                🍨 Productos de Venta (${saleProds.length})
+            </button>
+            <button type="button" class="inv-tab-btn${S.invTab==='supplies'?' active-inv-tab':''}" data-tab="supplies"
+                style="padding:8px 16px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer;${S.invTab==='supplies'?'background:var(--gold-400);color:#1a0205;border:1.5px solid var(--gold-500)':'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2)'}">
+                🧤 Desechables e Insumos (${supplyProds.length})
+            </button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px">
+        ${displayedList.map(p => {
             const stock = getStock(p.product_id);
+            const isSupply = p.is_supply || p.category === "desechables";
+            const isComp = p.is_composite && Array.isArray(p.components) && p.components.length > 0;
+            const unitsPack = p.units_per_package || (isSupply ? 50 : 1);
+            const packs = Math.floor(stock / unitsPack);
+            const leftover = stock % unitsPack;
             const isOut = stock === 0;
             const isLow = stock > 0 && stock <= STOCK_LOW;
-            const pct = Math.round((stock / STOCK_MAX) * 100);
             const col = isOut ? "#ff6b6b" : isLow ? "#fbbf24" : "#4ade80";
-            return `<article class="dashboard-card" style="padding:16px;border-radius:14px;border:1.5px solid var(--border-subtle);background:linear-gradient(180deg,#2e060c 0%,#1f0306 100%)">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-                    <div style="font-size:28px">🍦</div>
-                    <div>
-                        <small style="color:#fcebd2;font-size:10.5px;font-weight:700">${esc(p.product_code||"")} • <strong style="color:#ffffff">${esc(p.category)}</strong></small>
-                        <h4 style="margin:2px 0;color:#ffffff;font-size:14px;font-weight:900">${esc(p.product_name)}</h4>
+
+            return `<article class="dashboard-card" style="padding:18px;border-radius:14px;border:1.5px solid var(--border-subtle);background:linear-gradient(180deg,#2e060c 0%,#1f0306 100%);display:flex;flex-direction:column;justify-content:space-between">
+                <div>
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                        <div style="font-size:28px">${isSupply ? '🧤' : '🍦'}</div>
+                        <div style="flex:1">
+                            <div style="display:flex;justify-content:space-between;align-items:center">
+                                <small style="color:#fcebd2;font-size:10.5px;font-weight:700">${esc(p.product_code||"")} • <strong style="color:#ffffff">${esc(p.category)}</strong></small>
+                                ${isComp ? '<span style="font-size:9px;background:#fdf4ff;color:#86198f;padding:2px 6px;border-radius:6px;font-weight:900">📦 COMPUESTO</span>' : ''}
+                                ${isSupply ? '<span style="font-size:9px;background:#eff6ff;color:#1e40af;padding:2px 6px;border-radius:6px;font-weight:900">🧤 INSUMO</span>' : ''}
+                            </div>
+                            <h4 style="margin:2px 0;color:#ffffff;font-size:14px;font-weight:900">${esc(p.product_name)}</h4>
+                        </div>
                     </div>
+
+                    <!-- ESTADO DEL STOCK EN PIEZAS Y PAQUETES -->
+                    <div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:10px;margin-bottom:12px;border:1px solid rgba(255,255,255,0.1)">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span style="font-size:11px;color:#fcebd2">Stock Total:</span>
+                            <strong style="font-size:19px;color:${col};font-weight:900">${stock} ${isSupply ? 'piezas' : 'uds.'}</strong>
+                        </div>
+                        ${isSupply ? `
+                        <div style="font-size:11px;color:#93c5fd;font-weight:700;margin-top:4px">
+                            📦 Equivale a: ${packs} paq de ${unitsPack} pz ${leftover > 0 ? `(+ ${leftover} sueltas)` : ''}
+                        </div>` : ''}
+                    </div>
+
+                    ${isComp ? `
+                    <div style="margin-bottom:10px;padding:6px 8px;background:rgba(253,244,255,0.1);border:1px dashed #f0abfc;border-radius:8px;font-size:10px;color:#f5d0fe">
+                        <strong>📦 Descuenta al venderse:</strong>
+                        <div style="margin-top:2px">${p.components.map(c => `• ${c.qty}x ${esc(c.supply_name || c.supply_id)}`).join("<br>")}</div>
+                    </div>` : ''}
                 </div>
-                <div style="background:rgba(255,255,255,0.15);border-radius:6px;height:8px;margin-bottom:8px;overflow:hidden">
-                    <div style="height:100%;width:${pct}%;background:${col};border-radius:6px;transition:width .4s ease"></div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                    <strong style="font-size:20px;color:${col};font-weight:900">${stock}</strong>
-                    <small style="color:#ffffff;font-weight:700">/ ${STOCK_MAX} unidades</small>
-                    ${isOut ? '<span style="font-size:10px;background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-weight:900">SIN STOCK</span>' : ""}
-                    ${isLow && !isOut ? '<span style="font-size:10px;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:10px;font-weight:900">⚠ BAJO</span>' : ""}
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+
+                <!-- BOTONES DE ACCIÓN -->
+                <div style="display:grid;grid-template-columns:${isSupply ? '1fr 1fr 1fr' : '1fr 1fr'};gap:6px">
+                    ${isSupply ? `
+                    <button type="button" class="btn-add-pack" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}" data-pack="${unitsPack}"
+                        style="padding:8px 4px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:8px;font-weight:900;font-size:10.5px;cursor:pointer">
+                        📦 + Paquetes
+                    </button>` : ''}
                     <button type="button" class="btn-add-stk" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}"
-                        style="padding:7px;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:7px;font-weight:800;font-size:11px;cursor:pointer">
-                        + Agregar</button>
+                        style="padding:8px 4px;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:8px;font-weight:800;font-size:10.5px;cursor:pointer">
+                        ${isSupply ? '🔢 + Piezas' : '+ Agregar'}
+                    </button>
                     <button type="button" class="btn-set-stk" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}"
-                        style="padding:7px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:7px;font-weight:800;font-size:11px;cursor:pointer">
-                        ✎ Ajustar</button>
+                        style="padding:8px 4px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:8px;font-weight:800;font-size:10.5px;cursor:pointer">
+                        ✎ Ajustar
+                    </button>
                 </div>
             </article>`;
         }).join("")}
         </div>`;
+
+        c.querySelectorAll(".inv-tab-btn").forEach(btn => btn.addEventListener("click", () => {
+            S.invTab = btn.dataset.tab;
+            loadInventory();
+        }));
 
         document.getElementById("inv-branch-filter")?.addEventListener("change", async e => {
             await changeBranch(e.target.value);
@@ -3156,28 +1220,48 @@
             toast("Inventario actualizado.", "info");
         });
 
-        c.querySelectorAll(".btn-add-stk").forEach(btn => btn.addEventListener("click", async () => {
-            const cur = getStock(btn.dataset.id);
-            const avail = STOCK_MAX - cur;
-            if (avail <= 0) return toast(`'${btn.dataset.name}' ya está al máximo (${STOCK_MAX}).`, "warn");
-            const val = await toastPrompt(`Agregar stock a '${btn.dataset.name}':\nActual: ${cur} | Máx: ${STOCK_MAX}\nCantidad a agregar (máx ${avail}):`, "Cantidad…");
-            const n = parseInt(val);
-            if (!Number.isFinite(n) || n <= 0) return;
-            if (n > avail) return toast(`Solo puedes agregar hasta ${avail} unidades.`, "warn");
-            addStock(btn.dataset.id, n);
-            toast(`✓ Stock de '${btn.dataset.name}' actualizado a ${cur + n} unidades.`, "success");
+        // Agregar por paquetes/bolsas
+        c.querySelectorAll(".btn-add-pack").forEach(btn => btn.addEventListener("click", async () => {
+            const pid = btn.dataset.id;
+            const name = btn.dataset.name;
+            const packUnits = parseInt(btn.dataset.pack, 10) || 50;
+            const cur = getStock(pid);
+
+            const val = await toastPrompt(`📦 Agregar Paquetes a '${name}':\n• Cada paquete contiene: ${packUnits} piezas\n• Stock actual: ${cur} piezas\n\n¿Cuántos paquetes/bolsas deseas ingresar?:`, "1");
+            const nPacks = parseInt(val, 10);
+            if (!Number.isFinite(nPacks) || nPacks <= 0) return;
+
+            const totalToAdd = nPacks * packUnits;
+            addStock(pid, totalToAdd);
+            toast(`✓ Se agregaron ${nPacks} paquetes (+${totalToAdd} piezas) a '${name}'. Nuevo stock: ${cur + totalToAdd} piezas.`, "success", 5000);
             loadInventory();
         }));
 
+        // Agregar piezas sueltas / unidades
+        c.querySelectorAll(".btn-add-stk").forEach(btn => btn.addEventListener("click", async () => {
+            const pid = btn.dataset.id;
+            const name = btn.dataset.name;
+            const cur = getStock(pid);
+            const val = await toastPrompt(`Agregar stock a '${name}':\nActual: ${cur} piezas/unidades\nCantidad a agregar:`, "Cantidad…");
+            const n = parseInt(val, 10);
+            if (!Number.isFinite(n) || n <= 0) return;
+            addStock(pid, n);
+            toast(`✓ Stock de '${name}' actualizado a ${cur + n} unidades.`, "success");
+            loadInventory();
+        }));
+
+        // Ajuste directo del total
         c.querySelectorAll(".btn-set-stk").forEach(btn => btn.addEventListener("click", async () => {
-            const cur = getStock(btn.dataset.id);
-            const val = await toastPrompt(`Ajustar stock de '${btn.dataset.name}':\nActual: ${cur}\nNuevo stock total (0 a ${STOCK_MAX}):`, "Nuevo valor…");
-            const n = parseInt(val);
-            if (!Number.isFinite(n) || n < 0 || n > STOCK_MAX) return toast(`Ingresa un valor entre 0 y ${STOCK_MAX}.`, "warn");
-            S.inv[btn.dataset.id] = n;
+            const pid = btn.dataset.id;
+            const name = btn.dataset.name;
+            const cur = getStock(pid);
+            const val = await toastPrompt(`Ajustar stock total de '${name}':\nActual: ${cur}\nNuevo valor total:`, String(cur));
+            const n = parseInt(val, 10);
+            if (!Number.isFinite(n) || n < 0) return;
+            S.inv[pid] = n;
             lw("inv", S.inv);
             alertInv();
-            toast(`✓ Stock de '${btn.dataset.name}' ajustado a ${n} unidades.`, "success");
+            toast(`✓ Stock de '${name}' ajustado a ${n} unidades.`, "success");
             loadInventory();
         }));
     }
