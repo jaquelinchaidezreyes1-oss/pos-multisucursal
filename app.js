@@ -2825,7 +2825,9 @@
             });
         });
 
+        const deletedCutIds = new Set(gr("deleted_cut_ids", []));
         const cutsList = Array.from(cutsMap.values())
+            .filter(ct => !deletedCutIds.has(String(ct.id)))
             .filter(ct => S.isSU || matchesBranch(ct, { id: S.branchId, name: S.branchName }))
             .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -2945,6 +2947,11 @@
                             style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
                             🖨️ Imprimir
                         </button>
+                        ${S.isSU ? `
+                        <button type="button" class="btn-delete-cut" data-id="${esc(ct.id)}" data-shift="${esc(ct.shift_name)}" data-branch="${esc(ct.branch_name)}"
+                            style="padding:8px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-size:11px;font-weight:900;cursor:pointer;display:flex;align-items:center;gap:4px">
+                            🗑️ Borrar Corte
+                        </button>` : ''}
                     </div>
                 </article>`;
             }).join("")}
@@ -3049,6 +3056,52 @@
             try { printCutReceipt(target); } catch(e) {}
             toast(`🖨️ Imprimiendo ticket de corte…`, "info", 3000);
         }));
+
+        if (S.isSU) {
+            c.querySelectorAll(".btn-delete-cut").forEach(btn => btn.addEventListener("click", async () => {
+                const cid = String(btn.dataset.id);
+                const cshift = btn.dataset.shift || "Turno";
+                const cbranch = btn.dataset.branch || S.branchName;
+                const ok = await toastConfirm("👑 [Superusuario] ¿Deseas eliminar definitivamente este corte duplicado de " + cbranch + " (" + cshift + ")?");
+                if (!ok) return;
+
+                // 1. Local storage de sucursal
+                let lCuts = lr("cuts", []).filter(x => String(x.id) !== cid);
+                lw("cuts", lCuts);
+
+                // 2. Global storage de directivos
+                let gCuts = gr("all_cuts", []).filter(x => String(x.id) !== cid);
+                gw("all_cuts", gCuts);
+
+                // 3. Registrar en lista negra de eliminados
+                const deletedCutIds = gr("deleted_cut_ids", []);
+                if (!deletedCutIds.includes(cid)) deletedCutIds.push(cid);
+                gw("deleted_cut_ids", deletedCutIds);
+
+                // 4. Base de datos remota Supabase
+                if (db) {
+                    try {
+                        await db.from("cash_cuts").delete().eq("id", cid);
+                    } catch(e) {
+                        console.warn("Error borrando corte en Supabase:", e);
+                    }
+                }
+
+                // 5. Difusión en tiempo real
+                if (realtimeChannel) {
+                    try {
+                        realtimeChannel.send({
+                            type: "broadcast",
+                            event: "cut_deleted",
+                            payload: { id: cid }
+                        });
+                    } catch(e) {}
+                }
+
+                toast("✓ Corte duplicado eliminado del sistema.", "success", 4000);
+                await loadCuts();
+            }));
+        }
     }
 
     /* ── CAMBIO DE TURNO & APERTURA DE FONDO DE CAJA ── */
