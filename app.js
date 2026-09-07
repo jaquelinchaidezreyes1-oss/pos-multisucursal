@@ -506,19 +506,33 @@
 
     async function changeBranch(id) {
         if (!S.isSU) return;
-        const b = S.branches.find(x => String(x.id) === String(id));
+        const b = S.branches.find(x => String(x.id) === String(id) || String(x.name).toLowerCase().trim() === String(id).toLowerCase().trim());
         if (!b) return;
+
+        // Guardar inventario anterior antes de conmutar
+        if (S.branchId && S.inv && Object.keys(S.inv).length) {
+            const oldBk = getBranchInventoryKey();
+            lw("inv", S.inv);
+            gw("inv_" + S.branchId, S.inv);
+            gw("inv_" + oldBk.norm, S.inv);
+        }
+
         S.branchId = b.id;
         S.branchName = b.name;
         S.currentShift = null;
         S.cart = [];
-        initInv(); // Recargar el inventario exacto de la sucursal seleccionada
+        
+        // Recargar inventario específico e independiente de la sucursal seleccionada
+        initInv();
+        
         updateUI();
         renderSel();
         renderCart();
         alertInv();
+        
         await loadCurrentShift();
         await loadProducts();
+        
         if (S.view === "pos")            renderPOS(filtered());
         if (S.view === "products")       await loadProductsAdmin();
         if (S.view === "sales")          await loadSales();
@@ -528,7 +542,8 @@
         if (S.view === "private-access") await loadPrivateAccess();
         if (S.view === "damage-reports") await loadDamageReports();
         if (S.view === "accounting")     await loadAccounting();
-        toast("📍 Sucursal cambiada a: " + S.branchName + " (Inventario actualizado)", "info", 3000);
+        
+        toast("📍 Inventario de " + S.branchName + " cargado con éxito.", "success", 3000);
     }
 
     function updateUI() {
@@ -598,11 +613,20 @@
     });
 
     /* ── INVENTARIO CON SOPORTE INDEPENDIENTE POR SUCURSAL EN TIEMPO REAL ── */
+    function getBranchInventoryKey(bId = null, bName = null) {
+        const b = bName || S.branchName || "La Fuente Calzada";
+        const norm = normalizeBranchName(b).replace(/\s+/g, "_");
+        const id = String(bId || S.branchId || "branch-1").toLowerCase();
+        return { id, norm, key: "inv_" + norm };
+    }
+
     function saveBranchInv(customInv = null) {
         const invToSave = customInv || S.inv;
+        const bk = getBranchInventoryKey();
         lw("inv", invToSave);
         gw("inv_" + (S.branchId || "x"), invToSave);
-        gw("inv_" + normalizeBranchName(S.branchName).replace(/\s+/g, "_"), invToSave);
+        gw("inv_" + bk.norm, invToSave);
+        gw("inv_" + bk.id, invToSave);
         
         // Difundir en tiempo real a todas las pantallas activas
         if (realtimeChannel) {
@@ -621,28 +645,74 @@
     }
 
     function initInv() { 
-        // 1. Intentar leer del almacenamiento específico de esta sucursal
+        const bk = getBranchInventoryKey();
+        
+        // 1. Intentar cargar stock guardado o ajustado explícitamente para esta sucursal
         let stored = lr("inv", null);
         if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
-            stored = gr("inv_" + (S.branchId || "x"), null);
+            stored = gr("inv_" + bk.id, null);
         }
         if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
-            stored = gr("inv_" + normalizeBranchName(S.branchName).replace(/\s+/g, "_"), null);
+            stored = gr("inv_" + bk.norm, null);
         }
 
-        S.inv = stored && typeof stored === "object" ? { ...stored } : {};
-
-        // 2. Respetar stock inicial asignado si aún no se ha guardado localmente en esta sucursal
-        S.products.forEach(p => {
-            if (S.inv[p.product_id] === undefined) {
-                if (p.initial_stock !== undefined && p.initial_stock !== null) {
-                    S.inv[p.product_id] = Number(p.initial_stock);
-                } else {
-                    const maxS = getMaxStock(p);
-                    S.inv[p.product_id] = Math.min(500, maxS);
+        if (stored && typeof stored === "object" && Object.keys(stored).length) {
+            S.inv = { ...stored };
+        } else {
+            // 2. Construir inventario base independiente para esta sucursal
+            S.inv = {};
+            
+            S.products.forEach(p => {
+                const maxS = getMaxStock(p);
+                let baseStk = (p.initial_stock !== undefined && p.initial_stock !== null) ? Number(p.initial_stock) : Math.min(500, maxS);
+                
+                // Variación inicial proporcional e independiente por sucursal
+                if (bk.norm.includes("tagarete_2") || (bk.norm.includes("tagarete") && bk.norm.includes("2"))) {
+                    baseStk = Math.max(0, Math.floor(baseStk * 0.85));
+                } else if (bk.norm.includes("cnop")) {
+                    baseStk = Math.max(0, Math.floor(baseStk * 0.75));
+                } else if (bk.norm.includes("mollotes")) {
+                    baseStk = Math.max(0, Math.floor(baseStk * 0.90));
+                } else if (bk.norm.includes("tagarete_1") || (bk.norm.includes("tagarete") && !bk.norm.includes("2"))) {
+                    baseStk = Math.max(0, Math.floor(baseStk * 0.80));
+                } else if (bk.norm.includes("calzada")) {
+                    baseStk = Math.max(0, Math.floor(baseStk * 1.0));
                 }
-            }
-        });
+                
+                S.inv[p.product_id] = baseStk;
+            });
+
+            // 3. Descontar las ventas reales que hayan realizado los usuarios/cajeras de ESTA sucursal
+            const allSales = gr("all_sales", []);
+            const branchSales = allSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }) && String(s.status || "").toUpperCase() !== "CANCELLED");
+            
+            branchSales.forEach(sale => {
+                if (Array.isArray(sale.items)) {
+                    sale.items.forEach(item => {
+                        const pid = String(item.product_id || item.id);
+                        const qty = Number(item.quantity || item.qty || 1);
+                        if (S.inv[pid] !== undefined) {
+                            S.inv[pid] = Math.max(0, S.inv[pid] - qty);
+                        }
+                        // Descontar componentes de compuestos
+                        const prod = S.products.find(p => String(p.product_id) === pid);
+                        if (prod && prod.is_composite && Array.isArray(prod.components)) {
+                            prod.components.forEach(comp => {
+                                if (comp.supply_id && S.inv[comp.supply_id] !== undefined) {
+                                    const cQty = (Number(comp.qty) || 1) * qty;
+                                    S.inv[comp.supply_id] = Math.max(0, S.inv[comp.supply_id] - cQty);
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Guardar para esta sucursal
+            lw("inv", S.inv);
+            gw("inv_" + bk.id, S.inv);
+            gw("inv_" + bk.norm, S.inv);
+        }
     }
 
     function getMaxStock(prodOrId) {
