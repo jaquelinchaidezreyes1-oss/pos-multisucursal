@@ -845,10 +845,14 @@
         const p = S.products.find(x => String(x.product_id) === String(pid));
         if (!p) return;
         const stock = getStock(pid);
+        if (stock <= 0) {
+            toast("'" + p.product_name + "' no tiene stock disponible (0 unidades). Repón inventario para poder vender.", "error", 4000);
+            return;
+        }
         const ex = S.cart.find(i => String(i.product_id) === String(pid));
         const qty = ex ? ex.quantity : 0;
         if (qty >= stock) {
-            toast("Solo hay " + stock + " unidades de '" + p.product_name + "' en inventario.", "warn");
+            toast("Solo hay " + stock + " unidades de '" + p.product_name + "' en inventario (Máx 500).", "warn", 3500);
             return;
         }
         if (ex) ex.quantity++;
@@ -1922,6 +1926,11 @@
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box;font-weight:800">
                 </div>
                 <div>
+                    <label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">📦 STOCK / UNIDADES (MÁX 500)</label>
+                    <input id="np-stock" type="number" min="0" max="500" step="1" placeholder="Ej: 50" value="50"
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box;font-weight:900;color:var(--wine-900)">
+                </div>
+                <div>
                     <label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">PIEZAS POR PAQUETE (Desechables)</label>
                     <input id="np-pack-units" type="number" step="1" min="1" placeholder="Ej: 50" value="50"
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box">
@@ -2214,6 +2223,9 @@
             document.getElementById("np-code").value = p.product_code || "";
             document.getElementById("np-cat").value = p.category || "helados";
             document.getElementById("np-price").value = p.price || 0;
+            const curStk = getStock(p.product_id);
+            const stkInput = document.getElementById("np-stock");
+            if (stkInput) stkInput.value = curStk;
             document.getElementById("np-pack-units").value = p.units_per_package || 50;
 
             const isComp = !!p.is_composite;
@@ -2264,6 +2276,7 @@
             const code  = document.getElementById("np-code")?.value.trim();
             const cat   = document.getElementById("np-cat")?.value;
             const price = Number(document.getElementById("np-price")?.value || 0);
+            const stockInp = Math.min(500, Math.max(0, parseInt(document.getElementById("np-stock")?.value, 10) || 0));
             const packUnits = parseInt(document.getElementById("np-pack-units")?.value, 10) || 50;
             const targetBranch = document.getElementById("np-branch")?.value || S.branchName;
             const isComp = !!document.getElementById("np-is-composite")?.checked;
@@ -2293,13 +2306,19 @@
                 prodToEdit.components = isComp ? [...tempComponents] : [];
                 prodToEdit.is_supply = (cat === "desechables" || price === 0);
 
+                // Actualizar stock directamente
+                S.inv[editingProductId] = stockInp;
+                lw("inv", S.inv);
+                alertInv();
+
                 gw("custom_products", customList);
                 editingProductId = null;
-                toast("✓ Cambios guardados exitosamente en '" + name + "'.", "success", 4000);
+                toast("✓ Cambios guardados en '" + name + "' (Stock: " + stockInp + " uds).", "success", 4000);
             } else {
                 // CREAR NUEVO PRODUCTO
+                const newProdId = "prod_" + Date.now() + "_" + Math.random().toString(36).substring(2,6);
                 const newProd = {
-                    product_id: "prod_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
+                    product_id: newProdId,
                     product_name: name,
                     product_code: code || ("LF-" + Math.floor(Math.random()*900+100)),
                     category: cat,
@@ -2311,8 +2330,13 @@
                     components: isComp ? [...tempComponents] : [],
                     is_supply: (cat === "desechables" || price === 0),
                     units_per_package: packUnits,
+                    initial_stock: stockInp,
                     created_at: now()
                 };
+
+                S.inv[newProdId] = stockInp;
+                lw("inv", S.inv);
+                alertInv();
 
                 const customList = gr("custom_products", []);
                 customList.push(newProd);
@@ -2330,7 +2354,7 @@
                     } catch(e) {}
                 }
 
-                toast("✓ Producto '" + name + "' guardado con éxito.", "success", 4000);
+                toast("✓ Producto '" + name + "' guardado con " + stockInp + " unidades en stock.", "success", 4000);
             }
 
             await loadProducts();
