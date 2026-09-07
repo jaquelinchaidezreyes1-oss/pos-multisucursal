@@ -169,28 +169,31 @@
         const ref = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
         const sBranch = normalizeBranchName(sale.branch_name || "");
         const sId = String(sale.branch_id || "").toLowerCase();
+        const sCashier = String(sale.cashier_name || sale.user_name || "").toLowerCase();
         
+        // Match by branch ID directly
         if (typeof branchRef === "object" && branchRef?.id && sId && String(branchRef.id).toLowerCase() === sId) {
             return true;
         }
 
+        // Match by branch name / cashier assignment / ID patterns
         if (ref.includes("calzada")) {
-            return sBranch.includes("calzada") || sId === "branch-1" || sId === "branch_la_fuente_calzada" || sId === "branch_calzada";
+            return sBranch.includes("calzada") || sId === "branch-1" || sId === "branch_la_fuente_calzada" || sId === "branch_calzada" || sCashier.includes("encargado1") || sCashier.includes("encargado2");
         }
         if (ref.includes("rescate")) {
-            return sBranch.includes("rescate") || sId === "branch-2" || sId === "branch_rescate";
+            return sBranch.includes("rescate") || sId === "branch-2" || sId === "branch_rescate" || sCashier.includes("encargado3") || sCashier.includes("encargado4");
         }
         if (ref.includes("mollotes")) {
-            return sBranch.includes("mollotes") || sId === "branch-3" || sId === "branch_mollotes";
+            return sBranch.includes("mollotes") || sId === "branch-3" || sId === "branch_mollotes" || sCashier.includes("encargado5") || sCashier.includes("encargado6");
         }
         if (ref.includes("tagarete 1") || (ref.includes("tagarete") && ref.includes("1"))) {
-            return (sBranch.includes("tagarete") && (sBranch.includes("1") || !sBranch.includes("2"))) || sId === "branch-4" || sId.includes("tagarete_1") || sId.includes("tagarete1");
+            return (sBranch.includes("tagarete") && (sBranch.includes("1") || !sBranch.includes("2"))) || sId === "branch-4" || sId.includes("tagarete_1") || sId.includes("tagarete1") || sCashier.includes("encargado7") || sCashier.includes("encargado8");
         }
         if (ref.includes("tagarete 2") || (ref.includes("tagarete") && ref.includes("2"))) {
-            return (sBranch.includes("tagarete") && sBranch.includes("2")) || sId === "branch-5" || sId.includes("tagarete_2") || sId.includes("tagarete2");
+            return (sBranch.includes("tagarete") && sBranch.includes("2")) || sId === "branch-5" || sId.includes("tagarete_2") || sId.includes("tagarete2") || sCashier.includes("encargado9") || sCashier.includes("encargado10");
         }
         if (ref.includes("cnop")) {
-            return sBranch.includes("cnop") || sId === "branch-6" || sId === "branch_cnop";
+            return sBranch.includes("cnop") || sId === "branch-6" || sId === "branch_cnop" || sCashier.includes("encargado11") || sCashier.includes("encargado12");
         }
 
         if (ref && sBranch) {
@@ -208,14 +211,46 @@
             const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
             const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
             const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
-
-            const localSales = lr("sales", []);
-            const syncedIds = new Set(gr("synced_sales_ids", []));
-
-            const unsynced = localSales.filter(s => s && s.id && !syncedIds.has(String(s.id)) && !uuid(s.id));
-            if (!unsynced.length) return;
-
             const defaultShiftUUID = "1dabe6df-2ce6-4e3a-97df-b81e179898ab";
+
+            const localSales = lr("sales", []).concat(gr("all_sales", []));
+            
+            // Recoger ventas de todas las llaves de sucursales locales
+            try {
+                if (typeof localStorage !== "undefined") {
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && (key.startsWith("lf_") || key.includes("sales"))) {
+                            try {
+                                const raw = localStorage.getItem(key);
+                                if (raw && raw.startsWith("[")) {
+                                    const parsed = JSON.parse(raw);
+                                    if (Array.isArray(parsed)) {
+                                        parsed.forEach(item => {
+                                            if (item && (item.total != null || item.sale_number || item.items)) {
+                                                localSales.push(item);
+                                            }
+                                        });
+                                    }
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                }
+            } catch(e) {}
+
+            const syncedIds = new Set(gr("synced_sales_ids", []));
+            const seenLocals = new Set();
+            const unsynced = [];
+
+            localSales.forEach(s => {
+                if (s && s.id && !syncedIds.has(String(s.id)) && !uuid(s.id) && !seenLocals.has(String(s.id))) {
+                    seenLocals.add(String(s.id));
+                    unsynced.push(s);
+                }
+            });
+
+            if (!unsynced.length) return;
 
             for (const s of unsynced) {
                 const bId = uuid(s.branch_id) ? s.branch_id : defaultBranchUUID;
@@ -3406,79 +3441,115 @@
         }));
     }
 
-    /* ── MOTOR UNIFICADO DE VENTAS CONSOLIDADAS (EN VIVO + OFFLINE) ── */
+    /* ── MOTOR UNIFICADO DE RECUPERACIÓN Y CONSOLIDACIÓN DE VENTAS (HISTÓRICO + EN VIVO + OFFLINE) ── */
     async function getConsolidatedSalesForChain() {
         let remoteSales = [];
         if (db) {
             try {
+                // Consulta con timeout generoso (5000ms) para garantizar recuperación total de ventas
                 const {data, error} = await safeQuery(db.from("sales")
                     .select("id,company_id,branch_id,shift_id,user_id,sale_number,total,status,observations,created_at")
-                    .neq("status","CANCELLED")
                     .order("created_at", {ascending:false})
-                    .limit(5000), null, 1200);
+                    .limit(5000), null, 5000);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
                         try {
                             obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
                         } catch(e) {}
+
+                        // Reconstruir nombre de sucursal mediante observaciones, id de sucursal o email de encargada
+                        let bName = obs.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
+                        const cashierName = obs.cashier_name || s.user_name || "";
+                        if (!bName && cashierName) {
+                            const cLower = cashierName.toLowerCase();
+                            for (const [em, staffInfo] of Object.entries(STAFF)) {
+                                if (cLower.includes(em.toLowerCase()) || (cLower.match(/encargado\d+/) && em.includes(cLower.match(/encargado\d+/)[0]))) {
+                                    bName = staffInfo.b;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!bName) bName = "La Fuente Calzada";
+
                         return {
                             id: s.id,
                             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
                             branch_id: s.branch_id,
-                            branch_name: obs.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "Sucursal",
+                            branch_name: bName,
                             shift_name: obs.shift_name || "Mañana",
                             cashier_id: s.user_id,
-                            cashier_name: obs.cashier_name || "Encargada",
+                            cashier_name: cashierName || "Encargada",
                             total: Number(s.total || 0),
                             payment_method: obs.payment_method || "cash",
-                            status: String(s.status||"").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETADA",
+                            status: String(s.status||"").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETED",
                             items: obs.items || [],
-                            created_at: s.created_at,
+                            created_at: s.created_at || now(),
                             local_id: obs.local_id || s.id
                         };
                     });
                 }
             } catch(e) {
-                console.warn("Supabase offline, using local storage", e);
+                console.warn("Supabase fetch sales error:", e);
             }
         }
 
-        const allGlobalSales = gr("all_sales", []);
-        const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
         const salesMap = new Map();
+        const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
 
-        // 1. Añadir locales primero (filtrando canceladas)
-        allGlobalSales.forEach(s => {
+        // 1. ESCANEO EXHAUSTIVO DE TODAS LAS VENTAS GUARDADAS EN CUALQUIER LLAVE LOCALSTORAGE
+        try {
+            if (typeof localStorage !== "undefined") {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith("lf_") || key.includes("sales"))) {
+                        try {
+                            const raw = localStorage.getItem(key);
+                            if (!raw || !raw.startsWith("[")) continue;
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                parsed.forEach(item => {
+                                    if (item && (item.total != null || item.sale_number || item.items)) {
+                                        const sid = String(item.id || item.sale_number || (Date.now() + Math.random()));
+                                        if (!salesMap.has(sid)) {
+                                            salesMap.set(sid, item);
+                                        }
+                                    }
+                                });
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // 2. FUSIONAR Y DEDUPLICAR CON LAS VENTAS DE SUPABASE
+        remoteSales.forEach(s => {
             const sid = String(s.id);
-            const isCan = String(s.status||"").toUpperCase() === "CANCELLED" || cancelledReasons[sid];
-            if (!isCan) {
+            let matchedKey = null;
+            for (const [key, existing] of salesMap.entries()) {
+                if (key === sid || 
+                   (s.local_id && (key === String(s.local_id) || String(existing.local_id) === String(s.local_id) || String(existing.id) === String(s.local_id))) || 
+                   (s.sale_number && existing.sale_number === s.sale_number)) {
+                    matchedKey = key;
+                    break;
+                }
+            }
+            if (matchedKey) {
+                salesMap.set(matchedKey, { ...salesMap.get(matchedKey), ...s });
+            } else {
                 salesMap.set(sid, s);
             }
         });
 
-        // 2. Fusionar remotas deduplicando por ID, local_id o sale_number
-        remoteSales.forEach(s => {
-            const sid = String(s.id);
-            const isCan = String(s.status||"").toUpperCase() === "CANCELLED" || cancelledReasons[sid];
-            if (!isCan) {
-                let matchedKey = null;
-                for (const [key, existing] of salesMap.entries()) {
-                    if (key === sid || (s.local_id && (key === s.local_id || existing.local_id === s.local_id)) || (s.sale_number && existing.sale_number === s.sale_number)) {
-                        matchedKey = key;
-                        break;
-                    }
-                }
-                if (matchedKey) {
-                    salesMap.set(matchedKey, { ...salesMap.get(matchedKey), ...s });
-                } else {
-                    salesMap.set(sid, s);
-                }
+        // 3. Normalizar estado de cancelaciones
+        for (const [k, s] of salesMap.entries()) {
+            if (cancelledReasons[String(s.id)] || cancelledReasons[String(s.sale_number)]) {
+                s.status = "CANCELLED";
             }
-        });
+        }
 
-        const consolidated = Array.from(salesMap.values()).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-        // Actualizar caché global para consistencia
+        const consolidated = Array.from(salesMap.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
         gw("all_sales", consolidated);
         return consolidated;
     }
