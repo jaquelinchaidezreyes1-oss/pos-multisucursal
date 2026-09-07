@@ -509,20 +509,18 @@
         const b = S.branches.find(x => String(x.id) === String(id) || String(x.name).toLowerCase().trim() === String(id).toLowerCase().trim());
         if (!b) return;
 
-        // Guardar inventario anterior antes de conmutar
+        // 1. Guardar inventario de la sucursal previa
         if (S.branchId && S.inv && Object.keys(S.inv).length) {
-            const oldBk = getBranchInventoryKey();
-            lw("inv", S.inv);
-            gw("inv_" + S.branchId, S.inv);
-            gw("inv_" + oldBk.norm, S.inv);
+            saveBranchInv();
         }
 
+        // 2. Establecer nueva sucursal
         S.branchId = b.id;
         S.branchName = b.name;
         S.currentShift = null;
         S.cart = [];
         
-        // Recargar inventario específico e independiente de la sucursal seleccionada
+        // 3. Recargar el inventario exclusivo de la sucursal seleccionada
         initInv();
         
         updateUI();
@@ -530,9 +528,15 @@
         renderCart();
         alertInv();
         
+        // Sincronizar todos los selectores de sucursales en la vista
+        document.querySelectorAll("#branch-selector, #inv-branch-filter, #sales-branch-filter, #admin-branch-filter").forEach(sel => {
+            if (sel) sel.value = b.id;
+        });
+
         await loadCurrentShift();
         await loadProducts();
         
+        // 4. Refrescar la vista actual de inmediato
         if (S.view === "pos")            renderPOS(filtered());
         if (S.view === "products")       await loadProductsAdmin();
         if (S.view === "sales")          await loadSales();
@@ -543,7 +547,7 @@
         if (S.view === "damage-reports") await loadDamageReports();
         if (S.view === "accounting")     await loadAccounting();
         
-        toast("📍 Inventario de " + S.branchName + " cargado con éxito.", "success", 3000);
+        toast("📍 Sucursal activa: " + S.branchName + " (Inventario actualizado)", "success", 3000);
     }
 
     function updateUI() {
@@ -613,20 +617,124 @@
     });
 
     /* ── INVENTARIO CON SOPORTE INDEPENDIENTE POR SUCURSAL EN TIEMPO REAL ── */
-    function getBranchInventoryKey(bId = null, bName = null) {
-        const b = bName || S.branchName || "La Fuente Calzada";
-        const norm = normalizeBranchName(b).replace(/\s+/g, "_");
-        const id = String(bId || S.branchId || "branch-1").toLowerCase();
-        return { id, norm, key: "inv_" + norm };
+    const BRANCH_BASE_INVENTORY = {
+        "calzada": {
+            "adbc5511-68a8-4525-97a3-ac7972856e89": 140,
+            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 130,
+            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 125,
+            "sup_vaso_1lt": 200,
+            "sup_tapa_1lt": 400,
+            "sup_vaso_20": 350,
+            "sup_tapa_20": 400,
+            "sup_charola_banana": 120,
+            "sup_cucharas": 300,
+            "sup_servilletas": 500,
+            "sup_sabritas": 180,
+            "sup_tostitos": 25,
+            "sup_doritos": 40,
+            "sup_cheetos": 45
+        },
+        "rescate": {
+            "adbc5511-68a8-4525-97a3-ac7972856e89": 99,
+            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 95,
+            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 100,
+            "sup_vaso_1lt": 125,
+            "sup_tapa_1lt": 550,
+            "sup_vaso_20": 500,
+            "sup_tapa_20": 550,
+            "sup_charola_banana": 83,
+            "sup_cucharas": 250,
+            "sup_servilletas": 500,
+            "sup_sabritas": 159,
+            "sup_tostitos": 7,
+            "sup_doritos": 27,
+            "sup_cheetos": 35
+        },
+        "mollotes": {
+            "adbc5511-68a8-4525-97a3-ac7972856e89": 75,
+            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 80,
+            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 70,
+            "sup_vaso_1lt": 100,
+            "sup_tapa_1lt": 300,
+            "sup_vaso_20": 250,
+            "sup_tapa_20": 300,
+            "sup_charola_banana": 60,
+            "sup_cucharas": 200,
+            "sup_servilletas": 400,
+            "sup_sabritas": 90,
+            "sup_tostitos": 15,
+            "sup_doritos": 20,
+            "sup_cheetos": 25
+        },
+        "tagarete_1": {
+            "adbc5511-68a8-4525-97a3-ac7972856e89": 65,
+            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 60,
+            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 55,
+            "sup_vaso_1lt": 80,
+            "sup_tapa_1lt": 250,
+            "sup_vaso_20": 200,
+            "sup_tapa_20": 250,
+            "sup_charola_banana": 50,
+            "sup_cucharas": 180,
+            "sup_servilletas": 350,
+            "sup_sabritas": 80,
+            "sup_tostitos": 12,
+            "sup_doritos": 18,
+            "sup_cheetos": 20
+        },
+        "tagarete_2": {
+            "adbc5511-68a8-4525-97a3-ac7972856e89": 48,
+            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 42,
+            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 40,
+            "sup_vaso_1lt": 60,
+            "sup_tapa_1lt": 200,
+            "sup_vaso_20": 180,
+            "sup_tapa_20": 200,
+            "sup_charola_banana": 40,
+            "sup_cucharas": 150,
+            "sup_servilletas": 300,
+            "sup_sabritas": 65,
+            "sup_tostitos": 9,
+            "sup_doritos": 14,
+            "sup_cheetos": 16
+        },
+        "cnop": {
+            "adbc5511-68a8-4525-97a3-ac7972856e89": 35,
+            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 30,
+            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 32,
+            "sup_vaso_1lt": 50,
+            "sup_tapa_1lt": 180,
+            "sup_vaso_20": 150,
+            "sup_tapa_20": 180,
+            "sup_charola_banana": 30,
+            "sup_cucharas": 120,
+            "sup_servilletas": 250,
+            "sup_sabritas": 50,
+            "sup_tostitos": 8,
+            "sup_doritos": 12,
+            "sup_cheetos": 15
+        }
+    };
+
+    function getBranchKeyName(bName) {
+        const s = normalizeBranchName(bName || S.branchName || "calzada").replace(/\s+/g, "_");
+        if (s.includes("tagarete_2") || (s.includes("tagarete") && s.includes("2"))) return "tagarete_2";
+        if (s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || !s.includes("2")))) return "tagarete_1";
+        if (s.includes("rescate")) return "rescate";
+        if (s.includes("mollotes")) return "mollotes";
+        if (s.includes("cnop")) return "cnop";
+        if (s.includes("calzada")) return "calzada";
+        return "calzada";
     }
 
     function saveBranchInv(customInv = null) {
         const invToSave = customInv || S.inv;
-        const bk = getBranchInventoryKey();
+        const branchKey = getBranchKeyName(S.branchName);
+        
         lw("inv", invToSave);
+        gw("inv_" + branchKey, invToSave);
         gw("inv_" + (S.branchId || "x"), invToSave);
-        gw("inv_" + bk.norm, invToSave);
-        gw("inv_" + bk.id, invToSave);
+        try { localStorage.setItem("lf_inv_" + branchKey, JSON.stringify(invToSave)); } catch(e) {}
         
         // Difundir en tiempo real a todas las pantallas activas
         if (realtimeChannel) {
@@ -637,6 +745,7 @@
                     payload: {
                         branch_id: S.branchId,
                         branch_name: S.branchName,
+                        branch_key: branchKey,
                         inv: invToSave
                     }
                 });
@@ -645,41 +754,40 @@
     }
 
     function initInv() { 
-        const bk = getBranchInventoryKey();
+        const branchKey = getBranchKeyName(S.branchName);
         
         // 1. Intentar cargar stock guardado o ajustado explícitamente para esta sucursal
-        let stored = lr("inv", null);
+        let stored = null;
+        try {
+            const raw = localStorage.getItem("lf_inv_" + branchKey);
+            if (raw) stored = JSON.parse(raw);
+        } catch(e) {}
+
         if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
-            stored = gr("inv_" + bk.id, null);
+            stored = gr("inv_" + branchKey, null);
         }
         if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
-            stored = gr("inv_" + bk.norm, null);
+            stored = lr("inv", null);
         }
 
         if (stored && typeof stored === "object" && Object.keys(stored).length) {
             S.inv = { ...stored };
         } else {
-            // 2. Construir inventario base independiente para esta sucursal
+            // 2. Cargar el inventario base exclusivo y diferenciado para esta sucursal
             S.inv = {};
-            
+            const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || BRANCH_BASE_INVENTORY["calzada"];
+
             S.products.forEach(p => {
                 const maxS = getMaxStock(p);
-                let baseStk = (p.initial_stock !== undefined && p.initial_stock !== null) ? Number(p.initial_stock) : Math.min(500, maxS);
-                
-                // Variación inicial proporcional e independiente por sucursal
-                if (bk.norm.includes("tagarete_2") || (bk.norm.includes("tagarete") && bk.norm.includes("2"))) {
-                    baseStk = Math.max(0, Math.floor(baseStk * 0.85));
-                } else if (bk.norm.includes("cnop")) {
-                    baseStk = Math.max(0, Math.floor(baseStk * 0.75));
-                } else if (bk.norm.includes("mollotes")) {
-                    baseStk = Math.max(0, Math.floor(baseStk * 0.90));
-                } else if (bk.norm.includes("tagarete_1") || (bk.norm.includes("tagarete") && !bk.norm.includes("2"))) {
-                    baseStk = Math.max(0, Math.floor(baseStk * 0.80));
-                } else if (bk.norm.includes("calzada")) {
-                    baseStk = Math.max(0, Math.floor(baseStk * 1.0));
+                let baseStk = branchDefaults[p.product_id];
+                if (baseStk === undefined) {
+                    baseStk = (p.initial_stock !== undefined && p.initial_stock !== null) ? Number(p.initial_stock) : 50;
+                    if (branchKey === "tagarete_2") baseStk = Math.max(0, Math.floor(baseStk * 0.50));
+                    else if (branchKey === "cnop") baseStk = Math.max(0, Math.floor(baseStk * 0.35));
+                    else if (branchKey === "mollotes") baseStk = Math.max(0, Math.floor(baseStk * 0.70));
+                    else if (branchKey === "tagarete_1") baseStk = Math.max(0, Math.floor(baseStk * 0.60));
                 }
-                
-                S.inv[p.product_id] = baseStk;
+                S.inv[p.product_id] = Math.min(maxS, Math.max(0, baseStk));
             });
 
             // 3. Descontar las ventas reales que hayan realizado los usuarios/cajeras de ESTA sucursal
@@ -709,9 +817,7 @@
             });
 
             // Guardar para esta sucursal
-            lw("inv", S.inv);
-            gw("inv_" + bk.id, S.inv);
-            gw("inv_" + bk.norm, S.inv);
+            saveBranchInv();
         }
     }
 
@@ -725,7 +831,9 @@
         if (S.inv[id] === undefined) {
             const prod = S.products.find(p => String(p.product_id) === String(id));
             const maxS = getMaxStock(prod);
-            S.inv[id] = (prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : Math.min(500, maxS); 
+            const branchKey = getBranchKeyName(S.branchName);
+            const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
+            S.inv[id] = branchDefaults[id] !== undefined ? branchDefaults[id] : ((prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : Math.min(500, maxS)); 
         }
         return S.inv[id]; 
     }
