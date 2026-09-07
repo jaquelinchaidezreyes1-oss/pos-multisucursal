@@ -1039,9 +1039,11 @@
         })();
     }
 
-    /* ── MOTOR UNIVERSAL DE IMPRESIÓN DE TICKETS & CORTES (USB, BLUETOOTH & NAVEGADOR) ── */
+    /* ── MOTOR UNIVERSAL DE IMPRESIÓN DIRECTA & FÍSICA (USB, SERIAL, BLUETOOTH & NAVEGADOR) ── */
     let directUsbDevice = null;
     let directUsbEndpoint = 1;
+    let directSerialPort = null;
+    let directSerialWriter = null;
     let directBtDevice = null;
     let directBtServer = null;
     let directBtChar = null;
@@ -1052,10 +1054,10 @@
             if (raw) return JSON.parse(raw);
         } catch(e) {}
         return {
-            model: "EC Line / POS-58 (Térmica)",
+            model: "POS-58 / EC Line (58mm)",
             paperWidth: "58mm",
             autoPrint: true,
-            connectionType: "browser"
+            connectionType: "auto"
         };
     }
 
@@ -1066,25 +1068,26 @@
     }
 
     function getPrinterConnectionStatus() {
-        if (directUsbDevice && directUsbDevice.opened) return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado por Cable USB" };
+        if (directSerialPort && directSerialPort.writable) return { type: "serial", name: "Puerto Serie USB", label: "⚡ Conectado por Puerto USB / Serie" };
+        if (directUsbDevice && directUsbDevice.opened) return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado por Cable USB (WebUSB)" };
         if (directBtChar && directBtServer && directBtServer.connected) return { type: "bt", name: directBtDevice?.name || "Impresora Bluetooth", label: "🔵 Conectado por Bluetooth" };
-        return { type: "browser", name: "Impresora del Sistema", label: "🟡 Modo Impresión Universal (Sistema)" };
+        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Windows / Android)" };
     }
 
-    // Generador de comandos ESC/POS binarios para impresión física directa por USB / Bluetooth
+    // Generador de comandos ESC/POS binarios para Ticket de Venta
     function buildEscPosTicket(s) {
         const encoder = new TextEncoder();
         const parts = [];
         const isCard = s.payment_method === "card";
-        const width = 32; // 32 columnas estándar para 58mm
+        const width = 32;
 
-        const initCmd = new Uint8Array([0x1B, 0x40]); // ESC @ Inicializar
-        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]); // ESC a 1 Centrado
-        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]); // ESC a 0 Izquierda
-        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]); // ESC E 1 Negrita on
-        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]); // ESC E 0 Negrita off
-        const cutCmd = new Uint8Array([0x1D, 0x56, 0x41, 0x10]); // GS V A 16 Corte parcial
-        const feedCmd = new Uint8Array([0x1B, 0x64, 0x03]); // ESC d 3 Avanzar 3 líneas
+        const initCmd = new Uint8Array([0x1B, 0x40]); // ESC @
+        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]); // ESC a 1
+        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]); // ESC a 0
+        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]); // ESC E 1
+        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]); // ESC E 0
+        const cutCmd = new Uint8Array([0x1D, 0x56, 0x41, 0x10]); // GS V A 16
+        const feedCmd = new Uint8Array([0x1B, 0x64, 0x04]); // ESC d 4
 
         parts.push(initCmd);
         parts.push(centerCmd, boldOn, encoder.encode("NEVERIA LA FUENTE\n"), boldOff);
@@ -1114,10 +1117,46 @@
         parts.push(encoder.encode("PAGO:  " + (isCard ? "TARJETA" : "EFECTIVO").padStart(width - 7, " ") + "\n"));
         parts.push(encoder.encode("================================\n"));
         parts.push(centerCmd, boldOn, encoder.encode("¡GRACIAS POR SU COMPRA!\n"), boldOff);
-        parts.push(encoder.encode("Conserve este ticket\n\n\n"));
+        parts.push(encoder.encode("Conserve este ticket\n\n\n\n"));
         parts.push(cutCmd, feedCmd);
 
-        // Concatenar todos los Uint8Array
+        const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
+        const combined = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const p of parts) {
+            combined.set(p, offset);
+            offset += p.length;
+        }
+        return combined;
+    }
+
+    // Generador de comandos ESC/POS binarios para Ticket de Prueba
+    function buildEscPosTestTicket() {
+        const encoder = new TextEncoder();
+        const parts = [];
+        const initCmd = new Uint8Array([0x1B, 0x40]);
+        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]);
+        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]);
+        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]);
+        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]);
+        const cutCmd = new Uint8Array([0x1D, 0x56, 0x41, 0x10]);
+        const feedCmd = new Uint8Array([0x1B, 0x64, 0x04]);
+
+        parts.push(initCmd);
+        parts.push(centerCmd, boldOn, encoder.encode("NEVERIA LA FUENTE\n"), boldOff);
+        parts.push(encoder.encode("PRUEBA DE IMPRESION FISICA\n"));
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(leftCmd);
+        parts.push(encoder.encode("SUCURSAL: " + S.branchName + "\n"));
+        parts.push(encoder.encode("FECHA:    " + fdt(now()) + "\n"));
+        parts.push(encoder.encode("USUARIO:  " + (S.profile?.full_name || S.user?.email || "Encargada") + "\n"));
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(centerCmd, boldOn, encoder.encode("¡IMPRESORA CALIBRADA!\n"), boldOff);
+        parts.push(encoder.encode("Conexion fisica exitosa\n"));
+        parts.push(encoder.encode("1234567890 ABCDEFGHIJKLMNOP\n"));
+        parts.push(encoder.encode("================================\n\n\n\n"));
+        parts.push(cutCmd, feedCmd);
+
         const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
         const combined = new Uint8Array(totalLen);
         let offset = 0;
@@ -1129,18 +1168,36 @@
     }
 
     async function writeEscPosBytes(bytes) {
-        // 1. Intentar USB directo
-        if (directUsbDevice && directUsbDevice.opened) {
+        // 1. Intentar por Puerto Serial / USB (WebSerial)
+        if (directSerialPort && directSerialPort.writable) {
             try {
-                await directUsbDevice.transferOut(directUsbEndpoint || 1, bytes);
-                console.log("✓ Impresión enviada directamente por USB");
+                if (!directSerialWriter) {
+                    directSerialWriter = directSerialPort.writable.getWriter();
+                }
+                await directSerialWriter.write(bytes);
+                directSerialWriter.releaseLock();
+                directSerialWriter = null;
+                console.log("✓ Impresión física completada por Puerto Serial/USB");
                 return true;
             } catch(e) {
-                console.warn("Error escribiendo en USB:", e);
+                console.warn("Error en Serial Writer:", e);
+                try { if (directSerialWriter) directSerialWriter.releaseLock(); } catch(err) {}
+                directSerialWriter = null;
             }
         }
 
-        // 2. Intentar Bluetooth directo
+        // 2. Intentar por WebUSB directo
+        if (directUsbDevice && directUsbDevice.opened) {
+            try {
+                await directUsbDevice.transferOut(directUsbEndpoint || 1, bytes);
+                console.log("✓ Impresión física completada por WebUSB");
+                return true;
+            } catch(e) {
+                console.warn("Error en WebUSB transferOut:", e);
+            }
+        }
+
+        // 3. Intentar por Bluetooth directo
         if (directBtChar && directBtServer && directBtServer.connected) {
             try {
                 const chunkSize = 512;
@@ -1152,10 +1209,10 @@
                         await directBtChar.writeValue(chunk);
                     }
                 }
-                console.log("✓ Impresión enviada directamente por Bluetooth");
+                console.log("✓ Impresión física completada por Bluetooth");
                 return true;
             } catch(e) {
-                console.warn("Error escribiendo en Bluetooth:", e);
+                console.warn("Error en Bluetooth write:", e);
             }
         }
 
@@ -1171,13 +1228,37 @@
         }
     }
 
-    async function connectUsbDirect() {
-        if (!navigator.usb) {
-            toast("WebUSB no está disponible en este navegador. Usa Chrome o Edge en Windows/Android.", "warn", 5000);
+    // 1. Conectar por WebSerial (Puerto USB COM en Windows - 100% infalible)
+    async function connectSerialDirect() {
+        if (!navigator.serial) {
+            toast("WebSerial no está soportado en este navegador. Usa Google Chrome o Microsoft Edge en Windows.", "warn", 5000);
             return false;
         }
         try {
-            toast("🔌 Selecciona tu impresora USB en la ventana emergente…", "info", 4000);
+            toast("⚡ Selecciona el puerto USB de tu impresora en la lista…", "info", 4000);
+            const port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 9600 });
+            directSerialPort = port;
+            const cfg = getPrinterConfig();
+            cfg.connectionType = "serial";
+            savePrinterConfig(cfg);
+            toast("✓ Conectado exitosamente a la impresora por Puerto USB / Serie.", "success", 5000);
+            return true;
+        } catch(err) {
+            console.warn("Serial connect error:", err);
+            if (err.name !== "NotFoundError") toast("Error al conectar por puerto USB: " + err.message, "error", 4000);
+            return false;
+        }
+    }
+
+    // 2. Conectar por WebUSB directo
+    async function connectUsbDirect() {
+        if (!navigator.usb) {
+            toast("WebUSB no disponible. Usa Chrome o Edge en Windows/Android.", "warn", 5000);
+            return false;
+        }
+        try {
+            toast("🔌 Selecciona tu impresora en la ventana emergente de USB…", "info", 4000);
             const device = await navigator.usb.requestDevice({ filters: [] });
             await device.open();
             if (device.configuration === null) await device.selectConfiguration(1);
@@ -1200,7 +1281,7 @@
             const cfg = getPrinterConfig();
             cfg.connectionType = "usb";
             savePrinterConfig(cfg);
-            toast("✓ Conectado exitosamente por Cable USB a " + (device.productName || "Impresora Térmica"), "success", 5000);
+            toast("✓ Conectado por Cable USB a " + (device.productName || "Impresora Térmica"), "success", 5000);
             return true;
         } catch(err) {
             console.warn("USB connect error:", err);
@@ -1209,13 +1290,14 @@
         }
     }
 
+    // 3. Conectar por Web Bluetooth
     async function connectBtDirect() {
         if (!navigator.bluetooth) {
-            toast("Bluetooth Web no disponible. Usa Google Chrome en Android o Windows con Bluetooth.", "warn", 5000);
+            toast("Bluetooth Web no disponible. Activa Bluetooth y usa Google Chrome.", "warn", 5000);
             return false;
         }
         try {
-            toast("📶 Buscando impresoras Bluetooth cercanas…", "info", 4000);
+            toast("📶 Buscando impresoras Bluetooth térmicas cercanas…", "info", 4000);
             const device = await navigator.bluetooth.requestDevice({
                 acceptAllDevices: true,
                 optionalServices: [
@@ -1229,7 +1311,6 @@
             directBtDevice = device;
             directBtServer = server;
 
-            // Buscar característica escribible
             const services = await server.getPrimaryServices();
             for (const service of services) {
                 const chars = await service.getCharacteristics();
@@ -1245,7 +1326,7 @@
             const cfg = getPrinterConfig();
             cfg.connectionType = "bluetooth";
             savePrinterConfig(cfg);
-            toast("✓ Conectado exitosamente por Bluetooth a " + (device.name || "Impresora Térmica"), "success", 5000);
+            toast("✓ Conectado por Bluetooth a " + (device.name || "Impresora Térmica"), "success", 5000);
             return true;
         } catch(err) {
             console.warn("Bluetooth connect error:", err);
@@ -1257,14 +1338,14 @@
     async function printSaleReceipt(s) {
         if (!s) return;
         
-        // 1. Intentar envío directo ESC/POS por cable USB o Bluetooth
-        if ((directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
+        // 1. Intentar envío físico directo ESC/POS (cero diálogos, impresión instantánea)
+        if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
             const raw = buildEscPosTicket(s);
             const ok = await writeEscPosBytes(raw);
             if (ok) return;
         }
 
-        // 2. Fallback Universal obligatorio (ventana emergente con formato exacto y auto-print)
+        // 2. Fallback por diálogo de impresión del sistema
         const cfg = getPrinterConfig();
         const pWidth = cfg.paperWidth || "58mm";
         const isCard = s.payment_method === "card";
@@ -1298,7 +1379,7 @@
         }
     </style>
 </head>
-<body onload="window.print(); setTimeout(function(){ window.close(); }, 600);">
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 700);">
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
     <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
     <div class="center" style="font-size:10px;">PALETERIA Y NEVERIA ARTESANAL</div>
@@ -1343,8 +1424,76 @@
         triggerUniversalPrint(ticketHtml);
     }
 
-    function printCutReceipt(ct) {
+    // Generador de comandos ESC/POS binarios para Corte de Caja
+    function buildEscPosCutTicket(ct) {
+        const encoder = new TextEncoder();
+        const parts = [];
+        const width = 32;
+        const diff = Number(ct.difference || 0);
+        const diffLabel = diff > 0 ? ("+" + money(diff) + " Sobrante") : diff < 0 ? (money(diff) + " Faltante") : "$0.00 Exacto";
+        const isMorning = String(ct.shift || ct.shift_name || "").toLowerCase().includes("mañ") || String(ct.shift || ct.shift_name || "").toLowerCase().includes("mat");
+        const shiftLabel = isMorning ? "MATUTINO (MANANA)" : "VESPERTINO (TARDE)";
+
+        const initCmd = new Uint8Array([0x1B, 0x40]);
+        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]);
+        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]);
+        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]);
+        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]);
+        const cutCmd = new Uint8Array([0x1D, 0x56, 0x41, 0x10]);
+        const feedCmd = new Uint8Array([0x1B, 0x64, 0x04]);
+
+        parts.push(initCmd);
+        parts.push(centerCmd, boldOn, encoder.encode("NEVERIA LA FUENTE\n"), boldOff);
+        parts.push(encoder.encode("CORTE DE CAJA OFICIAL\n"));
+        parts.push(encoder.encode("-- DESDE 1962 --\n"));
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(leftCmd);
+        parts.push(encoder.encode("SUCURSAL: " + (ct.branch_name || S.branchName) + "\n"));
+        parts.push(encoder.encode("TURNO:    " + shiftLabel + "\n"));
+        parts.push(encoder.encode("FECHA:    " + fdt(ct.created_at) + "\n"));
+        parts.push(encoder.encode("ENCARGADA:" + (ct.performed_by_name || "Encargada") + "\n"));
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(boldOn, encoder.encode("DESGLOSE FINANCIERO:\n"), boldOff);
+        parts.push(encoder.encode("Fondo Inicial:  " + money(ct.opening_amount || 0).padStart(16, " ") + "\n"));
+        parts.push(encoder.encode("Ventas Efectivo:" + money(ct.cash_sales || 0).padStart(16, " ") + "\n"));
+        parts.push(encoder.encode("Ventas Tarjeta: " + money(ct.card_sales || 0).padStart(16, " ") + "\n"));
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(boldOn, encoder.encode("TOTAL VENDIDO:  " + money(ct.total_sales || 0).padStart(16, " ") + "\n"), boldOff);
+        parts.push(encoder.encode("--------------------------------\n"));
+        parts.push(boldOn, encoder.encode("ARQUEO DE CAJA:\n"), boldOff);
+        parts.push(encoder.encode("Esperado:       " + money(ct.expected_cash || 0).padStart(16, " ") + "\n"));
+        parts.push(boldOn, encoder.encode("Contado Fisico: " + money(ct.counted_cash || 0).padStart(16, " ") + "\n"), boldOff);
+        parts.push(boldOn, encoder.encode("CORTE NETO ENT: " + money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (ct.counted_cash - ct.opening_amount)).padStart(16, " ") + "\n"), boldOff);
+        parts.push(encoder.encode("Diferencia:     " + diffLabel.padStart(16, " ") + "\n"));
+        parts.push(encoder.encode("================================\n\n"));
+        parts.push(centerCmd);
+        parts.push(encoder.encode("___________________________\n"));
+        parts.push(encoder.encode("Firma Encargada\n\n"));
+        parts.push(encoder.encode("___________________________\n"));
+        parts.push(encoder.encode("Firma Direccion\n\n\n\n"));
+        parts.push(cutCmd, feedCmd);
+
+        const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
+        const combined = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const p of parts) {
+            combined.set(p, offset);
+            offset += p.length;
+        }
+        return combined;
+    }
+
+    async function printCutReceipt(ct) {
         if (!ct) return;
+
+        // 1. Intentar impresión física directa ESC/POS por USB, Serial o Bluetooth
+        if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
+            const raw = buildEscPosCutTicket(ct);
+            const ok = await writeEscPosBytes(raw);
+            if (ok) return;
+        }
+
+        // 2. Fallback de ventana de impresión del sistema
         const cfg = getPrinterConfig();
         const pWidth = cfg.paperWidth || "58mm";
         const diff = Number(ct.difference || 0);
@@ -1381,7 +1530,7 @@
         }
     </style>
 </head>
-<body onload="window.print(); setTimeout(function(){ window.close(); }, 600);">
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 700);">
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
     <div class="center bold" style="font-size:12px;">CORTE DE CAJA OFICIAL</div>
     <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
@@ -1444,11 +1593,22 @@
         triggerUniversalPrint(cutHtml);
     }
 
-    function printTestReceipt(customCfg = null) {
+    async function printTestReceipt(customCfg = null) {
         const cfg = customCfg || getPrinterConfig();
         const pWidth = cfg.paperWidth || "58mm";
         const conn = getPrinterConnectionStatus();
 
+        // 1. Si está conectado por USB / Serial / Bluetooth, enviar comando directo a la máquina física
+        if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
+            const raw = buildEscPosTestTicket();
+            const ok = await writeEscPosBytes(raw);
+            if (ok) {
+                toast("✓ Ticket de prueba impreso físicamente en la máquina.", "success", 4000);
+                return;
+            }
+        }
+
+        // 2. Si no está vinculado directamente, abrir el formato de impresión
         const testHtml = `
 <!DOCTYPE html>
 <html>
@@ -1477,7 +1637,7 @@
         }
     </style>
 </head>
-<body onload="window.print(); setTimeout(function(){ window.close(); }, 600);">
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 700);">
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
     <div class="center" style="font-size:10px;">PRUEBA DE IMPRESORA TÉRMICA</div>
     <div class="divider"></div>
@@ -1514,58 +1674,70 @@
         overlay.id = "printer-modal-overlay";
         overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px);";
         overlay.innerHTML = `
-            <div style="background:#fffef8;border:2px solid var(--gold-500);border-radius:22px;padding:26px 22px;max-width:520px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.45);color:#1a0205;max-height:90vh;overflow-y:auto">
+            <div style="background:#fffef8;border:2px solid var(--gold-500);border-radius:22px;padding:24px 22px;max-width:540px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.45);color:#1a0205;max-height:92vh;overflow-y:auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1.5px solid rgba(188,132,10,.3);padding-bottom:10px">
                     <div style="display:flex;align-items:center;gap:8px">
                         <span style="font-size:28px">🖨️</span>
                         <div>
-                            <h3 style="margin:0;color:var(--wine-950);font-size:18px;font-weight:900">Vincular Impresora Térmica</h3>
-                            <small style="color:var(--text-muted);font-weight:700">Mini impresora de tickets para sucursales</small>
+                            <h3 style="margin:0;color:var(--wine-950);font-size:18px;font-weight:900">Vincular Impresora Térmica Física</h3>
+                            <small style="color:var(--text-muted);font-weight:700">Imprime directo en tu máquina sin guardar en PDF</small>
                         </div>
                     </div>
                     <button id="p-close-btn" type="button" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--wine-900);font-weight:900">✕</button>
                 </div>
 
                 <!-- ESTADO ACTUAL DE CONEXIÓN -->
-                <div style="background:#fef3c7;border:1.5px solid #fcd34d;padding:12px;border-radius:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+                <div style="background:#fef3c7;border:1.5px solid #fcd34d;padding:12px 14px;border-radius:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
                     <div>
-                        <div style="font-size:11px;color:#92400e;font-weight:900">ESTADO DE CONEXIÓN:</div>
-                        <strong style="font-size:13px;color:#78350f" id="printer-status-text">${conn.label}</strong>
+                        <div style="font-size:11px;color:#92400e;font-weight:900">ESTADO ACTUAL:</div>
+                        <strong style="font-size:13.5px;color:#78350f" id="printer-status-text">${conn.label}</strong>
                     </div>
-                    <span style="font-size:20px">${conn.type === 'usb' ? '🔌' : conn.type === 'bt' ? '📶' : '🖨️'}</span>
+                    <span style="font-size:24px">${conn.type === 'serial' ? '⚡' : conn.type === 'usb' ? '🔌' : conn.type === 'bt' ? '📶' : '🖨️'}</span>
                 </div>
 
-                <!-- OPCIONES DE VINCULACIÓN DIRECTA -->
-                <div style="margin-bottom:18px">
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:6px">MÉTODOS DE VINCULACIÓN DIRECTA:</label>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <!-- BOTONES DE VINCULACIÓN FÍSICA DIRECTA -->
+                <div style="margin-bottom:16px">
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:6px">VINCULAR DIRECTAMENTE TU IMPRESORA:</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                        <button type="button" id="btn-pair-serial"
+                            style="padding:12px 6px;background:linear-gradient(135deg,#fef08a,#fde047);color:#854d0e;border:1.5px solid #eab308;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(0,0,0,0.1)">
+                            <span style="font-size:18px">⚡</span>
+                            <span>1. Puerto USB/Serie</span>
+                        </button>
                         <button type="button" id="btn-pair-usb"
-                            style="padding:12px 10px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af;border:1.5px solid #93c5fd;border-radius:12px;font-weight:900;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 2px 6px rgba(30,64,175,0.15)">
-                            <span>🔌</span>
-                            <span>Vincular Cable USB</span>
+                            style="padding:12px 6px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af;border:1.5px solid #93c5fd;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(0,0,0,0.1)">
+                            <span style="font-size:18px">🔌</span>
+                            <span>2. Cable WebUSB</span>
                         </button>
                         <button type="button" id="btn-pair-bt"
-                            style="padding:12px 10px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);color:#15803d;border:1.5px solid #86efac;border-radius:12px;font-weight:900;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 2px 6px rgba(21,128,61,0.15)">
-                            <span>📶</span>
-                            <span>Vincular Bluetooth</span>
+                            style="padding:12px 6px;background:linear-gradient(135deg,#dcfce7,#bbf7d0);color:#15803d;border:1.5px solid #86efac;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(0,0,0,0.1)">
+                            <span style="font-size:18px">📶</span>
+                            <span>3. Bluetooth</span>
                         </button>
                     </div>
+                </div>
+
+                <!-- GUÍA IMPORTANTE PARA WINDOWS: EVITAR GUARDAR EN PDF -->
+                <div style="background:#fff;border:1.5px solid #f87171;padding:12px 14px;border-radius:12px;margin-bottom:16px;font-size:11.5px;color:#991b1b;line-height:1.45">
+                    <strong>⚠️ ¿Te aparece "Guardar como PDF"?:</strong><br>
+                    1. En la ventana de impresión de tu navegador (Chrome / Edge), donde dice <strong>"Destino"</strong>, haz clic y cambia <em>"Guardar como PDF"</em> por el nombre de tu <strong>impresora física</strong> (ej. <em>POS-58, EC Line, Ghia, XP-58</em>).<br>
+                    2. En <strong>Márgenes</strong> selecciona <em>"Ninguno"</em>.<br>
+                    3. ¡Listo! Tu navegador recordará tu impresora térmica y saldrá el papel directo siempre.
                 </div>
 
                 <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px">
                     <div>
-                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">MODELO / MARCA:</label>
+                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">MODELO O MARCA:</label>
                         <select id="p-model" style="width:100%;padding:10px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none">
-                            <option value="EC Line / POS-58 (58mm)"${curCfg.model.includes("EC Line")?' selected':''}>🖨️ EC Line (Térmica USB / Bluetooth / 58mm)</option>
-                            <option value="Ofichido / Ghia (58mm / 80mm)"${curCfg.model.includes("Ofichido")||curCfg.model.includes("Ghia")?' selected':''}>🖨️ Ofichido / Ghia POS Thermal</option>
-                            <option value="Caysn / Xprinter (POS-58)"${curCfg.model.includes("Caysn")||curCfg.model.includes("Xprinter")?' selected':''}>🖨️ Caysn / Xprinter POS-58</option>
-                            <option value="Impresora Térmica Genérica POS-58"${curCfg.model.includes("Genérica")?' selected':''}>🖨️ Impresora POS-58 Genérica (Rollo 58mm)</option>
-                            <option value="Epson TM-T20 / TM-T88 (80mm)"${curCfg.model.includes("Epson")?' selected':''}>🖨️ Epson TM-T20 / TM-T88 (ESC/POS 80mm)</option>
+                            <option value="POS-58 / EC Line (58mm)"${curCfg.model.includes("EC Line")||curCfg.model.includes("58")?' selected':''}>🖨️ POS-58 / EC Line / Ghia (Rollo 58mm)</option>
+                            <option value="Xprinter / Caysn / Ofichido"${curCfg.model.includes("Xprinter")||curCfg.model.includes("Caysn")?' selected':''}>🖨️ Xprinter / Caysn / Ofichido</option>
+                            <option value="Impresora POS-80 (80mm)"${curCfg.model.includes("80")?' selected':''}>🖨️ Impresora POS-80 (Rollo 80mm)</option>
+                            <option value="Epson TM-T20 / TM-T88"${curCfg.model.includes("Epson")?' selected':''}>🖨️ Epson TM-T20 / TM-T88 (ESC/POS)</option>
                         </select>
                     </div>
 
                     <div>
-                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">ANCHO DE PAPEL (ROLLO TÉRMICO):</label>
+                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">ANCHO DE PAPEL:</label>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                             <label style="display:flex;align-items:center;gap:8px;background:#fff;padding:10px;border:1.5px solid #d1d5db;border-radius:10px;cursor:pointer;font-weight:800;font-size:12px">
                                 <input type="radio" name="p-width" value="58mm"${curCfg.paperWidth==='58mm'?' checked':''}>
@@ -1577,17 +1749,13 @@
                             </label>
                         </div>
                     </div>
-
-                    <div style="background:#eff6ff;border:1px solid #bfdbfe;padding:10px 12px;border-radius:10px;font-size:11.5px;color:#1e40af;line-height:1.4">
-                        ⚡ <strong>Impresión Automática Activa:</strong> Todos los tickets de venta se enviarán automáticamente a la impresora al cobrar.
-                    </div>
                 </div>
 
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                     <button id="p-test-btn" type="button"
                         style="padding:12px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);color:#15803d;border:1.5px solid #86efac;border-radius:12px;font-weight:900;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
                         <span>🖨️</span>
-                        <span>Ticket de Prueba</span>
+                        <span>Imprimir Ticket de Prueba</span>
                     </button>
                     <button id="p-save-btn" type="button"
                         style="padding:12px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:none;border-radius:12px;font-weight:900;font-size:12.5px;cursor:pointer">
@@ -1598,6 +1766,14 @@
         document.body.appendChild(overlay);
 
         overlay.querySelector("#p-close-btn").onclick = () => overlay.remove();
+
+        overlay.querySelector("#btn-pair-serial").onclick = async () => {
+            const ok = await connectSerialDirect();
+            if (ok) {
+                const newConn = getPrinterConnectionStatus();
+                overlay.querySelector("#printer-status-text").textContent = newConn.label;
+            }
+        };
 
         overlay.querySelector("#btn-pair-usb").onclick = async () => {
             const ok = await connectUsbDirect();
@@ -1615,16 +1791,15 @@
             }
         };
 
-        overlay.querySelector("#p-test-btn").onclick = () => {
+        overlay.querySelector("#p-test-btn").onclick = async () => {
             const selectedWidth = overlay.querySelector("input[name='p-width']:checked")?.value || "58mm";
-            const selectedModel = overlay.querySelector("#p-model")?.value || "EC Line";
-            printTestReceipt({ model: selectedModel, paperWidth: selectedWidth });
-            toast("🖨️ Enviando ticket de prueba a la impresora…", "info", 3000);
+            const selectedModel = overlay.querySelector("#p-model")?.value || "POS-58";
+            await printTestReceipt({ model: selectedModel, paperWidth: selectedWidth });
         };
 
         overlay.querySelector("#p-save-btn").onclick = () => {
             const selectedWidth = overlay.querySelector("input[name='p-width']:checked")?.value || "58mm";
-            const selectedModel = overlay.querySelector("#p-model")?.value || "EC Line";
+            const selectedModel = overlay.querySelector("#p-model")?.value || "POS-58";
             savePrinterConfig({ model: selectedModel, paperWidth: selectedWidth, autoPrint: true });
             overlay.remove();
             toast("✓ Ajustes de impresora guardados.", "success", 4000);
@@ -1634,11 +1809,11 @@
     async function directPrintTicketAction() {
         const lastSale = lr("last_printed_sale", null) || lr("sales", [])[0];
         if (lastSale) {
-            printSaleReceipt(lastSale);
             toast("🖨️ Imprimiendo Ticket #" + (lastSale.sale_number || '') + " en físico…", "info", 3000);
+            await printSaleReceipt(lastSale);
         } else {
-            printTestReceipt();
             toast("🖨️ Imprimiendo ticket de prueba en físico…", "info", 3000);
+            await printTestReceipt();
         }
     }
 
@@ -2562,7 +2737,7 @@
             const sid = String(btn.dataset.id);
             const targetSale = branchSales.find(x => String(x.id) === sid) || allRecordedSales.find(x => String(x.id) === sid);
             if (!targetSale) return toast("No se encontró el ticket para imprimir.", "warn");
-            printReceipt(targetSale);
+            printSaleReceipt(targetSale);
             toast(`🖨️ Re-imprimiendo ticket #${targetSale.sale_number || targetSale.id}…`, "info", 3000);
         }));
 
