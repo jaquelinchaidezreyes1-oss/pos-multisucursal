@@ -392,11 +392,19 @@
     }
 
     /* ── SUCURSALES ── */
+    function safeQuery(promise, fallback = null, timeoutMs = 1200) {
+        if (!promise || typeof promise.then !== "function") return Promise.resolve({ data: fallback, error: null });
+        return Promise.race([
+            promise,
+            new Promise(resolve => setTimeout(() => resolve({ data: fallback, error: new Error("DB Timeout") }), timeoutMs))
+        ]);
+    }
+
     async function loadBranches() {
         if (!db) initDB();
         if (db) {
             try {
-                const {data} = await db.from("branches").select("id,name,code,is_active").eq("is_active", true).order("name");
+                const {data} = await safeQuery(db.from("branches").select("id,name,code,is_active").eq("is_active", true).order("name"), null, 1000);
                 S.branches = (data && data.length) ? data : BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
             } catch {
                 S.branches = BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
@@ -519,7 +527,7 @@
 
         if (db) {
             try {
-                const {data} = await db.from("profiles").select("*").eq("id", S.user.id).maybeSingle();
+                const {data} = await safeQuery(db.from("profiles").select("*").eq("id", S.user.id).maybeSingle(), null, 1000);
                 S.profile = data || {id: S.user.id, full_name: defaultName, email: email};
             } catch {
                 S.profile = {id: S.user.id, full_name: defaultName, email: email};
@@ -661,12 +669,12 @@
         let remoteProducts = [];
         if (db) {
             try {
-                const {data} = await db.from("pos_products_final_view").select("*").eq("is_active", true).order("product_name");
+                const {data} = await safeQuery(db.from("pos_products_final_view").select("*").eq("is_active", true).order("product_name"), null, 1200);
                 remoteProducts = data || [];
             } catch(e) {}
             if (!remoteProducts.length) {
                 try {
-                    const {data} = await db.from("products").select("*").eq("is_active", true).order("product_name");
+                    const {data} = await safeQuery(db.from("products").select("*").eq("is_active", true).order("product_name"), null, 1000);
                     remoteProducts = data || [];
                 } catch(e2) {}
             }
@@ -831,6 +839,650 @@
             btn.addEventListener("click", () => addToCart(btn.dataset.pid))
         );
     }
+
+    /* ── CARRITO & COBRO DE ÓRDENES ── */
+    function addToCart(pid) {
+        const p = S.products.find(x => String(x.product_id) === String(pid));
+        if (!p) return;
+        const stock = getStock(pid);
+        const ex = S.cart.find(i => String(i.product_id) === String(pid));
+        const qty = ex ? ex.quantity : 0;
+        if (qty >= stock) {
+            toast("Solo hay " + stock + " unidades de '" + p.product_name + "' en inventario.", "warn");
+            return;
+        }
+        if (ex) ex.quantity++;
+        else S.cart.push({product_id: p.product_id, product_name: p.product_name, price: Number(p.price||0), quantity: 1});
+        renderCart();
+    }
+
+    function renderCart() {
+        const c = $("#order-items");
+        if (!c) return;
+        if (!S.cart.length) {
+            c.innerHTML = '<div class="empty-cart" style="text-align:center;padding:30px;color:var(--text-muted)">🛒 Orden vacía</div>';
+            setT("#subtotal,#total,#pay-total", money(0));
+            const payBtn = $("#pay-button");
+            if (payBtn) { payBtn.disabled = true; payBtn.style.opacity = "0.6"; }
+            return;
+        }
+
+        const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
+        c.innerHTML = S.cart.map((item, idx) => {
+            const stock = getStock(item.product_id);
+            const over = item.quantity > stock;
+            return `
+            <div class="order-item${over ? " item-overstock" : ""}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(0,0,0,0.06);">
+                <div style="flex:1;min-width:0;padding-right:10px;">
+                    <div style="font-weight:800;font-size:13px;color:var(--wine-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(item.product_name)}</div>
+                    <div style="font-size:11px;color:var(--gold-600);font-weight:700;">${money(item.price)} c/u ${over ? '<span style="color:#dc2626;">(Excede stock ' + stock + ')</span>' : ''}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <button type="button" class="btn-qty-minus" data-idx="${idx}" style="width:26px;height:26px;border-radius:6px;border:1px solid #d1d5db;background:#fff;font-weight:900;cursor:pointer;">-</button>
+                    <span style="font-weight:800;font-size:13px;min-width:18px;text-align:center;">${item.quantity}</span>
+                    <button type="button" class="btn-qty-plus" data-idx="${idx}" style="width:26px;height:26px;border-radius:6px;border:1px solid #d1d5db;background:#fff;font-weight:900;cursor:pointer;">+</button>
+                    <button type="button" class="btn-qty-del" data-idx="${idx}" style="width:26px;height:26px;border-radius:6px;border:none;background:#fee2e2;color:#dc2626;font-weight:900;cursor:pointer;margin-left:4px;">✕</button>
+                </div>
+            </div>`;
+        }).join("");
+
+        setT("#subtotal,#total,#pay-total", money(total));
+
+        const payBtn = $("#pay-button");
+        const blocked = checkBlock();
+        if (payBtn) {
+            payBtn.disabled = blocked;
+            payBtn.style.opacity = blocked ? "0.6" : "1";
+        }
+
+        c.querySelectorAll(".btn-qty-minus").forEach(btn => btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.idx);
+            if (S.cart[idx]) {
+                S.cart[idx].quantity--;
+                if (S.cart[idx].quantity <= 0) S.cart.splice(idx, 1);
+                renderCart();
+            }
+        }));
+
+        c.querySelectorAll(".btn-qty-plus").forEach(btn => btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.idx);
+            if (S.cart[idx]) {
+                const stock = getStock(S.cart[idx].product_id);
+                if (S.cart[idx].quantity >= stock) {
+                    return toast("Stock máximo alcanzado (" + stock + ").", "warn");
+                }
+                S.cart[idx].quantity++;
+                renderCart();
+            }
+        }));
+
+        c.querySelectorAll(".btn-qty-del").forEach(btn => btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.idx);
+            if (S.cart[idx]) {
+                S.cart.splice(idx, 1);
+                renderCart();
+            }
+        }));
+    }
+
+    async function processSale() {
+        if (!S.cart.length) return toast("No hay productos en la orden.", "warn");
+        if (checkBlock())   return toast("Hay productos sin stock suficiente. Revisa el inventario antes de cobrar.", "error");
+        const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
+
+        // Selección de método de pago interactiva (Efectivo vs Tarjeta)
+        const payMethod = await toastPaymentMethod(total);
+        if (!payMethod) return;
+
+        const cashierEmail = S.user?.email || "";
+        const cashierName = S.profile?.full_name || cashierEmail || "Encargada";
+
+        const saleRecord = {
+            id: "sale_" + Date.now() + "_" + Math.random().toString(36).substring(2,7),
+            sale_number: "TICK-" + Math.floor(100000 + Math.random() * 900000),
+            branch_id: S.branchId,
+            branch_name: S.branchName,
+            shift_name: S.shift,
+            cashier_id: S.user?.id || "offline",
+            cashier_name: cashierEmail ? (cashierName + " (" + cashierEmail + ")") : cashierName,
+            total: total,
+            payment_method: payMethod,
+            status: "COMPLETADA",
+            items: S.cart.map(i => ({product_id: i.product_id, product_name: i.product_name, quantity: i.quantity, price: i.price, subtotal: i.price*i.quantity})),
+            created_at: now()
+        };
+
+        // 1. GUARDADO LOCAL INSTANTÁNEO
+        const localSales = lr("sales", []);
+        localSales.unshift(saleRecord);
+        lw("sales", localSales);
+
+        const allGlobalSales = gr("all_sales", []);
+        allGlobalSales.unshift(saleRecord);
+        gw("all_sales", allGlobalSales);
+
+        // Guardar última venta registrada para impresión física directa
+        lw("last_printed_sale", saleRecord);
+        gw("last_printed_sale", saleRecord);
+
+        // 2. ACTUALIZACIÓN INMEDIATA DE LA UI
+        const cartItemsSnapshot = [...S.cart];
+        cartItemsSnapshot.forEach(i => deductStock(i.product_id, i.quantity, i.product_name));
+        S.cart = [];
+        renderCart();
+        renderPOS(filtered());
+        alertInv();
+        const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
+        toast("✓ Venta de " + money(total) + " cobrada en " + payLabel + ". Ticket #" + saleRecord.sale_number, "success", 3000);
+
+        // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO
+        (async () => {
+            if (db) {
+                try {
+                    const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
+                    const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
+                    const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
+
+                    const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
+                    const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
+                    const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
+
+                    const observationsObj = {
+                        branch_name: S.branchName,
+                        shift_name: S.shift,
+                        cashier_name: saleRecord.cashier_name,
+                        payment_method: payMethod,
+                        items: saleRecord.items,
+                        local_id: saleRecord.id
+                    };
+
+                    const insertPayload = {
+                        company_id: cId,
+                        branch_id: bId,
+                        user_id: uId,
+                        sale_number: saleRecord.sale_number,
+                        subtotal: total,
+                        discount: 0,
+                        tax: 0,
+                        total: total,
+                        status: "COMPLETED",
+                        observations: JSON.stringify(observationsObj),
+                        created_at: saleRecord.created_at
+                    };
+
+                    if (uuid(S.currentShift?.id)) {
+                        insertPayload.shift_id = S.currentShift.id;
+                    }
+
+                    const { data, error } = await db.from("sales").insert(insertPayload).select();
+
+                    if (!error && data && data.length) {
+                        const syncedIds = new Set(gr("synced_sales_ids", []));
+                        syncedIds.add(String(saleRecord.id));
+                        if (data[0]?.id) syncedIds.add(String(data[0].id));
+                        gw("synced_sales_ids", Array.from(syncedIds));
+                    } else if (error) {
+                        console.warn("Venta pendiente de sincronizar en cola:", error);
+                    }
+                } catch(e) {
+                    console.warn("Red lenta/offline, guardado en cola para reintentar:", e);
+                }
+            }
+            syncPendingSalesToSupabase();
+        })();
+    }
+
+    /* ── MOTOR UNIVERSAL DE IMPRESIÓN DE TICKETS & CORTES (58MM / 80MM) ── */
+    let directUsbDevice = null;
+    let directUsbEndpoint = 1;
+    let directBtChar = null;
+
+    function getPrinterConfig() {
+        try {
+            const raw = localStorage.getItem("lf_printer_config");
+            if (raw) return JSON.parse(raw);
+        } catch(e) {}
+        return {
+            model: "EC Line (58mm / 80mm)",
+            paperWidth: "58mm",
+            autoPrint: true
+        };
+    }
+
+    function savePrinterConfig(cfg) {
+        try {
+            localStorage.setItem("lf_printer_config", JSON.stringify(cfg));
+        } catch(e) {}
+    }
+
+    function triggerUniversalPrint(htmlContent) {
+        const printWin = window.open("", "_blank", "width=380,height=600");
+        if (printWin) {
+            printWin.document.open();
+            printWin.document.write(htmlContent);
+            printWin.document.close();
+        }
+    }
+
+    async function connectUsbDirect() {
+        if (!navigator.usb) {
+            toast("Tu navegador no soporta WebUSB. Usa Chrome en Android o Windows.", "warn");
+            return false;
+        }
+        try {
+            const device = await navigator.usb.requestDevice({ filters: [] });
+            await device.open();
+            if (device.configuration === null) await device.selectConfiguration(1);
+            try { await device.claimInterface(0); } catch(e) {}
+            let epNum = 1;
+            if (device.configuration && device.configuration.interfaces) {
+                for (const iface of device.configuration.interfaces) {
+                    for (const alt of iface.alternates) {
+                        for (const ep of alt.endpoints) {
+                            if (ep.direction === "out") {
+                                epNum = ep.endpointNumber;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            directUsbDevice = device;
+            directUsbEndpoint = epNum;
+            toast("✓ Conectado por USB a " + (device.productName || "Impresora Térmica"), "success");
+            return true;
+        } catch(err) {
+            console.warn("USB connect:", err);
+            return false;
+        }
+    }
+
+    function printSaleReceipt(s) {
+        if (!s) return;
+        const cfg = getPrinterConfig();
+        const pWidth = cfg.paperWidth || "58mm";
+        const isCard = s.payment_method === "card";
+
+        const ticketHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Ticket #${esc(s.sale_number)}</title>
+    <style>
+        @page { margin: 0; size: auto; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #000;
+            background: #fff;
+            width: ${pWidth};
+            max-width: ${pWidth};
+            margin: 0 auto;
+            padding: 6px 4px;
+            box-sizing: border-box;
+        }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .divider { border-top: 1px dashed #000; margin: 5px 0; }
+        .double-divider { border-top: 2px solid #000; margin: 6px 0; }
+        .row { display: flex; justify-content: space-between; margin: 2px 0; }
+        @media print {
+            body { width: 100%; max-width: 100%; margin: 0; padding: 2mm; }
+        }
+    </style>
+</head>
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 500);">
+    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
+    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
+    <div class="center" style="font-size:10px;">PALETERIA Y NEVERIA ARTESANAL</div>
+    <div class="divider"></div>
+    <div><strong>SUCURSAL:</strong> ${esc(s.branch_name || S.branchName)}</div>
+    <div><strong>TURNO:</strong> ${esc(s.shift_name || S.shift)}</div>
+    <div><strong>FECHA:</strong> ${fdt(s.created_at)}</div>
+    <div><strong>ATENDIÓ:</strong> ${esc(s.cashier_name || "Encargada")}</div>
+    <div><strong>TICKET:</strong> #${esc(s.sale_number)}</div>
+    <div class="divider"></div>
+    <div class="row bold" style="font-size:10px;">
+        <span>CANT / DESCRIPCION</span>
+        <span>IMPORTE</span>
+    </div>
+    <div class="divider"></div>
+    ${(s.items || []).map(i => `
+        <div class="row">
+            <span>${i.quantity}x ${esc(i.product_name)}</span>
+            <span>${money(i.subtotal != null ? i.subtotal : (i.price * i.quantity))}</span>
+        </div>
+    `).join("")}
+    <div class="divider"></div>
+    <div class="row bold" style="font-size:13px;">
+        <span>TOTAL:</span>
+        <span>${money(s.total)}</span>
+    </div>
+    <div class="row">
+        <span>FORMA DE PAGO:</span>
+        <span>${isCard ? "TARJETA (DEB/CRE)" : "EFECTIVO"}</span>
+    </div>
+    <div class="double-divider"></div>
+    <div class="center bold" style="margin-top:6px;font-size:10px;">
+        ¡GRACIAS POR SU COMPRA!
+    </div>
+    <div class="center" style="font-size:9px;">
+        Conserve este ticket para cualquier aclaración
+    </div>
+    <div style="height: 18mm;"></div>
+</body>
+</html>`;
+
+        triggerUniversalPrint(ticketHtml);
+    }
+
+    function printCutReceipt(ct) {
+        if (!ct) return;
+        const cfg = getPrinterConfig();
+        const pWidth = cfg.paperWidth || "58mm";
+        const diff = Number(ct.difference || 0);
+        const diffLabel = diff > 0 ? ("+" + money(diff) + " (Sobrante)") : diff < 0 ? (money(diff) + " (Faltante)") : "$0.00 (Exacto)";
+        const isMorning = String(ct.shift || "").toLowerCase().includes("mañ") || String(ct.shift || "").toLowerCase().includes("mat");
+        const shiftLabel = isMorning ? "MATUTINO (MAÑANA)" : "VESPERTINO (TARDE)";
+
+        const cutHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Recibo de Corte de Caja</title>
+    <style>
+        @page { margin: 0; size: auto; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #000;
+            background: #fff;
+            width: ${pWidth};
+            max-width: ${pWidth};
+            margin: 0 auto;
+            padding: 6px 4px;
+            box-sizing: border-box;
+        }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .divider { border-top: 1px dashed #000; margin: 5px 0; }
+        .double-divider { border-top: 2px solid #000; margin: 6px 0; }
+        .row { display: flex; justify-content: space-between; margin: 2px 0; }
+        @media print {
+            body { width: 100%; max-width: 100%; margin: 0; padding: 2mm; }
+        }
+    </style>
+</head>
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 500);">
+    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
+    <div class="center bold" style="font-size:12px;">CORTE DE CAJA OFICIAL</div>
+    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
+    <div class="divider"></div>
+    <div><strong>SUCURSAL:</strong> ${esc(ct.branch_name || S.branchName)}</div>
+    <div><strong>TURNO:</strong> ${shiftLabel}</div>
+    <div><strong>FECHA/HORA:</strong> ${fdt(ct.created_at)}</div>
+    <div><strong>ENCARGADA:</strong> ${esc(ct.performed_by_name || "Encargada")}</div>
+    <div class="divider"></div>
+    <div class="bold" style="font-size:11px;margin-bottom:3px;">DESGLOSE FINANCIERO:</div>
+    <div class="row">
+        <span>Fondo Inicial:</span>
+        <span>${money(ct.opening_amount || 0)}</span>
+    </div>
+    <div class="row">
+        <span>Ventas Efectivo:</span>
+        <span>${money(ct.cash_sales || (Number(ct.total_sales||0) - Number(ct.card_sales||0)))}</span>
+    </div>
+    <div class="row">
+        <span>Ventas Tarjeta:</span>
+        <span>${money(ct.card_sales || 0)}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="row bold" style="font-size:12px;">
+        <span>TOTAL VENDIDO:</span>
+        <span>${money(ct.total_sales || 0)}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="bold" style="font-size:11px;margin-bottom:3px;">ARQUEO DE CAJA FISICA:</div>
+    <div class="row">
+        <span>Efectivo Esperado:</span>
+        <span>${money(ct.expected_cash || (Number(ct.opening_amount||0) + Number(ct.cash_sales||0)))}</span>
+    </div>
+    <div class="row bold">
+        <span>Efectivo Contado:</span>
+        <span>${money(ct.counted_cash || 0)}</span>
+    </div>
+    <div class="row bold" style="font-size:12px;margin-top:2px;">
+        <span>CORTE NETO ENTREGAR:</span>
+        <span>${money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash||0) - Number(ct.opening_amount||0)))}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="row bold" style="font-size:11px;">
+        <span>DIFERENCIA:</span>
+        <span>${diffLabel}</span>
+    </div>
+    <div class="double-divider"></div>
+    <div style="margin-top:22px;text-align:center;">
+        ___________________________<br>
+        <span style="font-size:10px;">Firma de la Encargada</span>
+    </div>
+    <div style="margin-top:20px;text-align:center;">
+        ___________________________<br>
+        <span style="font-size:10px;">Firma Supervisión / Dirección</span>
+    </div>
+    <div style="height: 18mm;"></div>
+</body>
+</html>`;
+
+        triggerUniversalPrint(cutHtml);
+    }
+
+    function printTestReceipt(customCfg = null) {
+        const cfg = customCfg || getPrinterConfig();
+        const pWidth = cfg.paperWidth || "58mm";
+
+        const testHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Ticket de Prueba</title>
+    <style>
+        @page { margin: 0; size: auto; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #000;
+            background: #fff;
+            width: ${pWidth};
+            max-width: ${pWidth};
+            margin: 0 auto;
+            padding: 6px 4px;
+            box-sizing: border-box;
+        }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .divider { border-top: 1px dashed #000; margin: 5px 0; }
+        .double-divider { border-top: 2px solid #000; margin: 6px 0; }
+        @media print {
+            body { width: 100%; max-width: 100%; margin: 0; padding: 2mm; }
+        }
+    </style>
+</head>
+<body onload="window.print(); setTimeout(function(){ window.close(); }, 500);">
+    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
+    <div class="center" style="font-size:10px;">PRUEBA DE IMPRESORA TÉRMICA</div>
+    <div class="divider"></div>
+    <div><strong>MODELO:</strong> ${esc(cfg.model)}</div>
+    <div><strong>ANCHO DE ROLLO:</strong> ${esc(pWidth)}</div>
+    <div><strong>FECHA Y HORA:</strong> ${fdt(now())}</div>
+    <div><strong>SUCURSAL:</strong> ${esc(S.branchName)}</div>
+    <div><strong>USUARIO:</strong> ${esc(S.profile?.full_name || S.user?.email || "Usuario")}</div>
+    <div class="divider"></div>
+    <div class="bold center" style="font-size:12px; margin:4px 0;">¡CALIBRACIÓN CORRECTA!</div>
+    <div class="center" style="font-size:10px;">
+        Esta impresora está lista para imprimir:<br>
+        ✓ Tickets de Venta a Clientes<br>
+        ✓ Cortes de Caja por Turno<br>
+        ✓ Reportes Diarios Consolidados<br>
+        ✓ Aperturas de Turno con Firma
+    </div>
+    <div class="double-divider"></div>
+    <div class="center bold" style="font-size:11px; margin-top:6px;">
+        [ CORTAR AQUI ]
+    </div>
+    <div style="height: 20mm;"></div>
+</body>
+</html>`;
+
+        triggerUniversalPrint(testHtml);
+    }
+
+    function openPrinterSetupModal() {
+        const curCfg = getPrinterConfig();
+        const overlay = document.createElement("div");
+        overlay.id = "printer-modal-overlay";
+        overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px);";
+        overlay.innerHTML = `
+            <div style="background:#fffef8;border:2px solid var(--gold-500);border-radius:22px;padding:26px 22px;max-width:480px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.45);color:#1a0205">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1.5px solid rgba(188,132,10,.3);padding-bottom:10px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span style="font-size:26px">🖨️</span>
+                        <div>
+                            <h3 style="margin:0;color:var(--wine-950);font-size:17px;font-weight:900">Configurar Impresora Térmica</h3>
+                            <small style="color:var(--text-muted);font-weight:700">Mini impresora de tickets para sucursales</small>
+                        </div>
+                    </div>
+                    <button id="p-close-btn" type="button" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--wine-900);font-weight:900">✕</button>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px">
+                    <div>
+                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">MODELO / MARCA DE IMPRESORA:</label>
+                        <select id="p-model" style="width:100%;padding:10px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none">
+                            <option value="EC Line (58mm / 80mm)"${curCfg.model.includes("EC Line")?' selected':''}>🖨️ EC Line (Térmica USB / Bluetooth)</option>
+                            <option value="Ofichido (58mm / 80mm)"${curCfg.model.includes("Ofichido")?' selected':''}>🖨️ Ofichido POS Thermal</option>
+                            <option value="Caysn Thermal (POS-58)"${curCfg.model.includes("Caysn")?' selected':''}>🖨️ Caysn Thermal Printer</option>
+                            <option value="Xprinter (XP-58 / XP-80)"${curCfg.model.includes("Xprinter")?' selected':''}>🖨️ Xprinter / Gprinter</option>
+                            <option value="Impresora POS-58 Genérica"${curCfg.model.includes("POS-58")?' selected':''}>🖨️ Impresora POS-58 (Rollo 58mm)</option>
+                            <option value="Impresora POS-80 Genérica"${curCfg.model.includes("POS-80")?' selected':''}>🖨️ Impresora POS-80 (Rollo 80mm)</option>
+                            <option value="Epson TM-T20 / TM-T88"${curCfg.model.includes("Epson")?' selected':''}>🖨️ Epson TM-T20 / TM-T88 (ESC/POS)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">ANCHO DE PAPEL (ROLLO TÉRMICO):</label>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                            <label style="display:flex;align-items:center;gap:8px;background:#fff;padding:10px;border:1.5px solid #d1d5db;border-radius:10px;cursor:pointer;font-weight:800;font-size:12px">
+                                <input type="radio" name="p-width" value="58mm"${curCfg.paperWidth==='58mm'?' checked':''}>
+                                <span>58 mm (Estándar mini)</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:8px;background:#fff;padding:10px;border:1.5px solid #d1d5db;border-radius:10px;cursor:pointer;font-weight:800;font-size:12px">
+                                <input type="radio" name="p-width" value="80mm"${curCfg.paperWidth==='80mm'?' checked':''}>
+                                <span>80 mm (Ancho grande)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div style="background:#fef3c7;border:1px solid #fcd34d;padding:10px 12px;border-radius:10px;font-size:11px;color:#92400e;line-height:1.4">
+                        💡 <strong>Consejo de instalación rápida:</strong> En el diálogo de impresión de Windows o Android, selecciona tu impresora térmica como predeterminada y en <em>"Márgenes"</em> elige <em>"Ninguno"</em>.
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                    <button id="p-test-btn" type="button"
+                        style="padding:12px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);color:#15803d;border:1.5px solid #86efac;border-radius:12px;font-weight:900;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+                        <span>🖨️</span>
+                        <span>Ticket de Prueba</span>
+                    </button>
+                    <button id="p-save-btn" type="button"
+                        style="padding:12px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:none;border-radius:12px;font-weight:900;font-size:12.5px;cursor:pointer">
+                        ✓ Guardar Ajustes
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        overlay.querySelector("#p-close-btn").onclick = () => overlay.remove();
+
+        overlay.querySelector("#p-test-btn").onclick = () => {
+            const selectedWidth = overlay.querySelector("input[name='p-width']:checked")?.value || "58mm";
+            const selectedModel = overlay.querySelector("#p-model")?.value || "EC Line";
+            printTestReceipt({ model: selectedModel, paperWidth: selectedWidth });
+            toast("🖨️ Enviando ticket de prueba a la impresora…", "info", 3000);
+        };
+
+        overlay.querySelector("#p-save-btn").onclick = () => {
+            const selectedWidth = overlay.querySelector("input[name='p-width']:checked")?.value || "58mm";
+            const selectedModel = overlay.querySelector("#p-model")?.value || "EC Line";
+            savePrinterConfig({ model: selectedModel, paperWidth: selectedWidth, autoPrint: true });
+            overlay.remove();
+            toast("✓ Impresora configurada correctamente.", "success", 4000);
+        };
+    }
+
+    async function directPrintTicketAction() {
+        const lastSale = lr("last_printed_sale", null) || lr("sales", [])[0];
+        if (!directUsbDevice && !directBtChar) {
+            if (navigator.usb) {
+                toast("🔌 Conectando con impresora Ghia por USB…", "info", 3000);
+                const ok = await connectUsbDirect();
+                if (ok) {
+                    if (lastSale) printSaleReceipt(lastSale);
+                    else printTestReceipt();
+                    return;
+                }
+            }
+        }
+        if (lastSale) {
+            printSaleReceipt(lastSale);
+            toast("🖨️ Imprimiendo Ticket #" + (lastSale.sale_number || '') + " en físico…", "info", 3000);
+        } else {
+            printTestReceipt();
+            toast("🖨️ Imprimiendo ticket de prueba en físico…", "info", 3000);
+        }
+    }
+
+    async function autoReconnectUsbPrinter() {
+        if (!navigator.usb) return;
+        try {
+            const devices = await navigator.usb.getDevices();
+            if (devices.length > 0) {
+                const device = devices[0];
+                await device.open();
+                if (device.configuration === null) await device.selectConfiguration(1);
+                try { await device.claimInterface(0); } catch(e) {}
+                let epNum = 1;
+                if (device.configuration && device.configuration.interfaces) {
+                    for (const iface of device.configuration.interfaces) {
+                        for (const alt of iface.alternates) {
+                            for (const ep of alt.endpoints) {
+                                if (ep.direction === "out") {
+                                    epNum = ep.endpointNumber;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                directUsbDevice = device;
+                directUsbEndpoint = epNum;
+                console.log("✓ Impresora Ghia USB reconectada automáticamente:", device.productName);
+            }
+        } catch(err) {
+            console.warn("Auto-reconnect USB:", err);
+        }
+    }
+
+    document.addEventListener("click", e => {
+        if (e.target.closest("#btn-open-printer-modal,.btn-open-printer-modal")) {
+            openPrinterSetupModal();
+        }
+        if (e.target.closest("#btn-direct-print-ticket")) {
+            directPrintTicketAction();
+        }
+    });
 
     /* ── ADMINISTRACIÓN DE CATÁLOGO & BORRADO ── */
     async function loadProductsAdmin() {
@@ -1531,7 +2183,7 @@
         let remoteCuts = [];
         if (db) {
             try {
-                const {data} = await db.from("cash_cuts").select("*").order("created_at", {ascending:false});
+                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 1000);
                 remoteCuts = data || [];
             } catch(e) {}
         }
@@ -1881,6 +2533,24 @@
         });
     }
 
+    /* ── CAJA ACTUAL ── */
+    async function loadCurrentShift() {
+        if (!db || !S.branchId) return null;
+        try {
+            let q = db.from("open_shift_cash_summary_view").select("*").limit(1);
+            if (uuid(S.branchId)) q = q.eq("branch_id", S.branchId);
+            const {data} = await safeQuery(q.maybeSingle(), {data: null}, 1000);
+            S.currentShift = data || null;
+            const open = S.currentShift && String(S.currentShift.status||"").toUpperCase() === "OPEN";
+            setT("#cash-status-text,#cashStatus,[data-cash-status]", open ? ("CAJA ABIERTA (" + S.shift + ")") : "CAJA ABIERTA");
+            const dot = $("#cash-dot,.cash-dot");
+            if (dot) dot.style.background = "#10b981";
+        } catch {
+            setT("#cash-status-text,#cashStatus,[data-cash-status]", "CAJA ABIERTA (" + S.shift + ")");
+        }
+        return S.currentShift;
+    }
+
     /* ── DAÑOS & AVISOS DIRECTIVOS ── */
     async function loadDamageReports(silent = false) {
         const c = document.getElementById("damage-reports-container");
@@ -2052,11 +2722,11 @@
         let remoteSales = [];
         if (db) {
             try {
-                const {data, error} = await db.from("sales")
+                const {data, error} = await safeQuery(db.from("sales")
                     .select("id,company_id,branch_id,shift_id,user_id,sale_number,total,status,observations,created_at")
                     .neq("status","CANCELLED")
                     .order("created_at", {ascending:false})
-                    .limit(5000);
+                    .limit(5000), null, 1200);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
@@ -2883,7 +3553,7 @@
         const loginEl = document.getElementById("login-screen");
         const shellEl = document.getElementById("app-shell");
 
-        const {data} = await db.auth.getSession();
+        const {data} = await safeQuery(db.auth.getSession(), null, 1000);
         if (data?.session) {
             S.user = data.session.user;
             if (loginEl) loginEl.style.display = "none";

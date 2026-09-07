@@ -342,14 +342,15 @@
 
             if (window.LaFuentePOS) {
                 window.LaFuentePOS.state.view = target;
-                if (target === "private-access") window.LaFuentePOS.loadPrivateAccessData();
-                if (target === "accounting")     window.LaFuentePOS.loadAccounting();
-                if (target === "sales")          window.LaFuentePOS.loadSales();
-                if (target === "cuts")           window.LaFuentePOS.loadCuts();
-                if (target === "inventory")      window.LaFuentePOS.loadInventory();
-                if (target === "shift")          window.LaFuentePOS.loadShiftView();
-                if (target === "products")       window.LaFuentePOS.loadProductsAdmin();
-                if (target === "damage-reports") window.LaFuentePOS.loadDamageReports();
+                if (target === "pos" && window.LaFuentePOS.loadProducts) { window.LaFuentePOS.loadProducts(); }
+                if (target === "private-access" && window.LaFuentePOS.loadPrivateAccessData) window.LaFuentePOS.loadPrivateAccessData();
+                if (target === "accounting" && window.LaFuentePOS.loadAccounting)     window.LaFuentePOS.loadAccounting();
+                if (target === "sales" && window.LaFuentePOS.loadSales)          window.LaFuentePOS.loadSales();
+                if (target === "cuts" && window.LaFuentePOS.loadCuts)           window.LaFuentePOS.loadCuts();
+                if (target === "inventory" && window.LaFuentePOS.loadInventory)      window.LaFuentePOS.loadInventory();
+                if (target === "shift" && window.LaFuentePOS.loadShiftView)          window.LaFuentePOS.loadShiftView();
+                if (target === "products" && window.LaFuentePOS.loadProductsAdmin)       window.LaFuentePOS.loadProductsAdmin();
+                if (target === "damage-reports" && window.LaFuentePOS.loadDamageReports) window.LaFuentePOS.loadDamageReports();
             }
         };
 
