@@ -2677,6 +2677,14 @@
         const saleProds = S.products.filter(p => !p.is_supply && p.category !== "desechables");
         const supplyProds = S.products.filter(p => p.is_supply || p.category === "desechables");
 
+        // Resumen preciso por categorías para esta sucursal
+        const totalSaleUnits = saleProds.reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalSupplyUnits = supplyProds.reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalPaletas = S.products.filter(p => p.category === "paletas").reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalHelados = S.products.filter(p => p.category === "helados").reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalAguas = S.products.filter(p => p.category === "aguas").reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalPreparados = S.products.filter(p => p.category === "preparados").reduce((sum, p) => sum + getStock(p.product_id), 0);
+
         let displayedList = S.products;
         if (S.invTab === "sales") displayedList = saleProds;
         else if (S.invTab === "supplies") displayedList = supplyProds;
@@ -2684,8 +2692,8 @@
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
-                <strong style="font-size:17px;color:#ffffff;font-weight:900">Inventario de Sucursal — ${esc(S.branchName)}</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Control de piezas, paquetes/bolsas de desechables y productos compuestos</div>
+                <strong style="font-size:17px;color:#ffffff;font-weight:900">Inventario Preciso — ${esc(S.branchName)}</strong>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Existencias reales y diferenciadas por sucursal • Límite 500 uds por producto</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
@@ -2693,6 +2701,32 @@
                 <button type="button" id="btn-ref-inv"
                     style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
                     🔄 Actualizar Inventario</button>
+            </div>
+        </div>
+
+        <!-- RESUMEN PRECISO DE EXISTENCIAS EN ESTA SUCURSAL -->
+        <div class="dashboard-card" style="padding:16px 20px;border-radius:16px;margin-bottom:20px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+                <div style="background:#fff;padding:10px 14px;border-radius:12px;border:1.5px solid var(--gold-400)">
+                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);display:block">🍨 PRODS VENTA</small>
+                    <strong style="font-size:18px;color:var(--wine-900)">${totalSaleUnits} uds</strong>
+                </div>
+                <div style="background:#fff;padding:10px 14px;border-radius:12px;border:1.5px solid rgba(188,132,10,.35)">
+                    <small style="font-size:10px;font-weight:900;color:#c2410c;display:block">🍭 PALETAS</small>
+                    <strong style="font-size:18px;color:#c2410c">${totalPaletas} uds</strong>
+                </div>
+                <div style="background:#fff;padding:10px 14px;border-radius:12px;border:1.5px solid rgba(188,132,10,.35)">
+                    <small style="font-size:10px;font-weight:900;color:#0369a1;display:block">💧 AGUAS</small>
+                    <strong style="font-size:18px;color:#0369a1">${totalAguas} uds</strong>
+                </div>
+                <div style="background:#fff;padding:10px 14px;border-radius:12px;border:1.5px solid rgba(188,132,10,.35)">
+                    <small style="font-size:10px;font-weight:900;color:#7e22ce;display:block">🍧 HELADOS</small>
+                    <strong style="font-size:18px;color:#7e22ce">${totalHelados} uds</strong>
+                </div>
+                <div style="background:#eff6ff;padding:10px 14px;border-radius:12px;border:1.5px solid #93c5fd">
+                    <small style="font-size:10px;font-weight:900;color:#1e40af;display:block">🧤 INSUMOS / DESECHABLES</small>
+                    <strong style="font-size:18px;color:#1d4ed8">${totalSupplyUnits} pzs</strong>
+                </div>
             </div>
         </div>
 
@@ -2741,7 +2775,7 @@
                     <!-- ESTADO DEL STOCK EN PIEZAS Y PAQUETES -->
                     <div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:10px;margin-bottom:12px;border:1px solid rgba(255,255,255,0.1)">
                         <div style="display:flex;justify-content:space-between;align-items:center">
-                            <span style="font-size:11px;color:#fcebd2">Stock Total:</span>
+                            <span style="font-size:11px;color:#fcebd2">Stock en ${esc(S.branchName)}:</span>
                             <strong style="font-size:19px;color:${col};font-weight:900">${stock} ${isSupply ? 'piezas' : 'uds.'}</strong>
                         </div>
                         ${isSupply ? `
@@ -2798,41 +2832,50 @@
             const name = btn.dataset.name;
             const packUnits = parseInt(btn.dataset.pack, 10) || 50;
             const cur = getStock(pid);
+            const val = await toastPrompt(`📦 Agregar paquetes de '${name}'\n(Cada paquete tiene ${packUnits} piezas):\n\nStock actual en ${S.branchName}: ${cur} piezas.`, "Ej: 2");
+            if (val === null) return;
+            const packsNum = parseInt(val, 10);
+            if (isNaN(packsNum) || packsNum <= 0) return toast("Ingresa una cantidad válida de paquetes.", "warn");
 
-            const val = await toastPrompt(`📦 Agregar Paquetes a '${name}':\n• Cada paquete contiene: ${packUnits} piezas\n• Stock actual: ${cur} piezas\n\n¿Cuántos paquetes/bolsas deseas ingresar?:`, "1");
-            const nPacks = parseInt(val, 10);
-            if (!Number.isFinite(nPacks) || nPacks <= 0) return;
-
-            const totalToAdd = nPacks * packUnits;
-            addStock(pid, totalToAdd);
-            toast(`✓ Se agregaron ${nPacks} paquetes (+${totalToAdd} piezas) a '${name}'. Nuevo stock: ${cur + totalToAdd} piezas.`, "success", 5000);
+            const addUnits = packsNum * packUnits;
+            const maxS = getMaxStock(pid);
+            const n = Math.min(maxS, cur + addUnits);
+            S.inv[pid] = n;
+            saveBranchInv();
+            alertInv();
+            toast(`✓ Agregados ${packsNum} paquete(s) (${addUnits} pz) a '${name}' en ${S.branchName}. Total: ${n} pz.`, "success", 4500);
             loadInventory();
         }));
 
-        // Agregar piezas sueltas / unidades
         c.querySelectorAll(".btn-add-stk").forEach(btn => btn.addEventListener("click", async () => {
             const pid = btn.dataset.id;
             const name = btn.dataset.name;
             const cur = getStock(pid);
-            const val = await toastPrompt(`Agregar stock a '${name}':\nActual: ${cur} piezas/unidades\nCantidad a agregar:`, "Cantidad…");
-            const n = parseInt(val, 10);
-            if (!Number.isFinite(n) || n <= 0) return;
-            addStock(pid, n);
-            toast(`✓ Stock de '${name}' actualizado a ${cur + n} unidades.`, "success");
+            const maxS = getMaxStock(pid);
+            const val = await toastPrompt(`🔢 Agregar unidades sueltas a '${name}'\n\nStock actual en ${S.branchName}: ${cur} | Límite: ${maxS}\n¿Cuántas unidades deseas agregar?:`, "Ej: 5");
+            if (val === null) return;
+            const qty = parseInt(val, 10);
+            if (isNaN(qty) || qty <= 0) return toast("Ingresa una cantidad válida a agregar.", "warn");
+            const n = Math.min(maxS, cur + qty);
+            S.inv[pid] = n;
+            saveBranchInv();
+            alertInv();
+            toast(`✓ Agregadas ${qty} unidades a '${name}' en ${S.branchName}. Nuevo stock: ${n}.`, "success", 4000);
             loadInventory();
         }));
 
-        // Ajuste directo del total
         c.querySelectorAll(".btn-set-stk").forEach(btn => btn.addEventListener("click", async () => {
             const pid = btn.dataset.id;
             const name = btn.dataset.name;
             const cur = getStock(pid);
-            const val = await toastPrompt(`Ajustar stock total de '${name}':\nActual: ${cur}\nNuevo valor total:`, String(cur));
-            const n = parseInt(val, 10);
-            if (!Number.isFinite(n) || n < 0) return;
-            S.inv[pid] = n; saveBranchInv();
+            const maxS = getMaxStock(pid);
+            const val = await toastPrompt(`✎ Ajustar Stock de '${name}' en ${S.branchName}\n(Stock actual: ${cur} | Límite: ${maxS}):`, String(cur));
+            if (val === null) return;
+            const n = Math.min(maxS, Math.max(0, parseInt(val, 10) || 0));
+            S.inv[pid] = n;
+            saveBranchInv();
             alertInv();
-            toast(`✓ Stock de '${name}' ajustado a ${n} unidades.`, "success");
+            toast(`✓ Stock de '${name}' en ${S.branchName} ajustado a ${n} unidades.`, "success");
             loadInventory();
         }));
     }
@@ -3120,10 +3163,16 @@
                             const parsed = JSON.parse(raw);
                             if (Array.isArray(parsed)) {
                                 parsed.forEach(ct => {
-                                    if (ct && (ct.opening_amount != null || ct.counted_cash != null || ct.shift_name || ct.total_sales != null || ct.difference != null)) {
-                                        const cid = String(ct.id || (Date.now() + Math.random()));
-                                        if (!cutsMap.has(cid)) {
-                                            cutsMap.set(cid, ct);
+                                    if (ct) {
+                                        const opening = Number(ct.opening_amount || 0);
+                                        const total = Number(ct.total_sales || 0);
+                                        const counted = Number(ct.counted_cash || 0);
+                                        // Filtrar cortes imprecisos o vacíos sin fondo ni ventas
+                                        if (opening > 0 || total > 0 || counted > 0) {
+                                            const cid = String(ct.id || (Date.now() + Math.random()));
+                                            if (!cutsMap.has(cid)) {
+                                                cutsMap.set(cid, ct);
+                                            }
                                         }
                                     }
                                 });
@@ -3155,32 +3204,45 @@
             const cid = String(ct.id);
             const opening = Number(obs.opening_amount != null ? obs.opening_amount : (ct.opening_amount || 0));
             const counted = Number(ct.counted_cash != null ? ct.counted_cash : (obs.counted_cash || 0));
+            const total = Number(ct.total_sales != null ? ct.total_sales : (obs.total_sales || 0));
+            const cash = Number(obs.cash_sales || 0);
+            const card = Number(obs.card_sales || 0);
             const diff = Number(ct.difference != null ? ct.difference : (obs.difference || 0));
             const net = Number(obs.net_sales_without_fund != null ? obs.net_sales_without_fund : (counted - opening));
 
-            cutsMap.set(cid, {
-                id: ct.id,
-                branch_id: ct.branch_id,
-                branch_name: bName,
-                shift_name: obs.shift_name || "Turno",
-                performed_by_name: obs.performed_by_name || perf || "Encargada",
-                opening_amount: opening,
-                cash_sales: Number(obs.cash_sales || 0),
-                card_sales: Number(obs.card_sales || 0),
-                total_sales: Number(ct.total_sales != null ? ct.total_sales : (obs.total_sales || 0)),
-                expected_cash: Number(ct.expected_cash != null ? ct.expected_cash : (obs.expected_cash || 0)),
-                counted_cash: counted,
-                difference: diff,
-                net_sales_without_fund: net,
-                created_at: ct.created_at || now()
-            });
+            // Solo agregar si es un corte estructurado y con datos reales
+            if (opening > 0 || total > 0 || counted > 0 || cash > 0 || card > 0) {
+                cutsMap.set(cid, {
+                    id: ct.id,
+                    branch_id: ct.branch_id,
+                    branch_name: bName,
+                    shift_name: obs.shift_name || "Turno",
+                    performed_by_name: obs.performed_by_name || perf || "Encargada",
+                    opening_amount: opening,
+                    cash_sales: cash,
+                    card_sales: card,
+                    total_sales: total,
+                    expected_cash: Number(ct.expected_cash != null ? ct.expected_cash : (obs.expected_cash || 0)),
+                    counted_cash: counted,
+                    difference: diff,
+                    net_sales_without_fund: net,
+                    created_at: ct.created_at || now()
+                });
+            }
         });
 
         const activeFilter = S.isSU ? (S.cutsFilterBranchId || "all") : S.branchId;
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
         
+        // Filtro estricto: descartar entradas nulas, vacías o sin fondo/ventas
         const cutsList = Array.from(cutsMap.values())
             .filter(ct => !deletedCutIds.has(String(ct.id)))
+            .filter(ct => {
+                const op = Number(ct.opening_amount || 0);
+                const tot = Number(ct.total_sales || 0);
+                const cnt = Number(ct.counted_cash || 0);
+                return (op > 0 || tot > 0 || cnt > 0) && ct.created_at && !isNaN(new Date(ct.created_at).getTime());
+            })
             .filter(ct => {
                 if (!S.isSU) return matchesBranch(ct, { id: S.branchId, name: S.branchName });
                 if (activeFilter === "all") return true;
@@ -3200,14 +3262,14 @@
         const currentCashSales = currentTurnSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s)=>a+Number(s.total||0), 0);
         const currentCardSales = currentTurnSales.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0), 0);
         const currentTotalSold = currentCashSales + currentCardSales;
-        const initialFund = Number(S.currentShift?.opening_amount || 0);
+        const initialFund = Number(S.currentShift?.opening_amount || 500);
         const expectedCashInDrawer = initialFund + currentCashSales;
 
         const branchSelectHtml = S.isSU ? `
             <div style="display:flex;align-items:center;gap:8px">
                 <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 FILTRAR CORTES:</label>
                 <select id="cuts-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
-                    <option value="all"${activeFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${cutsMap.size} cortes)</option>
+                    <option value="all"${activeFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${cutsList.length} cortes válidos)</option>
                     ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeFilter)?' selected':''}>${esc(b.name)}</option>`).join("")}
                 </select>
             </div>` : '';
@@ -3215,8 +3277,8 @@
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
-                <strong style="font-size:17px;color:#ffffff;font-weight:900">Cortes de Caja — ${esc(S.branchName)} (${esc(S.shift)})</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, terminal y balance de turnos en vivo</div>
+                <strong style="font-size:17px;color:#ffffff;font-weight:900">Cortes de Caja Oficiales — ${esc(S.branchName)} (${esc(S.shift)})</strong>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, terminal y balance de turnos estructurados</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
@@ -3270,9 +3332,9 @@
             </div>
         </div>
 
-        <!-- HISTORIAL DE CORTES REGISTRADOS -->
+        <!-- HISTORIAL DE CORTES ESTRUCTURADOS -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja (${cutsList.length} registrados)</h3>
+            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja (${cutsList.length} cortes válidos)</h3>
         </div>
         ${cutsList.length ? `
         <div style="display:flex;flex-direction:column;gap:12px">
