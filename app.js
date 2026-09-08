@@ -108,7 +108,13 @@
             const d = String(nowD.getDate()).padStart(2, "0");
             return `${y}-${m}-${d}`;
         }
-        const d = new Date(v);
+        if (typeof v === "string") {
+            const trimmed = v.trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+                return trimmed;
+            }
+        }
+        const d = (v instanceof Date) ? v : new Date(v);
         if (isNaN(d.getTime())) return String(v).slice(0,10);
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -3073,41 +3079,92 @@
         let remoteCuts = [];
         if (db) {
             try {
-                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 1000);
+                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 4000);
                 remoteCuts = data || [];
             } catch(e) {}
         }
 
-        const localCuts = lr("cuts", []);
-        const allGlobalCuts = gr("all_cuts", []);
         const cutsMap = new Map();
-        localCuts.forEach(ct => cutsMap.set(String(ct.id), ct));
-        allGlobalCuts.forEach(ct => cutsMap.set(String(ct.id), ct));
+
+        // 1. Escaneo exhaustivo de todas las llaves de cortes en localStorage
+        try {
+            if (typeof localStorage !== "undefined") {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith("lf_") || key.includes("cuts"))) {
+                        try {
+                            const raw = localStorage.getItem(key);
+                            if (!raw || !raw.startsWith("[")) continue;
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                parsed.forEach(ct => {
+                                    if (ct && (ct.opening_amount != null || ct.counted_cash != null || ct.shift_name || ct.total_sales != null || ct.difference != null)) {
+                                        const cid = String(ct.id || (Date.now() + Math.random()));
+                                        if (!cutsMap.has(cid)) {
+                                            cutsMap.set(cid, ct);
+                                        }
+                                    }
+                                });
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // 2. Fusionar y enriquecer con los cortes de Supabase
         remoteCuts.forEach(ct => {
             let obs = {};
             try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
-            cutsMap.set(String(ct.id), {
+            
+            let bName = obs.branch_name || S.branches.find(b=>String(b.id)===String(ct.branch_id))?.name || "";
+            const perf = obs.performed_by_name || ct.performed_by || "";
+            if (!bName && perf) {
+                const pLower = String(perf).toLowerCase();
+                for (const [em, staffInfo] of Object.entries(STAFF)) {
+                    if (pLower.includes(em.toLowerCase()) || (pLower.match(/encargado\d+/) && em.includes(pLower.match(/encargado\d+/)[0]))) {
+                        bName = staffInfo.b;
+                        break;
+                    }
+                }
+            }
+            if (!bName) bName = S.branchName;
+
+            const cid = String(ct.id);
+            const opening = Number(obs.opening_amount != null ? obs.opening_amount : (ct.opening_amount || 0));
+            const counted = Number(ct.counted_cash != null ? ct.counted_cash : (obs.counted_cash || 0));
+            const diff = Number(ct.difference != null ? ct.difference : (obs.difference || 0));
+            const net = Number(obs.net_sales_without_fund != null ? obs.net_sales_without_fund : (counted - opening));
+
+            cutsMap.set(cid, {
                 id: ct.id,
-                branch_name: obs.branch_name || S.branchName,
+                branch_id: ct.branch_id,
+                branch_name: bName,
                 shift_name: obs.shift_name || "Turno",
-                performed_by_name: obs.performed_by_name || "Encargada",
-                opening_amount: Number(obs.opening_amount || 0),
+                performed_by_name: obs.performed_by_name || perf || "Encargada",
+                opening_amount: opening,
                 cash_sales: Number(obs.cash_sales || 0),
                 card_sales: Number(obs.card_sales || 0),
-                total_sales: Number(ct.total_sales || 0),
-                expected_cash: Number(ct.expected_cash || 0),
-                counted_cash: Number(ct.counted_cash || 0),
-                difference: Number(ct.difference || 0),
-                net_sales_without_fund: Number(obs.net_sales_without_fund || 0),
-                created_at: ct.created_at
+                total_sales: Number(ct.total_sales != null ? ct.total_sales : (obs.total_sales || 0)),
+                expected_cash: Number(ct.expected_cash != null ? ct.expected_cash : (obs.expected_cash || 0)),
+                counted_cash: counted,
+                difference: diff,
+                net_sales_without_fund: net,
+                created_at: ct.created_at || now()
             });
         });
 
+        const activeFilter = S.isSU ? (S.cutsFilterBranchId || "all") : S.branchId;
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
+        
         const cutsList = Array.from(cutsMap.values())
             .filter(ct => !deletedCutIds.has(String(ct.id)))
-            .filter(ct => S.isSU || matchesBranch(ct, { id: S.branchId, name: S.branchName }))
-            .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+            .filter(ct => {
+                if (!S.isSU) return matchesBranch(ct, { id: S.branchId, name: S.branchName });
+                if (activeFilter === "all") return true;
+                return matchesBranch(ct, { id: activeFilter, name: S.branches.find(b=>String(b.id)===String(activeFilter))?.name });
+            })
+            .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
         // Calcular ventas activas del turno actual para el corte
         const consolidated = await getConsolidatedSalesForChain();
@@ -3126,9 +3183,10 @@
 
         const branchSelectHtml = S.isSU ? `
             <div style="display:flex;align-items:center;gap:8px">
-                <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 SUCURSAL:</label>
+                <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 FILTRAR CORTES:</label>
                 <select id="cuts-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
-                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(S.branchId)?' selected':''}>${esc(b.name)}</option>`).join("")}
+                    <option value="all"${activeFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${cutsMap.size} cortes)</option>
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeFilter)?' selected':''}>${esc(b.name)}</option>`).join("")}
                 </select>
             </div>` : '';
 
@@ -3136,7 +3194,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
                 <strong style="font-size:17px;color:#ffffff;font-weight:900">Cortes de Caja — ${esc(S.branchName)} (${esc(S.shift)})</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, terminal y balance de turnos</div>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, terminal y balance de turnos en vivo</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
@@ -3191,7 +3249,9 @@
         </div>
 
         <!-- HISTORIAL DE CORTES REGISTRADOS -->
-        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Historial de Cortes de Caja</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja (${cutsList.length} registrados)</h3>
+        </div>
         ${cutsList.length ? `
         <div style="display:flex;flex-direction:column;gap:12px">
             ${cutsList.map(ct => {
@@ -3235,12 +3295,15 @@
             }).join("")}
         </div>` : `
         <div class="empty-state" style="padding:34px;text-align:center">
-            <p style="color:var(--text-muted)">No hay cortes de caja registrados aún en esta sucursal.</p>
+            <p style="color:var(--text-muted)">No hay cortes de caja registrados aún en esta vista.</p>
         </div>`}
         `;
 
         document.getElementById("cuts-branch-filter")?.addEventListener("change", async e => {
-            await changeBranch(e.target.value);
+            S.cutsFilterBranchId = e.target.value;
+            if (e.target.value !== "all") {
+                await changeBranch(e.target.value);
+            }
             await loadCuts();
         });
 
@@ -3790,8 +3853,8 @@
         const closedDates = gr("closed_business_days", []);
         const isTodayClosed = closedDates.includes(todayStr);
 
-        // Si el día ya se finalizó con el botón, las ventas archivadas no suman al monitor en vivo activo
-        const todaySales = consolidatedSales.filter(s => toDateKey(s.created_at) === todayStr && !s.is_archived_day);
+        // Ventas activas del día (no canceladas)
+        const todaySales = consolidatedSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
 
         const allReps = gr("all_damage_reports", []);
         const pendingReps = allReps.filter(r => r.status !== "reviewed");
@@ -3833,8 +3896,8 @@
             };
         });
 
-        // Últimas 15 ventas en vivo de la red
-        const liveRecentSales = todaySales.slice(0, 15);
+        // Últimas 20 ventas en vivo de la red completa
+        const liveRecentSales = (todaySales.length ? todaySales : consolidatedSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED")).slice(0, 20);
 
         c.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
@@ -3875,8 +3938,8 @@
                 <div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                         <strong style="font-size:16px;color:var(--wine-900)">🍦 ${esc(b.name)}</strong>
-                        <span style="font-size:10px;padding:4px 10px;border-radius:20px;font-weight:bold;background:#dcfce7;color:#15803d">
-                            🟢 EN VIVO</span>
+                        <span style="font-size:10px;padding:4px 10px;border-radius:20px;font-weight:bold;${b.sales > 0 ? 'background:#dcfce7;color:#15803d' : 'background:#fef3c7;color:#92400e'}">
+                            ${b.sales > 0 ? '🟢 EN VIVO' : '🟡 LISTO'}</span>
                     </div>
                     <div style="background:#fffcf0;border:1px solid #f2e6b5;border-radius:10px;padding:12px;margin-bottom:12px">
                         <div style="display:flex;justify-content:space-between;margin-bottom:6px">
@@ -3999,28 +4062,23 @@
             }
             gw("accounting_history", history);
 
-            // Guardar registro de cierre de jornada para restablecer el monitor en vivo
+            // Guardar registro de cierre de jornada para contabilidad
             const closedDates = gr("closed_business_days", []);
             if (!closedDates.includes(dateKey)) {
                 closedDates.push(dateKey);
                 gw("closed_business_days", closedDates);
             }
 
-            // Marcar las ventas archivadas del día
-            const allGlobalSales = gr("all_sales", []);
-            allGlobalSales.forEach(s => {
-                if (toDateKey(s.created_at) === dateKey) {
-                    s.is_archived_day = true;
-                }
-            });
-            gw("all_sales", allGlobalSales);
-
-            toast("✓ Día finalizado con éxito. Ventas archivadas en Contabilidad y valores restablecidos a $0.00 para la nueva jornada.", "success", 5000);
+            toast("✓ Día finalizado con éxito y archivado en Contabilidad.", "success", 5000);
             window.changeView("accounting");
         });
 
         c.querySelectorAll(".btn-pv-sales").forEach(btn => btn.addEventListener("click", async () => { await changeBranch(btn.dataset.branch); window.changeView("sales"); }));
-        c.querySelectorAll(".btn-pv-cuts").forEach(btn =>  btn.addEventListener("click", async () => { await changeBranch(btn.dataset.branch); window.changeView("cuts"); }));
+        c.querySelectorAll(".btn-pv-cuts").forEach(btn =>  btn.addEventListener("click", async () => { 
+            S.cutsFilterBranchId = btn.dataset.branch;
+            await changeBranch(btn.dataset.branch); 
+            window.changeView("cuts"); 
+        }));
         c.querySelectorAll(".btn-pv-pos").forEach(btn =>   btn.addEventListener("click", async () => { await changeBranch(btn.dataset.branch); window.changeView("pos"); }));
     }
 
