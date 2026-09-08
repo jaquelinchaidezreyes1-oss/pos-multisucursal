@@ -125,28 +125,30 @@
     /* ── CLASIFICADOR OFICIAL DE TURNOS (ENCARGADOS 1,3,5,7,9,11 = MATUTINO / 2,4,6,8,10,12 = VESPERTINO) ── */
     function getShiftCategory(s) {
         if (!s) return "matutino";
-        const email = String(s.cashier_name || s.cashier_id || s.user_name || "").toLowerCase();
+        const email = String(s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
         
-        // 1. Detección por número oficial de encargado (1, 3, 5, 7, 9, 11 = Matutino)
-        const match = email.match(/encargado(\d+)lafuente/);
+        // 1. Detección por número oficial de encargada (1, 3, 5, 7, 9, 11 = Matutino | 2, 4, 6, 8, 10, 12 = Vespertino)
+        const match = email.match(/encargad[oa](\d+)/);
         if (match) {
             const num = parseInt(match[1], 10);
             if ([1, 3, 5, 7, 9, 11].includes(num)) return "matutino";
             if ([2, 4, 6, 8, 10, 12].includes(num)) return "vespertino";
         }
 
-        // 2. Detección por nombre de turno explícito
+        // 2. Detección por nombre explícito de turno
         const sn = String(s.shift_name || s.shift || "").toLowerCase();
-        if (sn.includes("mañana") || sn.includes("matutino")) return "matutino";
-        if (sn.includes("tarde")  || sn.includes("vespertino")) return "vespertino";
+        if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
+        if (sn.includes("mañana") || sn.includes("mat") || sn.includes("dia")) return "matutino";
 
-        // 3. Detección por horario de creación del ticket
+        // 3. Detección por horario de creación del ticket (hora local de México, >= 15:00 hrs es Vespertino)
         if (s.created_at) {
             const dateObj = new Date(s.created_at);
-            const hour = dateObj.getHours();
-            const min = dateObj.getMinutes();
-            const timeDec = hour + (min / 60);
-            return (timeDec < 15.5) ? "matutino" : "vespertino";
+            if (!isNaN(dateObj.getTime())) {
+                const hour = dateObj.getHours();
+                const min = dateObj.getMinutes();
+                const timeDec = hour + (min / 60);
+                return (timeDec >= 15.0) ? "vespertino" : "matutino";
+            }
         }
         return "matutino";
     }
@@ -1245,6 +1247,17 @@
             printSaleReceipt(saleRecord);
         } catch(e) {
             console.warn("Auto-impresión de ticket:", e);
+        }
+
+        // 2.1 DIFUSIÓN EN TIEMPO REAL A TODAS LAS PANTALLAS ABIERTAS
+        if (realtimeChannel) {
+            try {
+                realtimeChannel.send({
+                    type: "broadcast",
+                    event: "sale_created",
+                    payload: { sale: saleRecord }
+                });
+            } catch(e) {}
         }
 
         // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO
@@ -3759,7 +3772,7 @@
                             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
                             branch_id: s.branch_id,
                             branch_name: bName,
-                            shift_name: obs.shift_name || "Mañana",
+                            shift_name: obs.shift_name || (getShiftCategory({ cashier_name: cashierName, created_at: s.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
                             cashier_id: s.user_id,
                             cashier_name: cashierName || "Encargada",
                             total: Number(s.total || 0),
@@ -4409,6 +4422,9 @@
 
     /* ── SINCRONIZACIÓN EN TIEMPO REAL & CANALES SUPABASE ── */
     let realtimeChannel = null;
+    let _lastSalesCount = 0;
+    let _lastCutsCount = 0;
+
     function safeSilentRefresh() {
         if (!S.user) return;
         const active = document.activeElement;
@@ -4420,6 +4436,36 @@
         else if (S.view === "accounting" && S.isSU) loadAccounting(true);
         else if (S.view === "sales") loadSales(true);
         else if (S.view === "cuts") loadCuts(true);
+    }
+
+    async function triggerLiveNetworkSync() {
+        if (!S.user) return;
+        try {
+            await syncPendingSalesToSupabase();
+            const consolidated = await getConsolidatedSalesForChain();
+            
+            if (_lastSalesCount > 0 && consolidated.length > _lastSalesCount) {
+                const diffCount = consolidated.length - _lastSalesCount;
+                const latest = consolidated[0];
+                if (latest && S.isSU) {
+                    toast(`⚡ ${diffCount} nueva(s) venta(s) recibida(s) en vivo: ${money(latest.total)} en ${latest.branch_name || 'Sucursal'} (${latest.shift_name || 'Turno'})`, "info", 3500);
+                }
+            }
+            _lastSalesCount = consolidated.length;
+
+            if (S.isSU && realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "request_sync",
+                        payload: { from: S.user?.email }
+                    });
+                } catch(e) {}
+            }
+            safeSilentRefresh();
+        } catch(e) {
+            console.warn("Live network sync error:", e);
+        }
     }
 
     function setupRealtime() {
@@ -4442,7 +4488,7 @@
                         gw("all_sales", allGSales);
                     }
                     if (S.isSU) {
-                        toast(`🔔 Venta cobrada: ${money(s.total)} en ${s.branch_name || 'Sucursal'} (${s.shift_name || 'Turno'})`, "success", 4000);
+                        toast(`🔔 Venta cobrada en vivo: ${money(s.total)} en ${s.branch_name || 'Sucursal'} (${s.shift_name || 'Turno'})`, "success", 4000);
                     }
                     safeSilentRefresh();
                 })
@@ -4524,7 +4570,6 @@
                 })
                 // 5. EVENTOS POSTGRESQL NATIVOS SUPABASE
                 .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, async payload => {
-                    console.log("⚡ [Realtime SQL] Evento de ventas:", payload.eventType, payload);
                     if (payload.eventType === "INSERT" && payload.new) {
                         const n = payload.new;
                         let obs = {};
@@ -4551,10 +4596,12 @@
                             if (lTarget) { lTarget.status = "CANCELLED"; lw("sales", lSales); }
                         }
                     }
+                    await getConsolidatedSalesForChain();
                     safeSilentRefresh();
                 })
-                .on("postgres_changes", { event: "*", schema: "public", table: "cash_cuts" }, async payload => {
-                    safeSilentRefresh();
+                .on("postgres_changes", { event: "*", schema: "public", table: "cash_cuts" }, async () => {
+                    if (S.view === "cuts") await loadCuts(true);
+                    else safeSilentRefresh();
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "products" }, async () => {
                     await loadProducts();
@@ -4568,8 +4615,7 @@
                 })
                 .subscribe(status => {
                     console.log("📡 [Realtime Mesh] Estado de conexión:", status);
-                    if (status === "SUBSCRIBED" && S.isSU) {
-                        // Al conectar, pedir a todas las cajeras activas su resumen de ventas
+                    if (status === "SUBSCRIBED") {
                         try {
                             realtimeChannel.send({
                                 type: "broadcast",
@@ -4583,23 +4629,15 @@
             console.warn("Realtime error:", e);
         }
 
-        // Heartbeat de auto-sincronización periódica suave y sin parpadeos
+        // Heartbeat de auto-sincronización periódica activa cada 4 segundos
         if (window._syncTimer) clearInterval(window._syncTimer);
-        window._syncTimer = setInterval(async () => {
-            if (S.user) {
-                syncPendingSalesToSupabase();
-                if (S.isSU && realtimeChannel) {
-                    try {
-                        realtimeChannel.send({
-                            type: "broadcast",
-                            event: "request_sync",
-                            payload: { from: S.user?.email }
-                        });
-                    } catch(e) {}
-                }
-                safeSilentRefresh();
-            }
-        }, 3500);
+        window._syncTimer = setInterval(triggerLiveNetworkSync, 4000);
+
+        // Sincronización inmediata al volver a enfocar la pestaña
+        window.addEventListener("focus", triggerLiveNetworkSync);
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") triggerLiveNetworkSync();
+        });
     }
 
     /* ── INICIALIZACIÓN ── */
