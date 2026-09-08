@@ -264,7 +264,6 @@
                 const bId = uuid(s.branch_id) ? s.branch_id : defaultBranchUUID;
                 const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
                 const uId = uuid(s.cashier_id) ? s.cashier_id : (uuid(S.user?.id) ? S.user.id : defaultUserUUID);
-                const sId = uuid(s.shift_id) ? s.shift_id : (uuid(S.currentShift?.id) ? S.currentShift.id : defaultShiftUUID);
 
                 const observationsObj = {
                     branch_name: s.branch_name || S.branchName,
@@ -278,7 +277,6 @@
                 const insertPayload = {
                     company_id: cId,
                     branch_id: bId,
-                    shift_id: sId,
                     user_id: uId,
                     sale_number: s.sale_number,
                     subtotal: Number(s.total || 0),
@@ -289,6 +287,11 @@
                     observations: JSON.stringify(observationsObj),
                     created_at: s.created_at || now()
                 };
+                if (uuid(s.shift_id)) {
+                    insertPayload.shift_id = s.shift_id;
+                } else if (uuid(S.currentShift?.id)) {
+                    insertPayload.shift_id = S.currentShift.id;
+                }
 
                 const { data, error } = await db.from("sales").insert(insertPayload).select();
                 if (!error && data && data.length) {
@@ -2836,10 +2839,12 @@
         }
 
         const consolidated = await getConsolidatedSalesForChain();
-        const allRecordedSales = gr("all_sales", []).concat(lr("sales", []));
-        
-        // Filtrar ventas que corresponden a la sucursal activa
-        const branchSales = consolidated.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
+        const activeBranchFilter = S.isSU ? (S.salesFilterBranchId || "all") : S.branchId;
+
+        // Filtrar ventas por sucursal seleccionada o todas si es Superusuario
+        const branchSales = (S.isSU && activeBranchFilter === "all")
+            ? consolidated
+            : consolidated.filter(s => matchesBranch(s, { id: activeBranchFilter, name: S.branches.find(b=>String(b.id)===String(activeBranchFilter))?.name || S.branchName }));
         
         const todayStr = toDateKey();
         const datesMap = new Map();
@@ -2882,7 +2887,8 @@
             <div style="display:flex;align-items:center;gap:8px">
                 <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 SUCURSAL:</label>
                 <select id="sales-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
-                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(S.branchId)?' selected':''}>${esc(b.name)}</option>`).join("")}
+                    <option value="all"${activeBranchFilter==='all'?' selected':''}>🌐 Todas las Sucursales</option>
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeBranchFilter)?' selected':''}>${esc(b.name)}</option>`).join("")}
                 </select>
             </div>` : '';
 
@@ -2891,8 +2897,8 @@
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
-                <strong style="font-size:17px;color:#ffffff;font-weight:900">Historial de Ventas — ${esc(S.branchName)}</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Tickets cobrados, turnos y métodos de pago</div>
+                <strong style="font-size:17px;color:#ffffff;font-weight:900">Historial de Ventas — ${activeBranchFilter==='all'?'Toda la Cadena':esc(S.branchName)}</strong>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Tickets cobrados, turnos (Mañana / Tarde) y métodos de pago</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
@@ -2918,7 +2924,7 @@
                     <select id="sales-shift-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12.5px;font-weight:700;background:#fff;outline:none">
                         <option value="all"${selectedShift==='all'?' selected':''}>Todos los Turnos</option>
                         <option value="matutino"${selectedShift==='matutino'?' selected':''}>🌅 Matutino</option>
-                        <option value="vespertino"${selectedShift==='vespertino'?' selected':''}>🌇 Vespertino</option>
+                        <option value="vespertino"${selectedShift==='vespertino'?' selected':''}>🌇 Vespertino / Tarde</option>
                     </select>
                 </div>
 
@@ -2963,38 +2969,32 @@
                 return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
                     <div>
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                            <strong style="font-size:15px;color:var(--wine-900)">Ticket #${esc(s.sale_number || s.id)}</strong>
-                            <span style="font-size:10px;padding:2px 8px;border-radius:12px;font-weight:800;${isCard?'background:#eff6ff;color:#1d4ed8':'background:#f0fdf4;color:#15803d'}">
+                            <strong style="font-size:15px;color:var(--wine-900)">#${esc(s.sale_number || s.id)} — 📍 ${esc(s.branch_name || S.branchName)}</strong>
+                            <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;${isCan?'background:#fee2e2;color:#991b1b':'background:#dcfce7;color:#15803d'}">
+                                ${isCan ? '🚫 Cancelada' : '✓ Cobrada'}
+                            </span>
+                            <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;${isCard?'background:#eff6ff;color:#1d4ed8':'background:#f0fdf4;color:#15803d'}">
                                 ${isCard ? '💳 Tarjeta' : '💵 Efectivo'}
                             </span>
-                            ${isCan ? '<span style="font-size:10px;padding:2px 8px;border-radius:12px;font-weight:900;background:#fee2e2;color:#991b1b">🚫 CANCELADA</span>' : ''}
                         </div>
                         <div style="font-size:11.5px;color:var(--text-muted);font-weight:600">
-                            ${timeStr} • Por: <strong>${esc(s.cashier_name || "Encargada")}</strong> (${esc(s.shift_name || "Turno")})
+                            ${timeStr} • Por: <strong>${esc(s.cashier_name || 'Encargada')}</strong> <small>(${esc(s.shift_name || 'Turno')})</small>
                         </div>
-                        ${Array.isArray(s.items) && s.items.length ? `
                         <div style="font-size:11px;color:#4b5563;margin-top:6px">
-                            ${s.items.map(i => `• ${i.quantity}x ${esc(i.product_name || 'Producto')} (${money(i.subtotal || i.price*i.quantity)})`).join("<br>")}
-                        </div>` : ''}
+                            ${(s.items||[]).map(i => `${i.quantity}x ${esc(i.product_name || 'Producto')}`).join(" • ")}
+                        </div>
                     </div>
 
-                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                        <div style="text-align:right">
-                            <div style="font-size:20px;font-weight:900;color:var(--wine-700)">${money(s.total)}</div>
-                        </div>
-                        <button type="button" class="btn-print-sale" data-id="${esc(s.id)}"
-                            style="padding:8px 12px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
-                            🖨️ Re-Imprimir
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <strong style="font-size:20px;color:${isCan?'#991b1b':'var(--wine-700)'};font-weight:900">${money(s.total)}</strong>
+                        <button type="button" class="btn-reprint-sale" data-id="${esc(s.id)}"
+                            style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
+                            🖨️ Reimprimir
                         </button>
-                        ${!isCan ? `
-                        <button type="button" class="btn-cancel-sale" data-id="${esc(s.id)}" data-num="${esc(s.sale_number || s.id)}"
-                            style="padding:8px 12px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
-                            🚫 Cancelar
-                        </button>` : ''}
-                        ${S.isSU ? `
-                        <button type="button" class="btn-delete-sale" data-id="${esc(s.id)}"
-                            style="padding:8px 12px;background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
-                            🗑 Borrar
+                        ${!isCan && S.isSU ? `
+                        <button type="button" class="btn-cancel-sale" data-id="${esc(s.id)}" data-num="${esc(s.sale_number)}" data-total="${s.total}"
+                            style="padding:8px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
+                            🚫 Cancelar Ticket
                         </button>` : ''}
                     </div>
                 </article>`;
@@ -3005,78 +3005,80 @@
         </div>`}
         `;
 
-        c.querySelectorAll(".sales-tab-btn").forEach(btn => btn.addEventListener("click", () => {
-            S.salesTab = btn.dataset.tab;
-            loadSales();
-        }));
-
-        document.getElementById("sales-date-filter")?.addEventListener("change", e => {
-            S.salesFilterDate = e.target.value;
-            loadSales();
-        });
-
-        document.getElementById("sales-shift-filter")?.addEventListener("change", e => {
-            S.salesFilterShift = e.target.value;
-            loadSales();
-        });
-
         document.getElementById("sales-branch-filter")?.addEventListener("change", async e => {
-            await changeBranch(e.target.value);
+            S.salesFilterBranchId = e.target.value;
+            if (e.target.value !== "all") {
+                await changeBranch(e.target.value);
+            }
             await loadSales();
         });
+
+        document.getElementById("sales-date-filter")?.addEventListener("change", async e => {
+            S.salesFilterDate = e.target.value;
+            await loadSales();
+        });
+
+        document.getElementById("sales-shift-filter")?.addEventListener("change", async e => {
+            S.salesFilterShift = e.target.value;
+            await loadSales();
+        });
+
+        c.querySelectorAll(".sales-tab-btn").forEach(btn => btn.addEventListener("click", async () => {
+            S.salesTab = btn.dataset.tab;
+            await loadSales();
+        }));
 
         document.getElementById("btn-ref-sales")?.addEventListener("click", async () => {
             await loadSales();
             toast("Ventas actualizadas.", "info");
         });
 
-        c.querySelectorAll(".btn-print-sale").forEach(btn => btn.addEventListener("click", () => {
+        c.querySelectorAll(".btn-reprint-sale").forEach(btn => btn.addEventListener("click", () => {
             const sid = String(btn.dataset.id);
-            const targetSale = branchSales.find(x => String(x.id) === sid) || allRecordedSales.find(x => String(x.id) === sid);
-            if (!targetSale) return toast("No se encontró el ticket para imprimir.", "warn");
-            printSaleReceipt(targetSale);
-            toast(`🖨️ Re-imprimiendo ticket #${targetSale.sale_number || targetSale.id}…`, "info", 3000);
+            const target = consolidated.find(x => String(x.id) === sid);
+            if (!target) return toast("No se encontró la venta.", "warn");
+            try { printSaleReceipt(target); } catch(e) {}
+            toast(`🖨️ Reimprimiendo ticket #${target.sale_number || target.id}…`, "info", 3000);
         }));
 
         c.querySelectorAll(".btn-cancel-sale").forEach(btn => btn.addEventListener("click", async () => {
             const sid = String(btn.dataset.id);
-            const snum = btn.dataset.num;
-            const reason = await toastPrompt(`Cancelar venta #${snum}:\nEscribe el motivo obligatorio:`, "Error de cobro / Devolución…");
+            const snum = btn.dataset.num || sid;
+            const stot = Number(btn.dataset.total || 0);
+
+            const reason = await toastPrompt(`👑 [Superusuario] Cancelar Ticket #${snum} (${money(stot)})\nIngresa el motivo de cancelación:`, "Ej: Error de cobro, devolución de cliente...");
             if (!reason) return;
 
-            let lSales = lr("sales", []);
-            const target = lSales.find(x => String(x.id) === sid);
-            if (target) { target.status = "CANCELLED"; target.cancel_reason = reason; lw("sales", lSales); }
+            const cancelledReasons = gr("cancelled_reasons", {});
+            cancelledReasons[sid] = reason;
+            cancelledReasons[snum] = reason;
+            gw("cancelled_reasons", cancelledReasons);
 
-            let gSales = gr("all_sales", []);
-            const gTarget = gSales.find(x => String(x.id) === sid);
-            if (gTarget) { gTarget.status = "CANCELLED"; gTarget.cancel_reason = reason; gw("all_sales", gSales); }
+            const allGlobalSales = gr("all_sales", []);
+            const target = allGlobalSales.find(x => String(x.id) === sid || String(x.sale_number) === snum);
+            if (target) {
+                target.status = "CANCELLED";
+                target.cancelled_reason = reason;
+                gw("all_sales", allGlobalSales);
+            }
 
             if (db) {
                 try {
-                    await db.from("sales").update({ status: "CANCELLED", cancel_reason: reason }).eq("id", sid);
+                    await db.from("sales").update({status: "CANCELLED"}).eq("id", sid);
                 } catch(e) {}
             }
 
-            toast(`✓ Venta #${snum} cancelada con éxito.`, "info", 4000);
-            await loadSales();
-        }));
-
-        c.querySelectorAll(".btn-delete-sale").forEach(btn => btn.addEventListener("click", async () => {
-            const sid = String(btn.dataset.id);
-            const ok = await toastConfirm("👑 [Superusuario] ¿Deseas eliminar definitivamente este registro de venta?");
-            if (!ok) return;
-
-            let lSales = lr("sales", []).filter(x => String(x.id) !== sid);
-            lw("sales", lSales);
-            let gSales = gr("all_sales", []).filter(x => String(x.id) !== sid);
-            gw("all_sales", gSales);
-
-            if (db) {
-                try { await db.from("sales").delete().eq("id", sid); } catch(e) {}
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "sale_cancelled",
+                        payload: { id: sid, sale_number: snum, reason }
+                    });
+                } catch(e) {}
             }
 
-            toast("✓ Registro eliminado de la base de datos.", "info", 4000);
+            toast("✓ Ticket cancelado y restado de las ventas del día.", "info", 4000);
             await loadSales();
         }));
     }
@@ -3743,9 +3745,9 @@
             try {
                 // Consulta con timeout generoso (5000ms) para garantizar recuperación total de ventas
                 const {data, error} = await safeQuery(db.from("sales")
-                    .select("id,company_id,branch_id,shift_id,user_id,sale_number,total,status,observations,created_at")
+                    .select("*")
                     .order("created_at", {ascending:false})
-                    .limit(5000), null, 5000);
+                    .limit(5000), null, 8000);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
