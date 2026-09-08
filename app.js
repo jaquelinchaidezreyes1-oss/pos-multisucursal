@@ -3461,20 +3461,131 @@
     }
 
     /* ── CAMBIO DE TURNO & APERTURA DE FONDO DE CAJA ── */
+    async function getConsolidatedShiftsForChain() {
+        const shiftsMap = new Map();
+
+        // 1. Escaneo de todas las aperturas y turnos en cualquier llave de localStorage
+        try {
+            if (typeof localStorage !== "undefined") {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith("lf_") && (key.includes("shift") || key.includes("cuts")))) {
+                        try {
+                            const raw = localStorage.getItem(key);
+                            if (!raw || !raw.startsWith("[")) continue;
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                parsed.forEach(sh => {
+                                    if (sh && (sh.opening_amount != null || sh.opened_at || sh.shift_name)) {
+                                        const sid = String(sh.id || (sh.opened_at || sh.created_at) + "_" + (sh.branch_name || ""));
+                                        if (!shiftsMap.has(sid)) {
+                                            shiftsMap.set(sid, {
+                                                id: sh.id || sid,
+                                                branch_id: sh.branch_id,
+                                                branch_name: sh.branch_name || S.branchName,
+                                                shift_name: sh.shift_name || "Mañana",
+                                                cashier_name: sh.cashier_name || sh.performed_by_name || "Encargada",
+                                                opening_amount: Number(sh.opening_amount || 0),
+                                                opened_at: sh.opened_at || sh.created_at || now()
+                                            });
+                                        }
+                                    }
+                                });
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // 2. Extraer aperturas de turnos registradas en los cortes de caja (desde el día 4 en adelante)
+        const allCuts = gr("all_cuts", []).concat(lr("cuts", []));
+        allCuts.forEach(ct => {
+            if (ct && ct.opening_amount !== undefined) {
+                const cutDate = ct.created_at || now();
+                const cutKey = "shift_cut_" + (ct.id || (cutDate + "_" + (ct.branch_name || "")));
+                if (!shiftsMap.has(cutKey)) {
+                    shiftsMap.set(cutKey, {
+                        id: cutKey,
+                        branch_id: ct.branch_id,
+                        branch_name: ct.branch_name || S.branchName,
+                        shift_name: ct.shift_name || "Turno",
+                        cashier_name: ct.performed_by_name || "Encargada",
+                        opening_amount: Number(ct.opening_amount || 0),
+                        opened_at: cutDate
+                    });
+                }
+            }
+        });
+
+        // 3. Consultar Supabase si existen turnos o cortes registrados
+        if (db) {
+            try {
+                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 4000);
+                if (data && data.length) {
+                    data.forEach(ct => {
+                        let obs = {};
+                        try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
+                        const opening = Number(obs.opening_amount != null ? obs.opening_amount : (ct.opening_amount || 0));
+                        const bName = obs.branch_name || S.branches.find(b=>String(b.id)===String(ct.branch_id))?.name || S.branchName;
+                        const cashier = obs.performed_by_name || ct.performed_by || "Encargada";
+                        const cutKey = "shift_db_" + ct.id;
+                        if (!shiftsMap.has(cutKey)) {
+                            shiftsMap.set(cutKey, {
+                                id: cutKey,
+                                branch_id: ct.branch_id,
+                                branch_name: bName,
+                                shift_name: obs.shift_name || "Turno",
+                                cashier_name: cashier,
+                                opening_amount: opening,
+                                opened_at: ct.created_at || now()
+                            });
+                        }
+                    });
+                }
+            } catch(e) {}
+        }
+
+        const consolidatedShifts = Array.from(shiftsMap.values()).sort((a,b) => new Date(b.opened_at || 0) - new Date(a.opened_at || 0));
+        gw("all_shifts", consolidatedShifts);
+        return consolidatedShifts;
+    }
+
     async function loadShiftView() {
         const c = $("#shift-container");
         if (!c) return;
 
-        const shiftsHistory = lr("shifts", []);
+        const allShifts = await getConsolidatedShiftsForChain();
+        const activeBranchFilter = S.isSU ? (S.shiftFilterBranchId || "all") : S.branchId;
+
+        const shiftsHistory = (S.isSU && activeBranchFilter === "all")
+            ? allShifts
+            : allShifts.filter(sh => matchesBranch(sh, { id: activeBranchFilter, name: S.branches.find(b=>String(b.id)===String(activeBranchFilter))?.name || S.branchName }));
+
         const uname = S.profile?.full_name || S.user?.email || "Encargada";
+
+        const branchSelectHtml = S.isSU ? `
+            <div style="display:flex;align-items:center;gap:8px">
+                <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 SUCURSAL:</label>
+                <select id="shift-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
+                    <option value="all"${activeBranchFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${allShifts.length} turnos)</option>
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeBranchFilter)?' selected':''}>${esc(b.name)}</option>`).join("")}
+                </select>
+            </div>` : '';
 
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
-                <strong style="font-size:17px;color:#ffffff;font-weight:900">Cambio de Turno & Apertura — ${esc(S.branchName)}</strong>
+                <strong style="font-size:17px;color:#ffffff;font-weight:900">Cambio de Turno & Apertura — ${activeBranchFilter==='all'?'Toda la Cadena':esc(S.branchName)}</strong>
                 <div style="font-size:12px;color:#fcebd2;margin-top:2px">Apertura de turno, asignación de fondo inicial de caja y traspaso de turno</div>
             </div>
-            <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                ${branchSelectHtml}
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+                <button type="button" id="btn-ref-shifts"
+                    style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
+                    🔄 Actualizar Turnos</button>
+            </div>
         </div>
 
         <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
@@ -3503,27 +3614,47 @@
             </button>
         </div>
 
-        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Historial de Aperturas de Turno</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cambios de Turno & Aperturas (${shiftsHistory.length} registrados)</h3>
+        </div>
         ${shiftsHistory.length ? `
         <div style="display:flex;flex-direction:column;gap:12px">
             ${shiftsHistory.map(sh => `
             <article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
                 <div>
-                    <strong style="font-size:15px;color:var(--wine-900)">Turno ${esc(sh.shift_name)}</strong>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                        <strong style="font-size:15px;color:var(--wine-900)">${sh.shift_name.toLowerCase().includes('tarde') || sh.shift_name.toLowerCase().includes('vesp') ? '🌇 Turno Vespertino' : '🌅 Turno Matutino'} — 📍 ${esc(sh.branch_name || S.branchName)}</strong>
+                        <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;background:#dcfce7;color:#15803d">
+                            ✓ Apertura
+                        </span>
+                    </div>
                     <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">
-                        Iniciado: ${fdt(sh.opened_at || sh.created_at)} • Encargada: <strong>${esc(sh.cashier_name)}</strong>
+                        Fecha: <strong>${fdt(sh.opened_at || sh.created_at)}</strong> • Encargada: <strong>${esc(sh.cashier_name)}</strong>
                     </div>
                 </div>
                 <div style="text-align:right">
-                    <small style="font-size:10px;color:var(--text-muted);display:block">FONDO INICIAL</small>
-                    <strong style="font-size:18px;color:#15803d;font-weight:900">${money(sh.opening_amount)}</strong>
+                    <small style="font-size:10px;color:var(--text-muted);display:block">FONDO INICIAL EN CAJA</small>
+                    <strong style="font-size:20px;color:#15803d;font-weight:900">${money(sh.opening_amount)}</strong>
                 </div>
             </article>`).join("")}
         </div>` : `
         <div class="empty-state" style="padding:30px;text-align:center">
-            <p style="color:var(--text-muted)">No hay registros previos de apertura de turno.</p>
+            <p style="color:var(--text-muted)">No hay registros de apertura de turno con los filtros seleccionados.</p>
         </div>`}
         `;
+
+        document.getElementById("shift-branch-filter")?.addEventListener("change", async e => {
+            S.shiftFilterBranchId = e.target.value;
+            if (e.target.value !== "all") {
+                await changeBranch(e.target.value);
+            }
+            await loadShiftView();
+        });
+
+        document.getElementById("btn-ref-shifts")?.addEventListener("click", async () => {
+            await loadShiftView();
+            toast("Turnos actualizados.", "info");
+        });
 
         document.getElementById("btn-open-shift")?.addEventListener("click", async () => {
             const shiftName = document.getElementById("open-shift-name")?.value || "Mañana";
@@ -3547,6 +3678,20 @@
             const shifts = lr("shifts", []);
             shifts.unshift(shiftObj);
             lw("shifts", shifts);
+
+            const allGlobalShifts = gr("all_shifts", []);
+            allGlobalShifts.unshift(shiftObj);
+            gw("all_shifts", allGlobalShifts);
+
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "shift_opened",
+                        payload: { shift: shiftObj }
+                    });
+                } catch(e) {}
+            }
 
             updateUI();
             toast(`✓ Turno ${shiftName} iniciado con fondo de ${money(amount)}.`, "success", 4000);
