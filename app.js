@@ -78,7 +78,8 @@
     const $ = s => document.querySelector(s);
     const $a = s => Array.from(document.querySelectorAll(s));
     const esc = v => v == null ? "" : String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-    const money = v => (Number(v)||0).toLocaleString("es-MX",{style:"currency",currency:"MXN"});
+    const round2 = v => Math.round((Number(v) || 0) * 100) / 100;
+    const money = v => round2(v).toLocaleString("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fdt = v => {
         if(!v) return "—";
         const d = new Date(v);
@@ -154,7 +155,13 @@
     }
 
     const lk = k => "lf_" + (S.branchId || "x") + "_" + k;
-    const lw = (k, d) => { try { localStorage.setItem(lk(k), JSON.stringify(d)); } catch(e) {} };
+    const lw = (k, d) => { 
+        try { 
+            localStorage.setItem(lk(k), JSON.stringify(d)); 
+        } catch(e) {
+            console.warn("Storage warning:", e);
+        } 
+    };
     const lr = (k, d) => { try { const x = localStorage.getItem(lk(k)); return x ? JSON.parse(x) : d; } catch(e) { return d; } };
 
     const gw = (k, d) => { try { localStorage.setItem("lf_global_" + k, JSON.stringify(d)); } catch(e) {} };
@@ -3884,7 +3891,14 @@
     }
 
     /* ── MOTOR UNIFICADO DE RECUPERACIÓN Y CONSOLIDACIÓN DE VENTAS (HISTÓRICO + EN VIVO + OFFLINE) ── */
-    async function getConsolidatedSalesForChain() {
+    let _lastSalesFetchTime = 0;
+    let _cachedConsolidatedSales = null;
+
+    async function getConsolidatedSalesForChain(forceRefresh = false) {
+        const nowMs = Date.now();
+        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 2500)) {
+            return _cachedConsolidatedSales;
+        }
         let remoteSales = [];
         if (db) {
             try {
@@ -3993,6 +4007,8 @@
 
         const consolidated = Array.from(salesMap.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
         gw("all_sales", consolidated);
+        _lastSalesFetchTime = Date.now();
+        _cachedConsolidatedSales = consolidated;
         return consolidated;
     }
 
@@ -4561,9 +4577,13 @@
     function initSearch() {
         const inp = document.getElementById("search-products");
         if (!inp) return;
+        let debounceTimer = null;
         inp.addEventListener("input", () => {
-            S.q = inp.value;
-            renderPOS(filtered());
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                S.q = inp.value;
+                renderPOS(filtered());
+            }, 120);
         });
     }
 
@@ -4572,12 +4592,17 @@
     let _lastSalesCount = 0;
     let _lastCutsCount = 0;
 
+    let _lastRefreshHash = "";
     function safeSilentRefresh() {
         if (!S.user) return;
         const active = document.activeElement;
         const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.isContentEditable);
         const hasOpenModal = !!document.querySelector(".modal.open, .modal.show, [data-modal-open='true'], #checkout-modal:not(.hidden), .confirm-modal");
         if (isTyping || hasOpenModal) return;
+
+        const currentHash = S.view + "_" + (gr("all_sales", []).length) + "_" + (gr("all_cuts", []).length) + "_" + (gr("all_shifts", []).length);
+        if (currentHash === _lastRefreshHash) return;
+        _lastRefreshHash = currentHash;
 
         if (S.view === "private-access" && S.isSU) loadPrivateAccess(true);
         else if (S.view === "accounting" && S.isSU) loadAccounting(true);
