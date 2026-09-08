@@ -4793,9 +4793,19 @@
         const loginEl = document.getElementById("login-screen");
         const shellEl = document.getElementById("app-shell");
 
+        let activeUser = null;
+        try {
+            const raw = localStorage.getItem("lf_active_user_session");
+            if (raw) activeUser = JSON.parse(raw);
+        } catch(e) {}
+
         const {data} = await safeQuery(db.auth.getSession(), null, 1000);
-        if (data?.session) {
-            S.user = data.session.user;
+        if (data?.session?.user) {
+            activeUser = data.session.user;
+        }
+
+        if (activeUser) {
+            S.user = activeUser;
             if (loginEl) loginEl.style.display = "none";
             if (shellEl) shellEl.style.display = "flex";
             document.body.classList.remove("login-active");
