@@ -176,15 +176,18 @@
             .replace(/sucursal/g, "")
             .replace(/matutino|vespertino|mañana|tarde/g, "")
             .replace(/[()_-]/g, " ")
+            .replace(/\s+/g, " ")
             .trim();
     }
 
     function matchesBranch(sale, branchRef) {
         if (!sale) return false;
+        if (branchRef === "all" || branchRef?.id === "all") return true;
+
         const ref = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
         const sBranch = normalizeBranchName(sale.branch_name || "");
         const sId = String(sale.branch_id || "").toLowerCase();
-        const sCashier = String(sale.cashier_name || sale.user_name || sale.performed_by_name || "").toLowerCase();
+        const sCashier = String(sale.cashier_name || sale.user_name || sale.performed_by_name || sale.performed_by || "").toLowerCase();
         
         // Match by branch ID directly
         if (typeof branchRef === "object" && branchRef?.id && sId && String(branchRef.id).toLowerCase() === sId) {
@@ -193,30 +196,32 @@
 
         // Match by branch name / cashier assignment / ID patterns
         if (ref.includes("calzada")) {
-            return sBranch.includes("calzada") || sId === "branch-1" || sId === "branch_la_fuente_calzada" || sId === "branch_calzada" || sCashier.includes("encargado1") || sCashier.includes("encargado2");
+            return sBranch.includes("calzada") || sId === "branch-1" || sId.includes("calzada") || sCashier.includes("encargado1") || sCashier.includes("encargado2");
         }
         if (ref.includes("rescate")) {
-            return sBranch.includes("rescate") || sId === "branch-2" || sId === "branch_rescate" || sCashier.includes("encargado3") || sCashier.includes("encargado4");
+            return sBranch.includes("rescate") || sId === "branch-2" || sId.includes("rescate") || sCashier.includes("encargado3") || sCashier.includes("encargado4");
         }
         if (ref.includes("mollotes")) {
-            return sBranch.includes("mollotes") || sId === "branch-3" || sId === "branch_mollotes" || sCashier.includes("encargado5") || sCashier.includes("encargado6");
+            return sBranch.includes("mollotes") || sId === "branch-3" || sId.includes("mollotes") || sCashier.includes("encargado5") || sCashier.includes("encargado6");
         }
-        if (ref.includes("tagarete 1") || (ref.includes("tagarete") && ref.includes("1"))) {
-            return (sBranch.includes("tagarete") && (sBranch.includes("1") || !sBranch.includes("2"))) || sId === "branch-4" || sId.includes("tagarete_1") || sId.includes("tagarete1") || sCashier.includes("encargado7") || sCashier.includes("encargado8");
+        if (ref.includes("tagarete 2") || (ref.includes("tagarete") && (ref.includes("2") || ref.includes("dos")))) {
+            return (sBranch.includes("tagarete") && (sBranch.includes("2") || sBranch.includes("dos"))) || sId === "branch-5" || sId.includes("tagarete_2") || sId.includes("tagarete2") || sCashier.includes("encargado9") || sCashier.includes("encargado10") || sCashier.includes("tagarete 2");
         }
-        if (ref.includes("tagarete 2") || (ref.includes("tagarete") && ref.includes("2"))) {
-            return (sBranch.includes("tagarete") && sBranch.includes("2")) || sId === "branch-5" || sId.includes("tagarete_2") || sId.includes("tagarete2") || sCashier.includes("encargado9") || sCashier.includes("encargado10");
+        if (ref.includes("tagarete 1") || (ref.includes("tagarete") && (ref.includes("1") || ref.includes("uno")))) {
+            return (sBranch.includes("tagarete") && (sBranch.includes("1") || sBranch.includes("uno") || (!sBranch.includes("2") && !sBranch.includes("dos")))) || sId === "branch-4" || sId.includes("tagarete_1") || sId.includes("tagarete1") || sCashier.includes("encargado7") || sCashier.includes("encargado8") || sCashier.includes("tagarete 1");
         }
         if (ref.includes("tagarete")) {
             return sBranch.includes("tagarete") || sId.includes("tagarete") || sCashier.includes("encargado7") || sCashier.includes("encargado8") || sCashier.includes("encargado9") || sCashier.includes("encargado10");
         }
         if (ref.includes("cnop") || ref.includes("cenop")) {
-            return sBranch.includes("cnop") || sBranch.includes("cenop") || sId === "branch-6" || sId === "branch_cnop" || sCashier.includes("encargado11") || sCashier.includes("encargado12");
+            return sBranch.includes("cnop") || sBranch.includes("cenop") || sId === "branch-6" || sId.includes("cnop") || sCashier.includes("encargado11") || sCashier.includes("encargado12");
+        }
+        
+        // Exact normalized name comparison fallback
+        if (ref && sBranch && (ref === sBranch || sBranch.includes(ref) || ref.includes(sBranch))) {
+            return true;
         }
 
-        if (ref && sBranch) {
-            return sBranch.includes(ref) || ref.includes(sBranch);
-        }
         return false;
     }
 
@@ -2896,7 +2901,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
                 <strong style="font-size:17px;color:#ffffff;font-weight:900">Historial de Ventas — ${activeBranchFilter==='all'?'Toda la Cadena':esc(S.branchName)}</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Tickets cobrados, turnos (Mañana / Tarde) y métodos de pago</div>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Tickets cobrados, turnos (Mañana / Tarde), cancelaciones y reimpresiones</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
@@ -2965,8 +2970,8 @@
                 const isCard = s.payment_method === "card";
                 const timeStr = s.created_at ? fdt(s.created_at) : "--:--";
                 return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                    <div>
-                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                    <div style="flex:1;min-width:280px">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
                             <strong style="font-size:15px;color:var(--wine-900)">#${esc(s.sale_number || s.id)} — 📍 ${esc(s.branch_name || S.branchName)}</strong>
                             <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;${isCan?'background:#fee2e2;color:#991b1b':'background:#dcfce7;color:#15803d'}">
                                 ${isCan ? '🚫 Cancelada' : '✓ Cobrada'}
@@ -2981,18 +2986,27 @@
                         <div style="font-size:11px;color:#4b5563;margin-top:6px">
                             ${(s.items||[]).map(i => `${i.quantity}x ${esc(i.product_name || 'Producto')}`).join(" • ")}
                         </div>
+                        ${isCan ? `
+                        <div style="margin-top:6px;padding:6px 10px;background:#fef2f2;border-left:3px solid #ef4444;border-radius:4px;font-size:11px;color:#991b1b;font-weight:700">
+                            🛑 Motivo de Cancelación: ${esc(s.cancelled_reason || "Cancelada por la encargada")} ${s.cancelled_by ? `<small>(por: ${esc(s.cancelled_by)})</small>` : ''}
+                        </div>` : ''}
                     </div>
 
-                    <div style="display:flex;align-items:center;gap:10px">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                         <strong style="font-size:20px;color:${isCan?'#991b1b':'var(--wine-700)'};font-weight:900">${money(s.total)}</strong>
                         <button type="button" class="btn-reprint-sale" data-id="${esc(s.id)}"
                             style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
                             🖨️ Reimprimir
                         </button>
-                        ${!isCan && S.isSU ? `
-                        <button type="button" class="btn-cancel-sale" data-id="${esc(s.id)}" data-num="${esc(s.sale_number)}" data-total="${s.total}"
+                        ${!isCan ? `
+                        <button type="button" class="btn-cancel-sale" data-id="${esc(s.id)}" data-num="${esc(s.sale_number || s.id)}" data-total="${s.total}"
                             style="padding:8px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
                             🚫 Cancelar Ticket
+                        </button>` : ''}
+                        ${S.isSU ? `
+                        <button type="button" class="btn-delete-sale" data-id="${esc(s.id)}" data-num="${esc(s.sale_number || s.id)}" data-total="${s.total}"
+                            style="padding:8px 12px;background:#7f1d1d;color:#fff;border:1.5px solid #991b1b;border-radius:8px;font-size:11px;font-weight:900;cursor:pointer;display:flex;align-items:center;gap:4px">
+                            🗑️ Borrar Definitiva
                         </button>` : ''}
                     </div>
                 </article>`;
@@ -3033,36 +3047,78 @@
 
         c.querySelectorAll(".btn-reprint-sale").forEach(btn => btn.addEventListener("click", () => {
             const sid = String(btn.dataset.id);
-            const target = consolidated.find(x => String(x.id) === sid);
+            const target = consolidated.find(x => String(x.id) === sid || String(x.sale_number) === sid);
             if (!target) return toast("No se encontró la venta.", "warn");
             try { printSaleReceipt(target); } catch(e) {}
             toast(`🖨️ Reimprimiendo ticket #${target.sale_number || target.id}…`, "info", 3000);
         }));
 
+        // Cancelación de venta para cualquier usuario con motivo obligatorio y devolución a inventario
         c.querySelectorAll(".btn-cancel-sale").forEach(btn => btn.addEventListener("click", async () => {
             const sid = String(btn.dataset.id);
             const snum = btn.dataset.num || sid;
             const stot = Number(btn.dataset.total || 0);
 
-            const reason = await toastPrompt(`👑 [Superusuario] Cancelar Ticket #${snum} (${money(stot)})\nIngresa el motivo de cancelación:`, "Ej: Error de cobro, devolución de cliente...");
-            if (!reason) return;
+            const reason = await toastPrompt(`🚫 Cancelar Ticket #${snum} (${money(stot)})\nIngresa el motivo de cancelación:`, "Ej: Error de cobro, producto devuelto, cambio de forma de pago...");
+            if (!reason || !reason.trim()) {
+                return toast("Debes ingresar el motivo de cancelación para poder anular el ticket.", "warn", 4000);
+            }
 
-            const cancelledReasons = gr("cancelled_reasons", {});
-            cancelledReasons[sid] = reason;
-            cancelledReasons[snum] = reason;
+            const cleanReason = reason.trim();
+            const cashierCancelling = S.profile?.full_name || S.user?.email || "Encargada";
+
+            const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
+            cancelledReasons[sid] = cleanReason;
+            cancelledReasons[snum] = cleanReason;
             gw("cancelled_reasons", cancelledReasons);
+            lw("cancelled_reasons", cancelledReasons);
 
             const allGlobalSales = gr("all_sales", []);
             const target = allGlobalSales.find(x => String(x.id) === sid || String(x.sale_number) === snum);
             if (target) {
                 target.status = "CANCELLED";
-                target.cancelled_reason = reason;
+                target.cancelled_reason = cleanReason;
+                target.cancelled_by = cashierCancelling;
+                target.cancelled_at = now();
                 gw("all_sales", allGlobalSales);
+            }
+
+            const lSales = lr("sales", []);
+            const lTarget = lSales.find(x => String(x.id) === sid || String(x.sale_number) === snum);
+            if (lTarget) {
+                lTarget.status = "CANCELLED";
+                lTarget.cancelled_reason = cleanReason;
+                lTarget.cancelled_by = cashierCancelling;
+                lTarget.cancelled_at = now();
+                lw("sales", lSales);
+            }
+
+            // Devolver existencias al inventario local
+            const saleItems = (target?.items || lTarget?.items || []);
+            if (saleItems.length) {
+                const inv = getBranchInventoryMap(S.branchId || S.branchName);
+                saleItems.forEach(it => {
+                    const pid = it.product_id || it.id;
+                    const qty = Number(it.quantity || 1);
+                    if (pid && inv[pid] !== undefined) {
+                        inv[pid] = Math.min(STOCK_MAX, Math.max(0, (inv[pid] || 0) + qty));
+                    }
+                });
+                saveBranchInventoryMap(S.branchId || S.branchName, inv);
             }
 
             if (db) {
                 try {
-                    await db.from("sales").update({status: "CANCELLED"}).eq("id", sid);
+                    await db.from("sales").update({
+                        status: "CANCELLED",
+                        observations: JSON.stringify({
+                            ...(target?.observations || {}),
+                            status: "CANCELLED",
+                            cancelled_reason: cleanReason,
+                            cancelled_by: cashierCancelling,
+                            cancelled_at: now()
+                        })
+                    }).eq("id", sid);
                 } catch(e) {}
             }
 
@@ -3071,15 +3127,59 @@
                     realtimeChannel.send({
                         type: "broadcast",
                         event: "sale_cancelled",
-                        payload: { id: sid, sale_number: snum, reason }
+                        payload: { id: sid, sale_number: snum, reason: cleanReason, by: cashierCancelling }
                     });
                 } catch(e) {}
             }
 
-            toast("✓ Ticket cancelado y restado de las ventas del día.", "info", 4000);
+            _cachedConsolidatedSales = null;
+            await getConsolidatedSalesForChain(true);
             await loadSales();
+            toast(`✓ Ticket #${snum} cancelado exitosamente. Motivo: ${cleanReason}`, "success", 4000);
+        }));
+
+        // Borrado definitivo exclusivo para Superusuarios
+        c.querySelectorAll(".btn-delete-sale").forEach(btn => btn.addEventListener("click", async () => {
+            if (!S.isSU) return;
+            const sid = String(btn.dataset.id);
+            const snum = btn.dataset.num || sid;
+            const stot = Number(btn.dataset.total || 0);
+
+            const ok = await toastConfirm(`👑 [SUPERUSUARIO] ¿Estás seguro de ELIMINAR DEFINITIVAMENTE el Ticket #${snum} (${money(stot)})?\n\nEsta venta se borrará permanentemente de la base de datos y de todos los registros.`);
+            if (!ok) return;
+
+            const deletedSaleIds = gr("deleted_sale_ids", []);
+            if (!deletedSaleIds.includes(sid)) deletedSaleIds.push(sid);
+            if (!deletedSaleIds.includes(snum)) deletedSaleIds.push(snum);
+            gw("deleted_sale_ids", deletedSaleIds);
+
+            // Eliminar de memoria y localstorage
+            gw("all_sales", gr("all_sales", []).filter(x => String(x.id) !== sid && String(x.sale_number) !== snum));
+            lw("sales", lr("sales", []).filter(x => String(x.id) !== sid && String(x.sale_number) !== snum));
+
+            if (db) {
+                try {
+                    await db.from("sales").delete().eq("id", sid);
+                } catch(e) {}
+            }
+
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "sale_deleted",
+                        payload: { id: sid, sale_number: snum }
+                    });
+                } catch(e) {}
+            }
+
+            _cachedConsolidatedSales = null;
+            await getConsolidatedSalesForChain(true);
+            await loadSales();
+            toast(`🗑️ Ticket #${snum} eliminado definitivamente del sistema.`, "info", 4000);
         }));
     }
+
 
     /* ── CORTES DE CAJA (ARQUEOS Y CIERRES DE TURNO) ── */
     async function loadCuts(silent = false) {
@@ -3092,7 +3192,7 @@
         let remoteCuts = [];
         if (db) {
             try {
-                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 4000);
+                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 5000);
                 remoteCuts = data || [];
             } catch(e) {}
         }
@@ -3104,22 +3204,49 @@
             if (typeof localStorage !== "undefined") {
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
-                    if (key && (key.startsWith("lf_") || key.includes("cuts"))) {
+                    if (key && (key.startsWith("lf_") || key.includes("cuts") || key.includes("cut"))) {
                         try {
                             const raw = localStorage.getItem(key);
                             if (!raw || !raw.startsWith("[")) continue;
                             const parsed = JSON.parse(raw);
                             if (Array.isArray(parsed)) {
                                 parsed.forEach(ct => {
-                                    if (ct) {
-                                        const opening = Number(ct.opening_amount || 0);
-                                        const total = Number(ct.total_sales || 0);
-                                        const counted = Number(ct.counted_cash || 0);
-                                        if (opening > 0 || total > 0 || counted > 0) {
-                                            const cid = String(ct.id || (Date.now() + Math.random()));
-                                            if (!cutsMap.has(cid)) {
-                                                cutsMap.set(cid, ct);
+                                    if (ct && (ct.id || ct.created_at || ct.counted_cash != null || ct.total_sales != null || ct.opening_amount != null)) {
+                                        // Inferir sucursal desde llave si falta
+                                        let bName = ct.branch_name || "";
+                                        const keyLow = key.toLowerCase();
+                                        if (!bName) {
+                                            if (keyLow.includes("tagarete_2") || keyLow.includes("tagarete 2") || keyLow.includes("branch-5")) bName = "Tagarete 2";
+                                            else if (keyLow.includes("tagarete_1") || keyLow.includes("tagarete 1") || keyLow.includes("branch-4")) bName = "Tagarete 1";
+                                            else if (keyLow.includes("rescate") || keyLow.includes("branch-2")) bName = "Rescate";
+                                            else if (keyLow.includes("mollotes") || keyLow.includes("branch-3")) bName = "Mollotes";
+                                            else if (keyLow.includes("calzada") || keyLow.includes("branch-1")) bName = "La Fuente Calzada";
+                                            else if (keyLow.includes("cnop") || keyLow.includes("branch-6")) bName = "CNOP";
+                                        }
+                                        if (!bName && ct.performed_by_name) {
+                                            const pLow = String(ct.performed_by_name).toLowerCase();
+                                            for (const [em, staffInfo] of Object.entries(STAFF)) {
+                                                if (pLow.includes(em.toLowerCase()) || (pLow.match(/encargado\d+/) && em.includes(pLow.match(/encargado\d+/)[0]))) {
+                                                    bName = staffInfo.b;
+                                                    break;
+                                                }
                                             }
+                                        }
+                                        if (!bName) bName = S.branchName;
+
+                                        const cid = String(ct.id || (ct.created_at + "_" + bName));
+                                        if (!cutsMap.has(cid)) {
+                                            cutsMap.set(cid, {
+                                                ...ct,
+                                                id: ct.id || cid,
+                                                branch_name: bName,
+                                                opening_amount: Number(ct.opening_amount || 0),
+                                                total_sales: Number(ct.total_sales || 0),
+                                                counted_cash: Number(ct.counted_cash || 0),
+                                                expected_cash: Number(ct.expected_cash || 0),
+                                                difference: Number(ct.difference || 0),
+                                                created_at: ct.created_at || now()
+                                            });
                                         }
                                     }
                                 });
@@ -3136,11 +3263,7 @@
             try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
             
             let bName = obs.branch_name || ct.branch_name || "";
-            if (!bName && ct.branch_id) {
-                const foundB = S.branches.find(b => String(b.id) === String(ct.branch_id));
-                if (foundB) bName = foundB.name;
-            }
-            const perf = obs.performed_by_name || ct.performed_by || "";
+            const perf = obs.performed_by_name || ct.performed_by || obs.cashier_name || "";
             if (!bName && perf) {
                 const pLower = String(perf).toLowerCase();
                 for (const [em, staffInfo] of Object.entries(STAFF)) {
@@ -3150,7 +3273,11 @@
                     }
                 }
             }
-            if (!bName) bName = "Tagarete 2"; // Default si no se pudo determinar
+            if (!bName && ct.branch_id) {
+                const foundB = S.branches.find(b => String(b.id) === String(ct.branch_id));
+                if (foundB) bName = foundB.name;
+            }
+            if (!bName) bName = S.branchName;
 
             const cid = String(ct.id);
             const opening = Number(obs.opening_amount != null ? obs.opening_amount : (ct.opening_amount || 0));
@@ -3161,39 +3288,30 @@
             const diff = Number(ct.difference != null ? ct.difference : (obs.difference || 0));
             const net = Number(obs.net_sales_without_fund != null ? obs.net_sales_without_fund : (counted - opening));
 
-            // Agregar si es un corte estructurado y con datos reales
-            if (opening > 0 || total > 0 || counted > 0 || cash > 0 || card > 0) {
-                cutsMap.set(cid, {
-                    id: ct.id,
-                    branch_id: ct.branch_id,
-                    branch_name: bName,
-                    shift_name: obs.shift_name || "Turno",
-                    performed_by_name: obs.performed_by_name || perf || "Encargada",
-                    opening_amount: opening,
-                    cash_sales: cash,
-                    card_sales: card,
-                    total_sales: total,
-                    expected_cash: Number(ct.expected_cash != null ? ct.expected_cash : (obs.expected_cash || 0)),
-                    counted_cash: counted,
-                    difference: diff,
-                    net_sales_without_fund: net,
-                    created_at: ct.created_at || now()
-                });
-            }
+            cutsMap.set(cid, {
+                id: ct.id,
+                branch_id: ct.branch_id,
+                branch_name: bName,
+                shift_name: obs.shift_name || "Turno",
+                performed_by_name: obs.performed_by_name || perf || "Encargada",
+                opening_amount: opening,
+                cash_sales: cash,
+                card_sales: card,
+                total_sales: total,
+                expected_cash: Number(ct.expected_cash != null ? ct.expected_cash : (obs.expected_cash || 0)),
+                counted_cash: counted,
+                difference: diff,
+                net_sales_without_fund: net,
+                created_at: ct.created_at || now()
+            });
         });
 
         const activeFilter = S.isSU ? (S.cutsFilterBranchId || "all") : S.branchId;
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
         
-        // Filtro estricto y ordenación cronológica descendente
+        // Filtro y ordenación cronológica descendente
         const cutsList = Array.from(cutsMap.values())
             .filter(ct => !deletedCutIds.has(String(ct.id)))
-            .filter(ct => {
-                const op = Number(ct.opening_amount || 0);
-                const tot = Number(ct.total_sales || 0);
-                const cnt = Number(ct.counted_cash || 0);
-                return (op > 0 || tot > 0 || cnt > 0) && ct.created_at && !isNaN(new Date(ct.created_at).getTime());
-            })
             .filter(ct => {
                 if (!S.isSU) return matchesBranch(ct, { id: S.branchId, name: S.branchName });
                 if (activeFilter === "all") return true;
@@ -3223,7 +3341,7 @@
             <div style="display:flex;align-items:center;gap:8px">
                 <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 FILTRAR CORTES:</label>
                 <select id="cuts-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
-                    <option value="all"${activeFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${cutsList.length} cortes válidos)</option>
+                    <option value="all"${activeFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${cutsList.length} cortes)</option>
                     ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeFilter)?' selected':''}>${esc(b.name)}</option>`).join("")}
                 </select>
             </div>` : '';
@@ -3232,7 +3350,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
                 <strong style="font-size:17px;color:#ffffff;font-weight:900">Cortes de Caja Oficiales — ${esc(S.branchName)} (${esc(S.shift)})</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, terminal y balance de turnos estructurados</div>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, fondo inicial validado y balance de turnos</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
@@ -3288,7 +3406,7 @@
 
         <!-- HISTORIAL DE CORTES ESTRUCTURADOS -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja (${cutsList.length} cortes válidos)</h3>
+            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja (${cutsList.length} registrados)</h3>
         </div>
         ${cutsList.length ? `
         <div style="display:flex;flex-direction:column;gap:12px">
@@ -3296,8 +3414,8 @@
                 const diff = Number(ct.difference || 0);
                 const isOk = diff >= 0;
                 return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                    <div>
-                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                    <div style="flex:1;min-width:260px">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
                             <strong style="font-size:15px;color:var(--wine-900)">✂️ Corte — ${esc(ct.branch_name)} (${esc(ct.shift_name)})</strong>
                             <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;${isOk?'background:#dcfce7;color:#15803d':'background:#fee2e2;color:#991b1b'}">
                                 ${isOk ? '✓ Cuadrado' : '⚠ Diferencia: ' + money(diff)}
@@ -3314,7 +3432,7 @@
                         </div>
                     </div>
 
-                    <div style="display:flex;align-items:center;gap:10px">
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                         <div style="text-align:right">
                             <small style="font-size:10px;color:var(--text-muted);display:block">CORTE NETO EFECTIVO</small>
                             <strong style="font-size:20px;color:var(--wine-700);font-weight:900">${money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (ct.counted_cash - ct.opening_amount))}</strong>
@@ -3416,15 +3534,23 @@
                         expected_cash: expectedCashInDrawer,
                         counted_cash: countedVal,
                         difference: diff,
-                        observations: JSON.stringify(cutRecord),
-                        created_at: cutRecord.created_at
+                        observations: JSON.stringify({
+                            branch_name: S.branchName,
+                            shift_name: S.shift,
+                            performed_by_name: S.profile?.full_name || S.user?.email || "Encargada",
+                            opening_amount: initialFund,
+                            cash_sales: currentCashSales,
+                            card_sales: currentCardSales,
+                            net_sales_without_fund: netWithoutFund
+                        })
                     });
                 } catch(e) {}
             }
 
+            // Impresión física inmediata
             try { printCutReceipt(cutRecord); } catch(e) {}
 
-            toast(`✓ Corte registrado con éxito. Neto: ${money(netWithoutFund)}`, "success", 5000);
+            toast("✓ Corte guardado e impreso correctamente.", "success", 4000);
             await loadCuts();
         });
 
@@ -3433,50 +3559,45 @@
             const target = cutsList.find(x => String(x.id) === cid);
             if (!target) return toast("No se encontró el corte.", "warn");
             try { printCutReceipt(target); } catch(e) {}
-            toast(`🖨️ Imprimiendo ticket de corte…`, "info", 3000);
+            toast("🖨️ Reimprimiendo corte de caja…", "info", 3000);
         }));
 
-        if (S.isSU) {
-            c.querySelectorAll(".btn-delete-cut").forEach(btn => btn.addEventListener("click", async () => {
-                const cid = String(btn.dataset.id);
-                const cshift = btn.dataset.shift || "Turno";
-                const cbranch = btn.dataset.branch || S.branchName;
-                const ok = await toastConfirm("👑 [Superusuario] ¿Deseas eliminar definitivamente este corte duplicado de " + cbranch + " (" + cshift + ")?");
-                if (!ok) return;
+        c.querySelectorAll(".btn-delete-cut").forEach(btn => btn.addEventListener("click", async () => {
+            if (!S.isSU) return;
+            const cid = String(btn.dataset.id);
+            const sName = btn.dataset.shift || "Turno";
+            const bName = btn.dataset.branch || "Sucursal";
 
-                let lCuts = lr("cuts", []).filter(x => String(x.id) !== cid);
-                lw("cuts", lCuts);
+            const ok = await toastConfirm(`👑 [SUPERUSUARIO] ¿Estás seguro de eliminar este corte de caja de ${bName} (${sName})?\nEsta acción no se puede deshacer.`);
+            if (!ok) return;
 
-                let gCuts = gr("all_cuts", []).filter(x => String(x.id) !== cid);
-                gw("all_cuts", gCuts);
+            const deleted = gr("deleted_cut_ids", []);
+            if (!deleted.includes(cid)) deleted.push(cid);
+            gw("deleted_cut_ids", deleted);
 
-                const deletedCutIds = gr("deleted_cut_ids", []);
-                if (!deletedCutIds.includes(cid)) deletedCutIds.push(cid);
-                gw("deleted_cut_ids", deletedCutIds);
+            gw("all_cuts", gr("all_cuts", []).filter(x => String(x.id) !== cid));
+            lw("cuts", lr("cuts", []).filter(x => String(x.id) !== cid));
 
-                if (db) {
-                    try {
-                        await db.from("cash_cuts").delete().eq("id", cid);
-                    } catch(e) {}
-                }
+            if (db) {
+                try { await db.from("cash_cuts").delete().eq("id", cid); } catch(e) {}
+            }
 
-                if (realtimeChannel) {
-                    try {
-                        realtimeChannel.send({
-                            type: "broadcast",
-                            event: "cut_deleted",
-                            payload: { id: cid }
-                        });
-                    } catch(e) {}
-                }
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "cut_deleted",
+                        payload: { id: cid }
+                    });
+                } catch(e) {}
+            }
 
-                toast("✓ Corte duplicado eliminado del sistema.", "success", 4000);
-                await loadCuts();
-            }));
-        }
+            await loadCuts();
+            toast("🗑️ Corte eliminado del sistema.", "info", 3000);
+        }));
     }
 
-    /* ── CAMBIO DE TURNO & APERTURA DE FONDO DE CAJA ── */
+    /* ── GESTIÓN DE TURNOS & APERTURA ── */
     async function getConsolidatedShiftsForChain() {
         const shiftsMap = new Map();
 
@@ -3768,295 +3889,141 @@
         return S.currentShift;
     }
 
-    /* ── DAÑOS & AVISOS DIRECTIVOS ── */
+    /* ── DAÑOS & MERMAS ── */
     async function loadDamageReports(silent = false) {
-        const c = document.getElementById("damage-reports-container");
+        const c = $("#damage-reports-container");
         if (!c) return;
         if (!silent && !c.children.length) {
-            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div></div>`;
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando reportes de merma…</p></div>`;
         }
 
-        let remoteReports = [];
-        if (db) {
-            try {
-                let q = db.from("damage_reports").select("*").order("created_at", {ascending:false});
-                if (!S.isSU && uuid(S.branchId)) q = q.eq("branch_id", S.branchId);
-                const {data} = await q;
-                remoteReports = data || [];
-            } catch(e) {}
-        }
-
-        const allGlobalReports = gr("all_damage_reports", []);
-        const repMap = new Map();
-        allGlobalReports.forEach(r => repMap.set(String(r.id), r));
-        remoteReports.forEach(r => { if (!repMap.has(String(r.id))) repMap.set(String(r.id), r); });
-
-        let reports = Array.from(repMap.values()).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-        if (!S.isSU) {
-            reports = reports.filter(r => String(r.branch_id) === String(S.branchId) || String(r.branch_name).toLowerCase() === String(S.branchName).toLowerCase());
-        }
-
-        const tl = {damage:"Daño en producto", request:"Petición / Solicitud", notice:"Aviso general"};
-        const tb = {damage:"#fee2e2;color:#991b1b", request:"#dbeafe;color:#1d4ed8", notice:"#fef3c7;color:#b45309"};
-        const ti = {damage:"💥", request:"📋", notice:"📢"};
+        const allReports = gr("all_damage_reports", []);
+        const branchReports = S.isSU ? allReports : allReports.filter(r => matchesBranch(r, { id: S.branchId, name: S.branchName }));
 
         c.innerHTML = `
-        <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc)">
-            <h3 style="color:var(--wine-900);margin:0 0 6px">🔔 Registrar Nuevo Reporte / Petición / Aviso</h3>
-            <p style="color:var(--text-muted);font-size:12px;margin:0 0 16px">
-                Sucursal que reporta: <strong style="color:var(--wine-900)">${esc(S.branchName)}</strong> • Por: <strong>${esc(S.profile?.full_name || S.user?.email || "Encargada")}</strong></p>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px">
-                <div><label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">TIPO DE REPORTE</label>
-                    <select id="rep-type" style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box">
-                        <option value="damage">💥 Daño en producto</option>
-                        <option value="request">📋 Petición / Solicitud de material</option>
-                        <option value="notice">📢 Aviso general a dirección</option>
-                    </select></div>
-                <div><label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">TÍTULO / ASUNTO *</label>
-                    <input type="text" id="rep-title" placeholder="Ej: Se dañaron 5 paletas de fresa"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+            <div>
+                <strong style="font-size:17px;color:#ffffff;font-weight:900">Reportes de Merma & Producto Dañado — ${esc(S.branchName)}</strong>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Registro y ajuste automático de inventario por producto derretido o defectuoso</div>
             </div>
-            <div style="margin-bottom:14px"><label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">DESCRIPCIÓN DETALLADA *</label>
-                <textarea id="rep-desc" rows="3" placeholder="Describe los detalles…"
-                    style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea></div>
-            <button type="button" id="btn-send-rep"
-                style="padding:12px 30px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer">
-                ✓ Enviar Reporte a Dirección</button>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-            <h3 style="margin:0;color:#ffffff;font-weight:900">${S.isSU ? "👑 Todos los Reportes (Las 6 Sucursales en Tiempo Real)" : "Mis Reportes Registrados — " + esc(S.branchName)}</h3>
-            <button type="button" id="btn-ref-rep"
-                style="padding:8px 16px;background:#fff;border:1.5px solid var(--gold-500);border-radius:8px;cursor:pointer;font-weight:bold">
+            <button type="button" id="btn-ref-damages"
+                style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
                 🔄 Actualizar Reportes</button>
         </div>
-        ${reports.length
-            ? `<div style="display:flex;flex-direction:column;gap:12px">
-                ${reports.map(r => {
-                    const type = String(r.report_type || r.type || "notice");
-                    const bg   = tb[type] || tb.notice;
-                    const icon = ti[type] || "📌";
-                    return `<article class="sale-card" style="background:#fff;border:1px solid rgba(188,132,10,.35);border-radius:14px;padding:18px">
-                        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-                            <div>
-                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-                                    <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${bg};font-weight:900">
-                                        ${icon} ${esc(tl[type]||"Aviso")}</span>
-                                    <span style="font-size:11px;background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:10px;font-weight:900">
-                                        📍 Sucursal: ${esc(r.branch_name || "La Fuente")}</span>
-                                </div>
-                                <strong style="font-size:16px;color:var(--wine-900)">${esc(r.title||"Sin título")}</strong>
-                                <div style="font-size:12px;color:var(--text-muted);margin-top:3px">
-                                    Reportado por: <strong>${esc(r.user_name||"Encargada")}</strong> • 🕐 <strong>${fdt(r.created_at)}</strong></div>
-                            </div>
-                            <span style="font-size:11px;padding:3px 10px;border-radius:12px;font-weight:900;
-                                background:${r.status==="reviewed" ? "#dcfce7;color:#15803d" : "#fef3c7;color:#b45309"}">
-                                ${r.status==="reviewed" ? "✓ Revisado por Dirección" : "⏳ Pendiente"}</span>
-                        </div>
-                        <p style="font-size:13px;color:#333;margin:0 0 10px;padding:12px;background:#fffcf2;border-radius:8px;border-left:4px solid var(--gold-500);line-height:1.4">
-                            ${esc(r.description||"")}</p>
-                        ${r.superuser_notes
-                            ? `<div style="font-size:12px;background:#dcfce7;border-radius:8px;padding:10px;color:#15803d;border-left:4px solid #86efac;margin-bottom:8px">
-                                <strong>👑 Respuesta de Dirección:</strong> ${esc(r.superuser_notes)}</div>` : ""}
-                        ${S.isSU && r.status !== "reviewed"
-                            ? `<button type="button" class="btn-rev-rep" data-id="${esc(r.id)}"
-                                style="padding:8px 18px;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer">
-                                ✓ Responder y Marcar Revisado</button>` : ""}
-                    </article>`;
-                }).join("")}
-               </div>`
-            : `<div class="empty-state" style="padding:40px;text-align:center">
-                <div style="font-size:40px">🔔</div>
-                <p style="color:var(--text-muted)">No hay reportes registrados.</p>
-               </div>`}`;
 
-        document.getElementById("btn-send-rep")?.addEventListener("click", async () => {
-            const type  = document.getElementById("rep-type")?.value;
-            const title = document.getElementById("rep-title")?.value.trim();
-            const desc  = document.getElementById("rep-desc")?.value.trim();
-            if (!title) return toast("Escribe el título del reporte.", "warn");
-            if (!desc)  return toast("Escribe la descripción detallada.", "warn");
+        <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
+            <h3 style="color:var(--wine-900);margin:0 0 14px;font-weight:900">⚠️ Registrar Nueva Merma o Daño</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px">
+                <div>
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">PRODUCTO AFECTADO *</label>
+                    <select id="damage-product-select" style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:800;background:#fff;box-sizing:border-box">
+                        <option value="">-- Selecciona producto --</option>
+                        ${S.products.map(p => `<option value="${esc(p.id)}">${esc(p.name)} (${money(p.price)})</option>`).join("")}
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">CANTIDAD DAÑADA *</label>
+                    <input id="damage-quantity" type="number" min="1" max="100" value="1"
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:900;box-sizing:border-box">
+                </div>
+                <div style="grid-column:1/-1">
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">MOTIVO DEL DAÑO / MERMA *</label>
+                    <input id="damage-reason" type="text" placeholder="Ej: Se cayó de la vitrina, descongelamiento, empaque roto..."
+                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:700;box-sizing:border-box">
+                </div>
+            </div>
+            <button type="button" id="btn-submit-damage"
+                style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer">
+                ✓ Registrar Merma y Descontar Inventario
+            </button>
+        </div>
 
-            const ts = now();
-            const repRecord = {
-                id: "rep_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
-                report_type: type,
-                title: title,
-                description: desc,
-                branch_id: S.branchId,
-                branch_name: S.branchName,
-                user_id: S.user?.id,
-                user_name: S.profile?.full_name || S.user?.email || "Encargada",
-                status: "pending",
-                created_at: ts
-            };
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Mermas (${branchReports.length} registros)</h3>
+        </div>
+        ${branchReports.length ? `
+        <div style="display:flex;flex-direction:column;gap:12px">
+            ${branchReports.map(rep => `
+            <article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                        <strong style="font-size:15px;color:var(--wine-900)">⚠️ ${rep.quantity}x ${esc(rep.product_name)} — 📍 ${esc(rep.branch_name || S.branchName)}</strong>
+                        <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;background:#fee2e2;color:#991b1b">
+                            Merma
+                        </span>
+                    </div>
+                    <div style="font-size:11.5px;color:var(--text-muted)">
+                        Fecha: <strong>${fdt(rep.created_at)}</strong> • Encargada: <strong>${esc(rep.reported_by)}</strong>
+                    </div>
+                    <div style="font-size:11.5px;color:#4b5563;margin-top:4px">
+                        Motivo: <em>${esc(rep.reason)}</em>
+                    </div>
+                </div>
+            </article>`).join("")}
+        </div>` : `
+        <div class="empty-state" style="padding:34px;text-align:center">
+            <p style="color:var(--text-muted)">No hay mermas o daños registrados.</p>
+        </div>`}
+        `;
 
-            const allGlobal = gr("all_damage_reports", []);
-            allGlobal.unshift(repRecord);
-            gw("all_damage_reports", allGlobal);
-
-            if (db) {
-                try {
-                    await db.from("damage_reports").insert(repRecord);
-                } catch(e) {}
-            }
-
-            toast("✓ Reporte enviado. Jaquelin e Ignacio lo verán al instante.", "success", 5000);
-            document.getElementById("rep-title").value = "";
-            document.getElementById("rep-desc").value  = "";
-            await loadDamageReports();
-        });
-
-        document.getElementById("btn-ref-rep")?.addEventListener("click", async () => {
+        document.getElementById("btn-ref-damages")?.addEventListener("click", async () => {
             await loadDamageReports();
             toast("Reportes actualizados.", "info");
         });
 
-        c.querySelectorAll(".btn-rev-rep").forEach(btn => btn.addEventListener("click", async () => {
-            const notes = await toastPrompt("Escribe tu respuesta directiva:", "Instrucciones o respuesta…");
-            if (!notes) return;
+        document.getElementById("btn-submit-damage")?.addEventListener("click", async () => {
+            const pid = document.getElementById("damage-product-select")?.value;
+            const qty = Number(document.getElementById("damage-quantity")?.value || 1);
+            const reason = document.getElementById("damage-reason")?.value?.trim();
 
-            const allGlobal = gr("all_damage_reports", []);
-            const target = allGlobal.find(x => String(x.id) === String(btn.dataset.id));
-            if (target) {
-                target.status = "reviewed";
-                target.superuser_notes = notes;
-                gw("all_damage_reports", allGlobal);
-            }
+            if (!pid) return toast("Selecciona el producto afectado.", "warn");
+            if (!qty || qty < 1) return toast("Ingresa una cantidad válida.", "warn");
+            if (!reason) return toast("Ingresa el motivo del daño o merma.", "warn");
 
-            if (db) {
+            const prod = S.products.find(p => String(p.id) === String(pid));
+            const prodName = prod ? prod.name : "Producto";
+
+            const ok = await toastConfirm(`¿Confirmar registro de merma de ${qty}x ${prodName}?\nSe descontará del inventario de ${S.branchName}.`);
+            if (!ok) return;
+
+            const repObj = {
+                id: "damage_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
+                branch_id: S.branchId,
+                branch_name: S.branchName,
+                product_id: pid,
+                product_name: prodName,
+                quantity: qty,
+                reason: reason,
+                reported_by: S.profile?.full_name || S.user?.email || "Encargada",
+                created_at: now(),
+                status: "pending"
+            };
+
+            const allReps = gr("all_damage_reports", []);
+            allReps.unshift(repObj);
+            gw("all_damage_reports", allReps);
+
+            // Descontar inventario local
+            const inv = getBranchInventoryMap(S.branchId || S.branchName);
+            inv[pid] = Math.max(0, (inv[pid] || 0) - qty);
+            saveBranchInventoryMap(S.branchId || S.branchName, inv);
+
+            if (realtimeChannel) {
                 try {
-                    await db.from("damage_reports").update({status: "reviewed", superuser_notes: notes}).eq("id", btn.dataset.id);
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "damage_reported",
+                        payload: { report: repObj }
+                    });
                 } catch(e) {}
             }
 
-            toast("✓ Reporte respondido y archivado.", "success");
+            toast(`✓ Merma registrada: ${qty}x ${prodName} descontados del inventario.`, "success", 4000);
             await loadDamageReports();
-        }));
-    }
-
-    /* ── MOTOR UNIFICADO DE RECUPERACIÓN Y CONSOLIDACIÓN DE VENTAS (HISTÓRICO + EN VIVO + OFFLINE) ── */
-    let _lastSalesFetchTime = 0;
-    let _cachedConsolidatedSales = null;
-
-    async function getConsolidatedSalesForChain(forceRefresh = false) {
-        const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 2500)) {
-            return _cachedConsolidatedSales;
-        }
-        let remoteSales = [];
-        if (db) {
-            try {
-                // Consulta con timeout generoso (5000ms) para garantizar recuperación total de ventas
-                const {data, error} = await safeQuery(db.from("sales")
-                    .select("*")
-                    .order("created_at", {ascending:false})
-                    .limit(5000), null, 8000);
-                if (data && data.length) {
-                    remoteSales = data.map(s => {
-                        let obs = {};
-                        try {
-                            obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
-                        } catch(e) {}
-
-                        // Reconstruir nombre de sucursal mediante observaciones, id de sucursal o email de encargada
-                        let bName = obs.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
-                        const cashierName = obs.cashier_name || s.user_name || "";
-                        if (!bName && cashierName) {
-                            const cLower = cashierName.toLowerCase();
-                            for (const [em, staffInfo] of Object.entries(STAFF)) {
-                                if (cLower.includes(em.toLowerCase()) || (cLower.match(/encargado\d+/) && em.includes(cLower.match(/encargado\d+/)[0]))) {
-                                    bName = staffInfo.b;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!bName) bName = "La Fuente Calzada";
-
-                        return {
-                            id: s.id,
-                            sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                            branch_id: s.branch_id,
-                            branch_name: bName,
-                            shift_name: obs.shift_name || (getShiftCategory({ cashier_name: cashierName, created_at: s.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
-                            cashier_id: s.user_id,
-                            cashier_name: cashierName || "Encargada",
-                            total: Number(s.total || 0),
-                            payment_method: obs.payment_method || "cash",
-                            status: String(s.status||"").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETED",
-                            items: obs.items || [],
-                            created_at: s.created_at || now(),
-                            local_id: obs.local_id || s.id
-                        };
-                    });
-                }
-            } catch(e) {
-                console.warn("Supabase fetch sales error:", e);
-            }
-        }
-
-        const salesMap = new Map();
-        const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
-
-        // 1. ESCANEO EXHAUSTIVO DE TODAS LAS VENTAS GUARDADAS EN CUALQUIER LLAVE LOCALSTORAGE
-        try {
-            if (typeof localStorage !== "undefined") {
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key && (key.startsWith("lf_") || key.includes("sales"))) {
-                        try {
-                            const raw = localStorage.getItem(key);
-                            if (!raw || !raw.startsWith("[")) continue;
-                            const parsed = JSON.parse(raw);
-                            if (Array.isArray(parsed)) {
-                                parsed.forEach(item => {
-                                    if (item && (item.total != null || item.sale_number || item.items)) {
-                                        const sid = String(item.id || item.sale_number || (Date.now() + Math.random()));
-                                        if (!salesMap.has(sid)) {
-                                            salesMap.set(sid, item);
-                                        }
-                                    }
-                                });
-                            }
-                        } catch(e) {}
-                    }
-                }
-            }
-        } catch(e) {}
-
-        // 2. FUSIONAR Y DEDUPLICAR CON LAS VENTAS DE SUPABASE
-        remoteSales.forEach(s => {
-            const sid = String(s.id);
-            let matchedKey = null;
-            for (const [key, existing] of salesMap.entries()) {
-                if (key === sid || 
-                   (s.local_id && (key === String(s.local_id) || String(existing.local_id) === String(s.local_id) || String(existing.id) === String(s.local_id))) || 
-                   (s.sale_number && existing.sale_number === s.sale_number)) {
-                    matchedKey = key;
-                    break;
-                }
-            }
-            if (matchedKey) {
-                salesMap.set(matchedKey, { ...salesMap.get(matchedKey), ...s });
-            } else {
-                salesMap.set(sid, s);
-            }
         });
-
-        // 3. Normalizar estado de cancelaciones
-        for (const [k, s] of salesMap.entries()) {
-            if (cancelledReasons[String(s.id)] || cancelledReasons[String(s.sale_number)]) {
-                s.status = "CANCELLED";
-            }
-        }
-
-        const consolidated = Array.from(salesMap.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-        gw("all_sales", consolidated);
-        _lastSalesFetchTime = Date.now();
-        _cachedConsolidatedSales = consolidated;
-        return consolidated;
     }
 
-    /* ── ACCESO PRIVADO DIRECTIVO (MONITOR EN VIVO & CIERRE DE DÍA) ── */
+/* ── ACCESO PRIVADO DIRECTIVO (MONITOR EN VIVO & CIERRE DE DÍA) ── */
     async function loadPrivateAccess(silent = false) {
         const c = $("#private-access-container");
         if (!c) return;
