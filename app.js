@@ -1370,10 +1370,10 @@
     }
 
     function getPrinterConnectionStatus() {
-        if (directSerialPort && directSerialPort.writable) return { type: "serial", name: "Puerto Serie USB", label: "⚡ Conectado a Ofichido por Puerto Serie/USB" };
+        if (directSerialPort && directSerialPort.writable) return { type: "serial", name: "Puerto Serie USB", label: "⚡ Conectado a Ofichido por Puerto Serie/USB (Salida Inmediata)" };
         if (directUsbDevice && directUsbDevice.opened) return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado a Ofichido por Cable USB Directo" };
         if (directBtChar && directBtServer && directBtServer.connected) return { type: "bt", name: directBtDevice?.name || "Impresora Bluetooth", label: "🔵 Conectado a Ofichido por Bluetooth" };
-        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Windows / Chrome / Driver)" };
+        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Windows / Chrome)" };
     }
 
     // Generador de comandos ESC/POS binarios para Ticket de Venta
@@ -1522,7 +1522,7 @@
         return false;
     }
 
-    // Mecanismo Universal Infalible de Impresión mediante Iframe Oculto (Cero bloqueos de popup)
+    // Mecanismo Universal de Impresión Inmediata para Chrome / Edge / Windows
     function triggerUniversalPrint(htmlContent) {
         try {
             let oldFrame = document.getElementById("pos-print-frame");
@@ -1532,13 +1532,7 @@
 
             const frame = document.createElement("iframe");
             frame.id = "pos-print-frame";
-            frame.style.position = "fixed";
-            frame.style.right = "-9999px";
-            frame.style.bottom = "-9999px";
-            frame.style.width = "0px";
-            frame.style.height = "0px";
-            frame.style.border = "none";
-            frame.style.visibility = "hidden";
+            frame.style.cssText = "position:fixed;left:0;top:0;width:350px;height:400px;opacity:0.01;pointer-events:none;border:none;z-index:-99999;";
             document.body.appendChild(frame);
 
             const doc = frame.contentWindow.document;
@@ -1551,17 +1545,13 @@
                     frame.contentWindow.focus();
                     frame.contentWindow.print();
                 } catch(e) {
-                    console.warn("Iframe direct print call error:", e);
+                    console.warn("Iframe direct print error, trying parent print:", e);
                 }
             };
 
-            frame.onload = () => {
-                setTimeout(executePrint, 250);
-            };
-
-            setTimeout(executePrint, 450);
+            setTimeout(executePrint, 200);
         } catch(err) {
-            console.warn("triggerUniversalPrint error, trying fallback popup:", err);
+            console.warn("triggerUniversalPrint error, fallback popup:", err);
             try {
                 const printWin = window.open("", "_blank", "width=380,height=600");
                 if (printWin) {
@@ -1570,7 +1560,7 @@
                     printWin.document.close();
                     setTimeout(() => {
                         try { printWin.focus(); printWin.print(); } catch(e) {}
-                    }, 400);
+                    }, 300);
                 }
             } catch(e) {}
         }
@@ -1583,14 +1573,14 @@
             return false;
         }
         try {
-            toast("⚡ Selecciona el puerto USB de tu impresora Ofichido en la lista…", "info", 4000);
+            toast("⚡ Selecciona el puerto USB de tu impresora Ofichido en la lista que aparece…", "info", 4000);
             const port = await navigator.serial.requestPort();
             await port.open({ baudRate: baudRate });
             directSerialPort = port;
             const cfg = getPrinterConfig();
             cfg.connectionType = "serial";
             savePrinterConfig(cfg);
-            toast("✓ Conectado exitosamente a la impresora Ofichido por Puerto USB.", "success", 5000);
+            toast("✓ ¡Conectado con éxito! Ahora tus tickets saldrán físicamente de inmediato.", "success", 5000);
             return true;
         } catch(err) {
             console.warn("Serial connect error:", err);
@@ -1688,7 +1678,7 @@
     async function printSaleReceipt(s) {
         if (!s) return;
         
-        // 1. Intentar envío físico directo ESC/POS (cero diálogos, impresión instantánea)
+        // 1. Intentar envío físico directo ESC/POS (cero diálogos, impresión 100% instantánea)
         if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
             const raw = buildEscPosTicket(s);
             const ok = await writeEscPosBytes(raw);
@@ -1728,6 +1718,12 @@
             body { width: 100%; max-width: 100%; margin: 0; padding: 1mm 2mm; }
         }
     </style>
+    <script>
+        window.onload = function() {
+            window.focus();
+            window.print();
+        };
+    </script>
 </head>
 <body>
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
@@ -1879,6 +1875,12 @@
             body { width: 100%; max-width: 100%; margin: 0; padding: 1mm 2mm; }
         }
     </style>
+    <script>
+        window.onload = function() {
+            window.focus();
+            window.print();
+        };
+    </script>
 </head>
 <body>
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
@@ -1943,6 +1945,99 @@
         triggerUniversalPrint(cutHtml);
     }
 
+    async function printDailyAccountingReceipt(rep) {
+        if (!rep) return;
+        const cfg = getPrinterConfig();
+        const pWidth = cfg.paperWidth || "58mm";
+
+        const accHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Reporte Contable - Nevería La Fuente</title>
+    <style>
+        @page { margin: 0; size: auto; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #000;
+            background: #fff;
+            width: ${pWidth};
+            max-width: ${pWidth};
+            margin: 0 auto;
+            padding: 4px 2px;
+            box-sizing: border-box;
+        }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .divider { border-top: 1px dashed #000; margin: 4px 0; }
+        .double-divider { border-top: 2px solid #000; margin: 5px 0; }
+        .row { display: flex; justify-content: space-between; margin: 2px 0; }
+        @media print {
+            body { width: 100%; max-width: 100%; margin: 0; padding: 1mm 2mm; }
+        }
+    </style>
+    <script>
+        window.onload = function() {
+            window.focus();
+            window.print();
+        };
+    </script>
+</head>
+<body>
+    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
+    <div class="center bold" style="font-size:11px;">REPORTE CONSOLIDADO DE CADENA</div>
+    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
+    <div class="divider"></div>
+    <div><strong>FECHA / JORNADA:</strong> ${rep.date}</div>
+    <div><strong>IMPRESO:</strong> ${fdt(now())}</div>
+    <div><strong>TOTAL TICKETS:</strong> ${rep.totalTickets || 0}</div>
+    <div class="divider"></div>
+    <div class="bold" style="font-size:11px;">DESGLOSE POR SUCURSAL:</div>
+    ${(rep.branchBreakdown || []).map(b => `
+        <div class="row" style="margin-top:2px;">
+            <span>${esc(b.name)}:</span>
+            <span class="bold">${money(b.total)}</span>
+        </div>
+        <div class="row" style="font-size:9.5px;color:#555;padding-left:6px;">
+            <span>Efe: ${money(b.cash || 0)} | Tarj: ${money(b.card || 0)}</span>
+            <span>(${b.tickets || 0} vts)</span>
+        </div>
+    `).join("")}
+    <div class="divider"></div>
+    <div class="row bold" style="font-size:13px;">
+        <span>TOTAL CADENA:</span>
+        <span>${money(rep.totalChain || 0)}</span>
+    </div>
+    <div class="row">
+        <span>Efectivo Total:</span>
+        <span>${money(rep.cashTotal || 0)}</span>
+    </div>
+    <div class="row">
+        <span>Tarjeta Total:</span>
+        <span>${money(rep.cardTotal || 0)}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="row" style="font-size:10px;">
+        <span>Turno Matutino:</span>
+        <span>${money(rep.matTotal || 0)}</span>
+    </div>
+    <div class="row" style="font-size:10px;">
+        <span>Turno Vespertino:</span>
+        <span>${money(rep.vesTotal || 0)}</span>
+    </div>
+    <div class="double-divider"></div>
+    <div class="center" style="font-size:9px;margin-top:4px;">
+        Auditoría y Control Interno
+    </div>
+    <div style="height: 18mm;"></div>
+</body>
+</html>`;
+
+        triggerUniversalPrint(accHtml);
+    }
+
     async function printTestReceipt(customCfg = null) {
         const cfg = customCfg || getPrinterConfig();
         const pWidth = cfg.paperWidth || "58mm";
@@ -1953,7 +2048,7 @@
             const raw = buildEscPosTestTicket();
             const ok = await writeEscPosBytes(raw);
             if (ok) {
-                toast("✓ Ticket de prueba impreso físicamente en la Ofichido.", "success", 4000);
+                toast("✓ ¡Ticket de prueba impreso físicamente en tu Ofichido!", "success", 4000);
                 return;
             }
         }
@@ -1986,6 +2081,12 @@
             body { width: 100%; max-width: 100%; margin: 0; padding: 1mm 2mm; }
         }
     </style>
+    <script>
+        window.onload = function() {
+            window.focus();
+            window.print();
+        };
+    </script>
 </head>
 <body>
     <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
@@ -2045,34 +2146,37 @@
                     <span style="font-size:24px">${conn.type === 'serial' ? '⚡' : conn.type === 'usb' ? '🔌' : conn.type === 'bt' ? '📶' : '🖨️'}</span>
                 </div>
 
-                <!-- BOTONES DE VINCULACIÓN FÍSICA DIRECTA -->
-                <div style="margin-bottom:16px">
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:6px">SELECCIONA CÓMO ESTÁ CONECTADA TU IMPRESORA OFICHIDO:</label>
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-                        <button type="button" id="btn-pair-serial"
-                            style="padding:12px 6px;background:linear-gradient(135deg,#fef08a,#fde047);color:#854d0e;border:1.5px solid #eab308;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(0,0,0,0.1)">
-                            <span style="font-size:18px">⚡</span>
-                            <span>1. Cable USB (Serial)</span>
-                        </button>
-                        <button type="button" id="btn-pair-usb"
-                            style="padding:12px 6px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af;border:1.5px solid #93c5fd;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(0,0,0,0.1)">
-                            <span style="font-size:18px">🔌</span>
-                            <span>2. Cable WebUSB</span>
-                        </button>
-                        <button type="button" id="btn-pair-bt"
-                            style="padding:12px 6px;background:linear-gradient(135deg,#dcfce7,#bbf7d0);color:#15803d;border:1.5px solid #86efac;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(0,0,0,0.1)">
-                            <span style="font-size:18px">📶</span>
-                            <span>3. Bluetooth</span>
-                        </button>
+                <!-- PASO 1 RECOMENDADO: CONEXIÓN USB DIRECTA -->
+                <div style="background:#ecfdf5;border:2px solid #10b981;border-radius:14px;padding:14px;margin-bottom:16px">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                        <span style="font-size:20px">⭐</span>
+                        <strong style="color:#065f46;font-size:13px">RECOMENDADO: Conectar por Cable USB (Impresión Instantánea)</strong>
                     </div>
+                    <p style="margin:0 0 10px 0;font-size:11.5px;color:#047857;line-height:1.4">
+                        Conecta tu Ofichido por cable USB a la computadora y presiona este botón. Al vincularla, <strong>los tickets saldrán físicamente de inmediato sin abrir ninguna ventana</strong>.
+                    </p>
+                    <button type="button" id="btn-pair-serial"
+                        style="width:100%;padding:14px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:12px;font-weight:900;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 14px rgba(16,185,129,0.35)">
+                        <span>⚡</span>
+                        <span>1. Conectar Ofichido por Cable USB (1 Clic)</span>
+                    </button>
                 </div>
 
-                <!-- GUÍA IMPORTANTE PARA WINDOWS: EVITAR GUARDAR EN PDF -->
-                <div style="background:#fff;border:1.5px solid #3b82f6;padding:12px 14px;border-radius:12px;margin-bottom:16px;font-size:11.5px;color:#1e3a8a;line-height:1.45">
-                    <strong>💡 Si usas el driver de Windows / Chrome:</strong><br>
-                    1. En la ventana de impresión, en <strong>"Destino"</strong>, selecciona tu impresora (ej. <em>POS-58, Ofichido, XP-58</em>).<br>
-                    2. En <strong>"Márgenes"</strong> selecciona <em>"Ninguno"</em>.<br>
-                    3. Chrome recordará tu impresora Ofichido y saldrá el papel directo en cada cobro.
+                <!-- OTRAS FORMAS DE CONEXIÓN -->
+                <div style="margin-bottom:16px">
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:6px">OTRAS OPCIONES DE VINCULACIÓN:</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <button type="button" id="btn-pair-usb"
+                            style="padding:10px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af;border:1.5px solid #93c5fd;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+                            <span>🔌</span>
+                            <span>WebUSB Directo</span>
+                        </button>
+                        <button type="button" id="btn-pair-bt"
+                            style="padding:10px;background:linear-gradient(135deg,#dcfce7,#bbf7d0);color:#15803d;border:1.5px solid #86efac;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+                            <span>📶</span>
+                            <span>Bluetooth</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px">
