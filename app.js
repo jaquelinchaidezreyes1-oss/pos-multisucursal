@@ -3432,7 +3432,72 @@
 
         const cutsMap = new Map();
 
-        // 1. Escaneo exhaustivo de todas las llaves de cortes en localStorage
+        // 1. Cargar explícitamente desde llaves locales y globales directas
+        const addCutToMap = (ct, fallbackBranchName) => {
+            if (!ct || (!ct.id && !ct.created_at)) return;
+            let bName = ct.branch_name || fallbackBranchName || "";
+            if (!bName && ct.performed_by_name) {
+                const pLow = String(ct.performed_by_name).toLowerCase();
+                for (const [em, staffInfo] of Object.entries(STAFF)) {
+                    if (pLow.includes(em.toLowerCase()) || (pLow.match(/encargado\d+/) && em.includes(pLow.match(/encargado\d+/)[0]))) {
+                        bName = staffInfo.b;
+                        break;
+                    }
+                }
+            }
+            if (!bName) bName = S.branchName;
+
+            const cid = String(ct.id || (ct.created_at + "_" + bName));
+            if (!cutsMap.has(cid)) {
+                const opening = Number(ct.opening_amount || 0);
+                const counted = Number(ct.counted_cash || 0);
+                const total = Number(ct.total_sales || 0);
+                const cash = Number(ct.cash_sales || 0);
+                const card = Number(ct.card_sales || 0);
+                const expected = Number(ct.expected_cash != null ? ct.expected_cash : (opening + cash));
+                const diff = Number(ct.difference != null ? ct.difference : (counted - expected));
+                const net = Number(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (counted - opening));
+
+                cutsMap.set(cid, {
+                    ...ct,
+                    id: ct.id || cid,
+                    branch_id: ct.branch_id || S.branchId,
+                    branch_name: bName,
+                    shift_name: ct.shift_name || S.shift,
+                    performed_by_name: ct.performed_by_name || ct.cashier_name || "Encargada",
+                    cashier_name: ct.cashier_name || ct.performed_by_name || "Encargada",
+                    opening_amount: opening,
+                    cash_sales: cash,
+                    card_sales: card,
+                    total_sales: total,
+                    expected_cash: expected,
+                    counted_cash: counted,
+                    difference: diff,
+                    net_sales_without_fund: net,
+                    created_at: ct.created_at || now()
+                });
+            }
+        };
+
+        // Cortes locales de la sucursal actual
+        const localBranchCuts = lr("cuts", []);
+        if (Array.isArray(localBranchCuts)) {
+            localBranchCuts.forEach(ct => addCutToMap(ct, S.branchName));
+        }
+
+        // Cortes globales
+        const globalCuts = gr("all_cuts", []);
+        if (Array.isArray(globalCuts)) {
+            globalCuts.forEach(ct => addCutToMap(ct, ""));
+        }
+
+        // Último corte impreso
+        const lastPrintedCut = lr("last_printed_cut", null) || gr("last_printed_cut", null);
+        if (lastPrintedCut && typeof lastPrintedCut === "object") {
+            addCutToMap(lastPrintedCut, S.branchName);
+        }
+
+        // 2. Escaneo exhaustivo de todas las demás llaves de cortes en localStorage
         try {
             if (typeof localStorage !== "undefined") {
                 for (let i = 0; i < localStorage.length; i++) {
@@ -3440,49 +3505,17 @@
                     if (key && (key.startsWith("lf_") || key.includes("cuts") || key.includes("cut"))) {
                         try {
                             const raw = localStorage.getItem(key);
-                            if (!raw || !raw.startsWith("[")) continue;
-                            const parsed = JSON.parse(raw);
-                            if (Array.isArray(parsed)) {
-                                parsed.forEach(ct => {
-                                    if (ct && (ct.id || ct.created_at || ct.counted_cash != null || ct.total_sales != null || ct.opening_amount != null)) {
-                                        // Inferir sucursal desde llave si falta
-                                        let bName = ct.branch_name || "";
-                                        const keyLow = key.toLowerCase();
-                                        if (!bName) {
-                                            if (keyLow.includes("tagarete_2") || keyLow.includes("tagarete 2") || keyLow.includes("branch-5")) bName = "Tagarete 2";
-                                            else if (keyLow.includes("tagarete_1") || keyLow.includes("tagarete 1") || keyLow.includes("branch-4")) bName = "Tagarete 1";
-                                            else if (keyLow.includes("rescate") || keyLow.includes("branch-2")) bName = "Rescate";
-                                            else if (keyLow.includes("mollotes") || keyLow.includes("branch-3")) bName = "Mollotes";
-                                            else if (keyLow.includes("calzada") || keyLow.includes("branch-1")) bName = "La Fuente Calzada";
-                                            else if (keyLow.includes("cnop") || keyLow.includes("branch-6")) bName = "CNOP";
-                                        }
-                                        if (!bName && ct.performed_by_name) {
-                                            const pLow = String(ct.performed_by_name).toLowerCase();
-                                            for (const [em, staffInfo] of Object.entries(STAFF)) {
-                                                if (pLow.includes(em.toLowerCase()) || (pLow.match(/encargado\d+/) && em.includes(pLow.match(/encargado\d+/)[0]))) {
-                                                    bName = staffInfo.b;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        if (!bName) bName = S.branchName;
-
-                                        const cid = String(ct.id || (ct.created_at + "_" + bName));
-                                        if (!cutsMap.has(cid)) {
-                                            cutsMap.set(cid, {
-                                                ...ct,
-                                                id: ct.id || cid,
-                                                branch_name: bName,
-                                                opening_amount: Number(ct.opening_amount || 0),
-                                                total_sales: Number(ct.total_sales || 0),
-                                                counted_cash: Number(ct.counted_cash || 0),
-                                                expected_cash: Number(ct.expected_cash || 0),
-                                                difference: Number(ct.difference || 0),
-                                                created_at: ct.created_at || now()
-                                            });
-                                        }
-                                    }
-                                });
+                            if (!raw) continue;
+                            if (raw.startsWith("[")) {
+                                const parsed = JSON.parse(raw);
+                                if (Array.isArray(parsed)) {
+                                    parsed.forEach(ct => addCutToMap(ct, ""));
+                                }
+                            } else if (raw.startsWith("{")) {
+                                const parsed = JSON.parse(raw);
+                                if (parsed && (parsed.counted_cash != null || parsed.total_sales != null || parsed.opening_amount != null)) {
+                                    addCutToMap(parsed, "");
+                                }
                             }
                         } catch(e) {}
                     }
@@ -3490,7 +3523,7 @@
             }
         } catch(e) {}
 
-        // 2. Fusionar y enriquecer con los cortes de Supabase preservando la sucursal de origen
+        // 3. Fusionar y enriquecer con los cortes de Supabase
         remoteCuts.forEach(ct => {
             let obs = {};
             try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
@@ -3527,11 +3560,12 @@
                 branch_name: bName,
                 shift_name: obs.shift_name || "Turno",
                 performed_by_name: obs.performed_by_name || perf || "Encargada",
+                cashier_name: obs.cashier_name || obs.performed_by_name || perf || "Encargada",
                 opening_amount: opening,
                 cash_sales: cash,
                 card_sales: card,
                 total_sales: total,
-                expected_cash: Number(ct.expected_cash != null ? ct.expected_cash : (obs.expected_cash || 0)),
+                expected_cash: Number(ct.expected_cash != null ? ct.expected_cash : (obs.expected_cash || (opening + cash))),
                 counted_cash: counted,
                 difference: diff,
                 net_sales_without_fund: net,
@@ -3583,7 +3617,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
                 <strong style="font-size:17px;color:#ffffff;font-weight:900">Cortes de Caja Oficiales — ${esc(S.branchName)} (${esc(S.shift)})</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, fondo inicial validado y balance de turnos</div>
+                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, fondo inicial validado y balance de turnos en tiempo real</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
@@ -3598,27 +3632,27 @@
         <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
                 <h3 style="color:var(--wine-900);margin:0;font-weight:900">✂️ Realizar Corte de Turno Actual (${esc(S.shift)})</h3>
-                <span style="font-size:11px;background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:12px;font-weight:800">
+                <span style="font-size:11px;background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:12px;font-weight:800;border:1px solid #86efac">
                     🟢 Turno Activo: ${esc(S.shift)} — Fondo Inicial Validado: ${money(initialFund)}
                 </span>
             </div>
 
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:16px">
-                <div style="background:#fff;padding:12px 16px;border-radius:12px;border:1.5px solid var(--gold-400)">
-                    <small style="font-size:10.5px;font-weight:900;color:var(--text-muted);display:block">FONDO INICIAL EN CAJA</small>
-                    <strong style="font-size:20px;color:var(--wine-900)">${money(initialFund)}</strong>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+                <div style="background:#fff;padding:12px 14px;border-radius:12px;border:1.5px solid var(--gold-400)">
+                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);display:block">FONDO INICIAL EN CAJA</small>
+                    <strong style="font-size:18px;color:var(--wine-900)">${money(initialFund)}</strong>
                 </div>
-                <div style="background:#f0fdf4;padding:12px 16px;border-radius:12px;border:1.5px solid #86efac">
-                    <small style="font-size:10.5px;font-weight:900;color:#166534;display:block">💵 COBRADO EFECTIVO</small>
-                    <strong style="font-size:20px;color:#15803d">${money(currentCashSales)}</strong>
+                <div style="background:#f0fdf4;padding:12px 14px;border-radius:12px;border:1.5px solid #86efac">
+                    <small style="font-size:10px;font-weight:900;color:#166534;display:block">💵 COBRADO EFECTIVO</small>
+                    <strong style="font-size:18px;color:#15803d">${money(currentCashSales)}</strong>
                 </div>
-                <div style="background:#eff6ff;padding:12px 16px;border-radius:12px;border:1.5px solid #93c5fd">
-                    <small style="font-size:10.5px;font-weight:900;color:#1e40af;display:block">💳 COBRADO TARJETA</small>
-                    <strong style="font-size:20px;color:#1d4ed8">${money(currentCardSales)}</strong>
+                <div style="background:#eff6ff;padding:12px 14px;border-radius:12px;border:1.5px solid #93c5fd">
+                    <small style="font-size:10px;font-weight:900;color:#1e40af;display:block">💳 COBRADO TARJETA</small>
+                    <strong style="font-size:18px;color:#1d4ed8">${money(currentCardSales)}</strong>
                 </div>
-                <div style="background:#fdf4ff;padding:12px 16px;border-radius:12px;border:1.5px solid #f0abfc">
-                    <small style="font-size:10.5px;font-weight:900;color:#86198f;display:block">EFECTIVO ESPERADO EN CAJA</small>
-                    <strong style="font-size:20px;color:#86198f">${money(expectedCashInDrawer)}</strong>
+                <div style="background:#fdf4ff;padding:12px 14px;border-radius:12px;border:1.5px solid #f0abfc">
+                    <small style="font-size:10px;font-weight:900;color:#86198f;display:block">EFECTIVO ESPERADO</small>
+                    <strong style="font-size:18px;color:#86198f">${money(expectedCashInDrawer)}</strong>
                 </div>
             </div>
 
@@ -3631,54 +3665,85 @@
                         style="width:100%;padding:11px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:14px;font-weight:900;box-sizing:border-box">
                 </div>
                 <button type="button" id="btn-save-cut"
-                    style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13px;cursor:pointer">
+                    style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13px;cursor:pointer;box-shadow:0 3px 10px rgba(112,23,33,0.3)">
                     ✓ Confirmar Corte & Imprimir Ticket
                 </button>
             </div>
         </div>
 
-        <!-- HISTORIAL DE CORTES ESTRUCTURADOS -->
+        <!-- HISTORIAL DE CORTES PLASMADOS DIGITALMENTE -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
             <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja (${cutsList.length} registrados)</h3>
         </div>
         ${cutsList.length ? `
-        <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;flex-direction:column;gap:14px">
             ${cutsList.map(ct => {
                 const diff = Number(ct.difference || 0);
                 const isOk = diff >= 0;
-                return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                    <div style="flex:1;min-width:260px">
-                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
-                            <strong style="font-size:15px;color:var(--wine-900)">✂️ Corte — ${esc(ct.branch_name)} (${esc(ct.shift_name)})</strong>
-                            <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;${isOk?'background:#dcfce7;color:#15803d':'background:#fee2e2;color:#991b1b'}">
-                                ${isOk ? '✓ Cuadrado' : '⚠ Diferencia: ' + money(diff)}
-                            </span>
+                const netAmount = Number(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (ct.counted_cash - ct.opening_amount));
+                const cashierName = ct.performed_by_name || ct.cashier_name || "Encargada";
+                
+                return `<article class="sale-card" style="background:#ffffff;border:1.5px solid rgba(188,132,10,.35);border-radius:16px;padding:20px;box-shadow:0 4px 12px rgba(0,0,0,0.06)">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;border-bottom:1px solid #f1e5d1;padding-bottom:12px;margin-bottom:12px">
+                        <div>
+                            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                                <strong style="font-size:16px;color:var(--wine-900)">✂️ Corte — ${esc(ct.branch_name)} (${esc(ct.shift_name)})</strong>
+                                <span style="font-size:11px;padding:3px 10px;border-radius:12px;font-weight:900;${isOk?'background:#dcfce7;color:#15803d;border:1px solid #86efac':'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5'}">
+                                    ${isOk ? '✓ Cuadrado' : '⚠ Diferencia: ' + money(diff)}
+                                </span>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);font-weight:600;margin-top:4px">
+                                📅 Fecha: <strong>${fdt(ct.created_at)}</strong> • 👤 Encargada: <strong>${esc(cashierName)}</strong>
+                            </div>
                         </div>
-                        <div style="font-size:11.5px;color:var(--text-muted);font-weight:600">
-                            ${fdt(ct.created_at)} • Por: <strong>${esc(ct.performed_by_name)}</strong>
-                        </div>
-                        <div style="font-size:11px;color:#4b5563;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap">
-                            <span>Fondo: <strong>${money(ct.opening_amount)}</strong></span>
-                            <span>Efectivo: <strong style="color:#15803d">${money(ct.cash_sales)}</strong></span>
-                            <span>Tarjeta: <strong style="color:#1d4ed8">${money(ct.card_sales)}</strong></span>
-                            <span>Total Vendido: <strong style="color:var(--wine-700)">${money(ct.total_sales)}</strong></span>
+
+                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                            <button type="button" class="btn-reprint-cut" data-id="${esc(ct.id)}"
+                                style="padding:8px 16px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
+                                <span>🖨️</span><span>Reimprimir Ticket</span>
+                            </button>
+                            ${S.isSU ? `
+                            <button type="button" class="btn-delete-cut" data-id="${esc(ct.id)}" data-shift="${esc(ct.shift_name)}" data-branch="${esc(ct.branch_name)}"
+                                style="padding:8px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:10px;font-size:11px;font-weight:900;cursor:pointer;display:flex;align-items:center;gap:4px">
+                                🗑️ Borrar
+                            </button>` : ''}
                         </div>
                     </div>
 
-                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                        <div style="text-align:right">
-                            <small style="font-size:10px;color:var(--text-muted);display:block">CORTE NETO EFECTIVO</small>
-                            <strong style="font-size:20px;color:var(--wine-700);font-weight:900">${money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (ct.counted_cash - ct.opening_amount))}</strong>
+                    <!-- DESGLOSE DIGITAL PLASMADO -->
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;background:#faf7f2;padding:12px;border-radius:12px;border:1px solid #f1e5d1">
+                        <div style="background:#fff;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb">
+                            <small style="font-size:10px;color:var(--text-muted);font-weight:800;display:block">FONDO INICIAL</small>
+                            <strong style="font-size:14px;color:var(--wine-900)">${money(ct.opening_amount)}</strong>
                         </div>
-                        <button type="button" class="btn-reprint-cut" data-id="${esc(ct.id)}"
-                            style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
-                            🖨️ Imprimir
-                        </button>
-                        ${S.isSU ? `
-                        <button type="button" class="btn-delete-cut" data-id="${esc(ct.id)}" data-shift="${esc(ct.shift_name)}" data-branch="${esc(ct.branch_name)}"
-                            style="padding:8px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-size:11px;font-weight:900;cursor:pointer;display:flex;align-items:center;gap:4px">
-                            🗑️ Borrar Corte
-                        </button>` : ''}
+                        <div style="background:#fff;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb">
+                            <small style="font-size:10px;color:#166534;font-weight:800;display:block">💵 EFECTIVO</small>
+                            <strong style="font-size:14px;color:#15803d">${money(ct.cash_sales)}</strong>
+                        </div>
+                        <div style="background:#fff;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb">
+                            <small style="font-size:10px;color:#1e40af;font-weight:800;display:block">💳 TARJETA</small>
+                            <strong style="font-size:14px;color:#1d4ed8">${money(ct.card_sales)}</strong>
+                        </div>
+                        <div style="background:#fff;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb">
+                            <small style="font-size:10px;color:var(--wine-800);font-weight:800;display:block">TOTAL VENDIDO</small>
+                            <strong style="font-size:14px;color:var(--wine-900)">${money(ct.total_sales)}</strong>
+                        </div>
+                        <div style="background:#fff;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb">
+                            <small style="font-size:10px;color:#86198f;font-weight:800;display:block">ESPERADO EN CAJA</small>
+                            <strong style="font-size:14px;color:#86198f">${money(ct.expected_cash || (ct.opening_amount + ct.cash_sales))}</strong>
+                        </div>
+                        <div style="background:#fff;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb">
+                            <small style="font-size:10px;color:#0f172a;font-weight:800;display:block">EFECTIVO CONTADO</small>
+                            <strong style="font-size:14px;color:#0f172a">${money(ct.counted_cash)}</strong>
+                        </div>
+                        <div style="background:#fff;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb">
+                            <small style="font-size:10px;color:${isOk?'#166534':'#991b1b'};font-weight:800;display:block">DIFERENCIA</small>
+                            <strong style="font-size:14px;color:${isOk?'#15803d':'#dc2626'}">${diff>=0?'+':''}${money(diff)}</strong>
+                        </div>
+                        <div style="background:linear-gradient(135deg,#701721,#3b0a10);padding:8px 12px;border-radius:8px;color:#fff;display:flex;flex-direction:column;justify-content:center">
+                            <small style="font-size:10px;color:var(--gold-300);font-weight:800;display:block">CORTE NETO EFECTIVO</small>
+                            <strong style="font-size:15px;color:#fff;font-weight:900">${money(netAmount)}</strong>
+                        </div>
                     </div>
                 </article>`;
             }).join("")}
