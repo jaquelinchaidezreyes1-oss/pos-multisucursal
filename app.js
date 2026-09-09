@@ -1560,6 +1560,36 @@
         }
     }
 
+    function printShiftOpeningReceipt(shiftObj) {
+        if (!shiftObj) return;
+        const shiftHtml = `
+            <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
+            <div class="center" style="font-size:11px; font-style:italic;">-- DESDE 1962 --</div>
+            <div class="center" style="font-size:10px; margin-bottom:4px;">APERTURA DE TURNO Y FONDO DE CAJA</div>
+            <div class="divider"></div>
+            <div><strong>SUCURSAL:</strong> ${esc(shiftObj.branch_name || S.branchName)}</div>
+            <div><strong>TURNO:</strong> ${esc(shiftObj.shift_name || S.shift)}</div>
+            <div><strong>FECHA / HORA:</strong> ${fdt(shiftObj.opened_at || now())}</div>
+            <div><strong>ENCARGADA:</strong> ${esc(shiftObj.cashier_name || "Encargada")}</div>
+            <div class="divider"></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin: 6px 0;">
+                <span>FONDO INICIAL:</span>
+                <span>${money(shiftObj.opening_amount)}</span>
+            </div>
+            <div class="divider"></div>
+            <div class="center" style="font-size:10px; margin-top:4px;">
+                Fondo de caja validado y asignado para el turno.<br>
+                Este importe se reflejará en el corte de caja.
+            </div>
+            <div style="height: 18mm;"></div>
+            <div class="center" style="border-top: 1px dashed #000; padding-top: 4px; font-size:10px; margin: 0 10mm;">
+                FIRMA DE CONFORMIDAD
+            </div>
+            <div style="height: 15mm;"></div>
+        `;
+        triggerUniversalPrint(shiftHtml);
+    }
+
     async function printSaleReceipt(sale) {
         if (!sale) return;
         localStorage.setItem("lf_last_printed_sale", JSON.stringify(sale));
@@ -3651,7 +3681,13 @@
         const c = $("#shift-container");
         if (!c) return;
 
-        const shiftsHistory = lr("shifts", []);
+        const consolidatedShifts = await getConsolidatedShiftsForChain();
+        const activeBranchFilter = S.isSU ? (S.shiftFilterBranchId || "all") : S.branchId;
+
+        const shiftsHistory = (S.isSU && activeBranchFilter === "all")
+            ? consolidatedShifts
+            : consolidatedShifts.filter(sh => matchesBranch(sh, { id: activeBranchFilter, name: S.branches.find(b=>String(b.id)===String(activeBranchFilter))?.name || S.branchName }));
+
         const uname = S.profile?.full_name || S.user?.email || "Encargada";
         const currentSavedShift = lr("current_shift", null);
         const currentShiftAmount = currentSavedShift?.opening_amount != null ? currentSavedShift.opening_amount : (S.currentShift?.opening_amount != null ? S.currentShift.opening_amount : 500);
@@ -3662,8 +3698,24 @@
                 <strong style="font-size:17px;color:#ffffff;font-weight:900">Cambio de Turno & Apertura — ${esc(S.branchName)}</strong>
                 <div style="font-size:12px;color:#fcebd2;margin-top:2px">Apertura de turno, asignación de fondo inicial de caja y traspaso de turno</div>
             </div>
-            <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+            <div style="display:flex;align-items:center;gap:8px">
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)">
+                    <span>🖨️</span><span>Impresora</span>
+                </button>
+            </div>
         </div>
+
+        ${S.isSU ? `
+        <div style="background:#fffef9;border:1.5px solid var(--gold-400);border-radius:14px;padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+            <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:20px">🏢</span>
+                <strong style="font-size:13px;color:var(--wine-950)">Filtrar Aperturas por Sucursal:</strong>
+            </div>
+            <select id="shift-branch-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12px;font-weight:800;background:#fff;outline:none">
+                <option value="all"${activeBranchFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${consolidatedShifts.length} aperturas)</option>
+                ${S.branches.map(b => `<option value="${esc(b.id)}"${String(activeBranchFilter)===String(b.id)?' selected':''}>${esc(b.name)}</option>`).join("")}
+            </select>
+        </div>` : ''}
 
         <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
             <h3 style="color:var(--wine-900);margin:0 0 14px;font-weight:900">🌅 Apertura de Turno & Fondo Inicial</h3>
@@ -3685,10 +3737,12 @@
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:900;box-sizing:border-box">
                 </div>
             </div>
-            <button type="button" id="btn-open-shift"
-                style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer">
-                ✓ Iniciar Turno con este Fondo
-            </button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <button type="button" id="btn-open-shift"
+                    style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
+                    <span>✓</span><span>Iniciar Turno con este Fondo</span>
+                </button>
+            </div>
         </div>
 
         <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Historial de Aperturas de Turno</h3>
@@ -3698,7 +3752,7 @@
             <article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
                 <div>
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                        <strong style="font-size:15px;color:var(--wine-900)">${sh.shift_name.toLowerCase().includes('tarde') || sh.shift_name.toLowerCase().includes('vesp') ? '🌇 Turno Vespertino' : '🌅 Turno Matutino'} — 📍 ${esc(sh.branch_name || S.branchName)}</strong>
+                        <strong style="font-size:15px;color:var(--wine-900)">${(sh.shift_name||"").toLowerCase().includes('tarde') || (sh.shift_name||"").toLowerCase().includes('vesp') ? '🌇 Turno Vespertino' : '🌅 Turno Matutino'} — 📍 ${esc(sh.branch_name || S.branchName)}</strong>
                         <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;background:#dcfce7;color:#15803d">
                             ✓ Apertura
                         </span>
@@ -3707,16 +3761,37 @@
                         Fecha: <strong>${fdt(sh.opened_at || sh.created_at)}</strong> • Encargada: <strong>${esc(sh.cashier_name)}</strong>
                     </div>
                 </div>
-                <div style="text-align:right">
-                    <small style="font-size:10px;color:var(--text-muted);display:block">FONDO INICIAL EN CAJA</small>
-                    <strong style="font-size:20px;color:var(--wine-900);font-weight:900">${money(sh.opening_amount)}</strong>
+                <div style="display:flex;align-items:center;gap:14px">
+                    <div style="text-align:right">
+                        <small style="font-size:10px;color:var(--text-muted);display:block">FONDO INICIAL EN CAJA</small>
+                        <strong style="font-size:20px;color:var(--wine-900);font-weight:900">${money(sh.opening_amount)}</strong>
+                    </div>
+                    <button type="button" class="btn-reprint-shift" data-shift='${JSON.stringify(sh).replace(/'/g, "&apos;")}'
+                        style="padding:8px 12px;background:#f1f5f9;color:var(--wine-900);border:1.5px solid #cbd5e1;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
+                        🖨️ Imprimir
+                    </button>
                 </div>
             </article>`).join("")}
         </div>` : `
         <div class="empty-state" style="padding:34px;text-align:center">
-            <p style="color:var(--text-muted)">No hay aperturas de turno registradas aún.</p>
+            <p style="color:var(--text-muted)">No hay aperturas de turno registradas con los filtros seleccionados.</p>
         </div>`}
         `;
+
+        document.getElementById("shift-branch-filter")?.addEventListener("change", async e => {
+            S.shiftFilterBranchId = e.target.value;
+            await loadShiftView();
+        });
+
+        c.querySelectorAll(".btn-reprint-shift").forEach(btn => btn.addEventListener("click", () => {
+            try {
+                const sh = JSON.parse(btn.dataset.shift);
+                toast("🖨️ Imprimiendo comprobante de apertura…", "info", 2500);
+                printShiftOpeningReceipt(sh);
+            } catch(e) {
+                console.warn(e);
+            }
+        }));
 
         document.getElementById("btn-open-shift")?.addEventListener("click", async () => {
             const shiftName = document.getElementById("open-shift-name")?.value || "Mañana";
@@ -3762,6 +3837,12 @@
 
             updateUI();
             toast(`✓ Turno ${shiftName} iniciado exitosamente con fondo de ${money(amount)}.`, "success", 4000);
+            
+            // Auto imprimir comprobante de apertura
+            try {
+                printShiftOpeningReceipt(shiftObj);
+            } catch(e) {}
+
             await loadShiftView();
         });
     }
