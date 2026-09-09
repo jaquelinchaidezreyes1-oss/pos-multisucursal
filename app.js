@@ -1890,8 +1890,9 @@
 
     async function printCutReceipt(cutData) {
         if (!cutData) return;
+        localStorage.setItem("lf_last_printed_cut", JSON.stringify(cutData));
 
-        // Si Bluetooth o USB está conectado, enviar directo sin ventanas
+        // 1. Si Bluetooth o USB está conectado (Android / Mini impresora), enviar directo sin ventanas
         if ((directBtChar && directBtServer && directBtServer.connected) || (directUsbDevice && directUsbDevice.opened) || (directSerialPort && directSerialPort.writable)) {
             const raw = buildEscPosCutTicket(cutData);
             const ok = await writeEscPosBytes(raw);
@@ -1901,15 +1902,17 @@
             }
         }
 
+        // 2. Impresión nativa del sistema (Windows / Ofichido)
         const isM = (cutData.shift_name || "").toLowerCase().includes("mañana") || (cutData.shift_name || "").toLowerCase().includes("matutino");
+        const cashier = cutData.performed_by_name || cutData.cashier_name || "Encargada";
         const cutHtml = `
             <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
             <div class="center" style="font-size:11px; font-style:italic;">-- CORTE DE CAJA OFICIAL --</div>
             <div class="divider"></div>
             <div><strong>SUCURSAL:</strong> ${esc(cutData.branch_name || S.branchName)}</div>
             <div><strong>TURNO:</strong> ${isM ? "🌅 MATUTINO (MAÑANA)" : "🌇 VESPERTINO (TARDE)"}</div>
-            <div><strong>FECHA / HORA:</strong> ${fdt(cutData.created_at)}</div>
-            <div><strong>ENCARGADA:</strong> ${esc(cutData.cashier_name || "Encargada")}</div>
+            <div><strong>FECHA / HORA:</strong> ${fdt(cutData.created_at || now())}</div>
+            <div><strong>ENCARGADA:</strong> ${esc(cashier)}</div>
             <div class="divider"></div>
             <div style="display:flex; justify-content:space-between; font-size:11.5px; margin: 3px 0;">
                 <span>FONDO INICIAL:</span>
@@ -3699,9 +3702,14 @@
         });
 
         document.getElementById("btn-save-cut")?.addEventListener("click", async () => {
-            const countedVal = Number(document.getElementById("cut-counted-cash")?.value);
-            if (countedVal === undefined || isNaN(countedVal) || countedVal < 0) {
-                return toast("Ingresa el monto de efectivo contado en caja.", "warn");
+            const inputEl = document.getElementById("cut-counted-cash");
+            if (!inputEl || inputEl.value.trim() === "") {
+                return toast("Por favor ingresa el monto de efectivo contado en caja.", "warn", 4000);
+            }
+
+            const countedVal = Number(inputEl.value);
+            if (isNaN(countedVal) || countedVal < 0) {
+                return toast("Ingresa un monto de efectivo válido mayor o igual a $0.00.", "warn", 4000);
             }
 
             const diff = countedVal - expectedCashInDrawer;
@@ -3710,12 +3718,14 @@
             const ok = await toastConfirm(`Confirmar Corte de Turno (${S.shift}):\n• Fondo Inicial: ${money(initialFund)}\n• Cobrado Efectivo: ${money(currentCashSales)}\n• Cobrado Tarjeta: ${money(currentCardSales)}\n• Total Vendido: ${money(currentTotalSold)}\n• Efectivo Contado: ${money(countedVal)}\n• Diferencia: ${diff>=0?'+':''}${money(diff)}\n• Corte Neto Efectivo: ${money(netWithoutFund)}`);
             if (!ok) return;
 
+            const uname = S.profile?.full_name || S.user?.email || "Encargada";
             const cutRecord = {
                 id: "cut_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
                 branch_id: S.branchId,
                 branch_name: S.branchName,
                 shift_name: S.shift,
-                performed_by_name: S.profile?.full_name || S.user?.email || "Encargada",
+                cashier_name: uname,
+                performed_by_name: uname,
                 opening_amount: initialFund,
                 cash_sales: currentCashSales,
                 card_sales: currentCardSales,
@@ -3727,6 +3737,7 @@
                 created_at: now()
             };
 
+            // 1. Guardado local y global inmediato
             const lCuts = lr("cuts", []);
             lCuts.unshift(cutRecord);
             lw("cuts", lCuts);
@@ -3735,6 +3746,10 @@
             gCuts.unshift(cutRecord);
             gw("all_cuts", gCuts);
 
+            lw("last_printed_cut", cutRecord);
+            gw("last_printed_cut", cutRecord);
+
+            // 2. Difusión en tiempo real
             if (realtimeChannel) {
                 try {
                     realtimeChannel.send({
@@ -3745,43 +3760,55 @@
                 } catch(e) {}
             }
 
+            // 3. Sincronización asíncrona con Supabase en segundo plano
             if (db) {
-                try {
-                    const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
-                    const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
-                    const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
+                (async () => {
+                    try {
+                        const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
+                        const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
+                        const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
 
-                    const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
-                    const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
-                    const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
+                        const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
+                        const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
+                        const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
 
-                    await db.from("cash_cuts").insert({
-                        company_id: cId,
-                        branch_id: bId,
-                        cash_register_id: bId,
-                        performed_by: uId,
-                        total_sales: currentTotalSold,
-                        expected_cash: expectedCashInDrawer,
-                        counted_cash: countedVal,
-                        difference: diff,
-                        observations: JSON.stringify({
-                            branch_name: S.branchName,
-                            shift_name: S.shift,
-                            performed_by_name: S.profile?.full_name || S.user?.email || "Encargada",
-                            opening_amount: initialFund,
-                            cash_sales: currentCashSales,
-                            card_sales: currentCardSales,
-                            net_sales_without_fund: netWithoutFund
-                        })
-                    });
-                } catch(e) {}
+                        await db.from("cash_cuts").insert({
+                            company_id: cId,
+                            branch_id: bId,
+                            cash_register_id: bId,
+                            performed_by: uId,
+                            total_sales: currentTotalSold,
+                            expected_cash: expectedCashInDrawer,
+                            counted_cash: countedVal,
+                            difference: diff,
+                            observations: JSON.stringify({
+                                branch_name: S.branchName,
+                                shift_name: S.shift,
+                                cashier_name: uname,
+                                performed_by_name: uname,
+                                opening_amount: initialFund,
+                                cash_sales: currentCashSales,
+                                card_sales: currentCardSales,
+                                net_sales_without_fund: netWithoutFund
+                            })
+                        });
+                    } catch(e) {
+                        console.warn("Supabase cut sync error:", e);
+                    }
+                })();
             }
 
-            // Impresión física inmediata
-            try { printCutReceipt(cutRecord); } catch(e) {}
+            toast("✓ Corte guardado exitosamente. Imprimiendo ticket…", "success", 4000);
 
-            toast("✓ Corte guardado e impreso correctamente.", "success", 4000);
-            await loadCuts();
+            // 4. Impresión física inmediata y automática
+            try {
+                await printCutReceipt(cutRecord);
+            } catch(e) {
+                console.warn("Error imprimiendo corte:", e);
+            }
+
+            // 5. Actualizar historial de cortes
+            await loadCuts(true);
         });
 
         c.querySelectorAll(".btn-reprint-cut").forEach(btn => btn.addEventListener("click", () => {
