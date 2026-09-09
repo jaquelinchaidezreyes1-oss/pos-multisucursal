@@ -1364,11 +1364,11 @@
             if (raw) return JSON.parse(raw);
         } catch(e) {}
         return {
-            model: "Mini Impresora Gia / Cays / Ofichido (58mm)",
+            model: "Mini Impresora Gia / Caysn (58mm Bluetooth)",
             paperWidth: "58mm",
             baudRate: 9600,
             autoPrint: true,
-            connectionType: "browser"
+            connectionType: "bt"
         };
     }
 
@@ -1380,25 +1380,31 @@
 
     function getPrinterConnectionStatus() {
         const cfg = getPrinterConfig();
-        if (directSerialPort && directSerialPort.writable) return { type: "serial", name: "Puerto Serie USB", label: "⚡ Conectado por Puerto Serie / COM (Baudio: " + (cfg.baudRate || 9600) + ")" };
-        if (directUsbDevice && directUsbDevice.opened) return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado por Cable USB / OTG Directo (" + (directUsbDevice.productName || cfg.model) + ")" };
-        if (directBtChar && directBtServer && directBtServer.connected) return { type: "bt", name: directBtDevice?.name || "Mini Impresora Bluetooth", label: "🔵 Conectado por Bluetooth (" + (directBtDevice?.name || cfg.model) + ")" };
-        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Android Spooler / Windows / Ofichido / Gia / Cays)" };
+        if (directBtChar && directBtServer && directBtServer.connected) {
+            return { type: "bt", name: directBtDevice?.name || "Mini Impresora Bluetooth", label: "🔵 Conectado por Bluetooth a " + (directBtDevice?.name || "Mini Impresora Gia / Cays") + " (Impresión Directa sin Ventanas)" };
+        }
+        if (directUsbDevice && directUsbDevice.opened) {
+            return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado por Cable USB / OTG (" + (directUsbDevice.productName || cfg.model) + " - Directo)" };
+        }
+        if (directSerialPort && directSerialPort.writable) {
+            return { type: "serial", name: "Puerto Serie USB", label: "⚡ Conectado por Puerto Serie / COM (Baudio: " + (cfg.baudRate || 9600) + ")" };
+        }
+        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Windows / Ofichido)" };
     }
 
-    // Generador de comandos ESC/POS binarios para Ticket de Venta con retorno de carro (CR+LF) y vaciado de búfer
+    // Generador de comandos ESC/POS binarios para Ticket de Venta
     function buildEscPosTicket(s) {
         const encoder = new TextEncoder();
         const parts = [];
         const isCard = s.payment_method === "card";
         const width = 32;
 
-        const initCmd = new Uint8Array([0x1B, 0x40, 0x1B, 0x32]); // ESC @ (Init) + ESC 2 (Default Line Spacing)
-        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]); // ESC a 1
-        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]); // ESC a 0
-        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]); // ESC E 1
-        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]); // ESC E 0
-        const feedAndCut = new Uint8Array([0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x1B, 0x64, 0x05, 0x1D, 0x56, 0x00]);
+        const initCmd = new Uint8Array([0x1B, 0x40, 0x1B, 0x32]); // ESC @ + ESC 2
+        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]);
+        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]);
+        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]);
+        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]);
+        const feedAndCut = new Uint8Array([0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x1B, 0x64, 0x04, 0x1D, 0x56, 0x00]);
 
         parts.push(initCmd);
         parts.push(centerCmd, boldOn, encoder.encode(cleanEscPosText("NEVERIA LA FUENTE\r\n")), boldOff);
@@ -1442,28 +1448,41 @@
         return combined;
     }
 
-    // Generador de comandos ESC/POS binarios para Ticket de Prueba
-    function buildEscPosTestTicket() {
+    // Generador de comandos ESC/POS binarios para Corte de Caja
+    function buildEscPosCutTicket(ct) {
         const encoder = new TextEncoder();
         const parts = [];
-        const initCmd = new Uint8Array([0x1B, 0x40, 0x1B, 0x32]); // ESC @ + ESC 2
+
+        const initCmd = new Uint8Array([0x1B, 0x40, 0x1B, 0x32]);
         const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]);
         const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]);
         const boldOn = new Uint8Array([0x1B, 0x45, 0x01]);
         const boldOff = new Uint8Array([0x1B, 0x45, 0x00]);
-        const feedAndCut = new Uint8Array([0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x1B, 0x64, 0x05, 0x1D, 0x56, 0x00]);
+        const feedAndCut = new Uint8Array([0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x1B, 0x64, 0x04, 0x1D, 0x56, 0x00]);
 
         parts.push(initCmd);
-        parts.push(centerCmd, boldOn, encoder.encode("NEVERIA LA FUENTE\r\n"), boldOff);
-        parts.push(encoder.encode("PRUEBA DE IMPRESION FISICA\r\n"));
+        parts.push(centerCmd, boldOn, encoder.encode(cleanEscPosText("NEVERIA LA FUENTE\r\n")), boldOff);
+        parts.push(encoder.encode(cleanEscPosText("-- CORTE DE CAJA OFICIAL --\r\n")));
         parts.push(encoder.encode("--------------------------------\r\n"));
         parts.push(leftCmd);
-        parts.push(encoder.encode(cleanEscPosText("SUCURSAL: " + S.branchName + "\r\n")));
-        parts.push(encoder.encode(cleanEscPosText("FECHA:    " + fdt(now()) + "\r\n")));
-        parts.push(encoder.encode(cleanEscPosText("MODELO:   " + getPrinterConfig().model + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("SUCURSAL: " + (ct.branch_name || S.branchName) + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("TURNO:    " + (ct.shift_name || S.shift) + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("FECHA:    " + fdt(ct.created_at || now()) + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("ENCARGADA:" + (ct.cashier_name || "Encargada") + "\r\n")));
         parts.push(encoder.encode("--------------------------------\r\n"));
-        parts.push(centerCmd, boldOn, encoder.encode("¡IMPRESION CORRECTA!\r\n"), boldOff);
-        parts.push(encoder.encode("Mini Impresora Lista\r\n"));
+        parts.push(encoder.encode(cleanEscPosText("FONDO INICIAL:   " + money(ct.opening_amount || 0).padStart(15, " ") + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("VENTAS EFECTIVO: " + money(ct.cash_sales || 0).padStart(15, " ") + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("VENTAS TARJETA:  " + money(ct.card_sales || 0).padStart(15, " ") + "\r\n")));
+        parts.push(encoder.encode("--------------------------------\r\n"));
+        parts.push(boldOn, encoder.encode(cleanEscPosText("TOTAL VENDIDO:   " + money(ct.total_sales || 0).padStart(15, " ") + "\r\n")), boldOff);
+        parts.push(encoder.encode(cleanEscPosText("EFECTIVO ESPERADO: " + money(ct.expected_cash || 0).padStart(13, " ") + "\r\n")));
+        parts.push(boldOn, encoder.encode(cleanEscPosText("EFECTIVO CONTADO:  " + money(ct.counted_cash || 0).padStart(13, " ") + "\r\n")), boldOff);
+        const diff = Number(ct.difference || 0);
+        const diffStr = (diff > 0 ? "+" : "") + money(diff);
+        parts.push(encoder.encode(cleanEscPosText("DIFERENCIA:        " + diffStr.padStart(13, " ") + "\r\n")));
+        parts.push(encoder.encode("================================\r\n"));
+        parts.push(centerCmd, encoder.encode(cleanEscPosText("FIRMA ENCARGADA\r\n\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("___________________________\r\n")));
         parts.push(feedAndCut);
 
         const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
@@ -1476,7 +1495,80 @@
         return combined;
     }
 
-    // 1. Conectar por WebSerial (Puerto USB COM en Windows - 100% infalible)
+    // Generador de comandos ESC/POS binarios para Apertura de Turno
+    function buildEscPosShiftTicket(sh) {
+        const encoder = new TextEncoder();
+        const parts = [];
+
+        const initCmd = new Uint8Array([0x1B, 0x40, 0x1B, 0x32]);
+        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]);
+        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]);
+        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]);
+        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]);
+        const feedAndCut = new Uint8Array([0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x1B, 0x64, 0x04, 0x1D, 0x56, 0x00]);
+
+        parts.push(initCmd);
+        parts.push(centerCmd, boldOn, encoder.encode(cleanEscPosText("NEVERIA LA FUENTE\r\n")), boldOff);
+        parts.push(encoder.encode(cleanEscPosText("-- APERTURA DE TURNO --\r\n")));
+        parts.push(encoder.encode("--------------------------------\r\n"));
+        parts.push(leftCmd);
+        parts.push(encoder.encode(cleanEscPosText("SUCURSAL: " + (sh.branch_name || S.branchName) + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("TURNO:    " + (sh.shift_name || S.shift) + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("FECHA:    " + fdt(sh.opened_at || now()) + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("ENCARGADA:" + (sh.cashier_name || "Encargada") + "\r\n")));
+        parts.push(encoder.encode("--------------------------------\r\n"));
+        parts.push(boldOn, encoder.encode(cleanEscPosText("FONDO INICIAL: " + money(sh.opening_amount || 0).padStart(17, " ") + "\r\n")), boldOff);
+        parts.push(encoder.encode("================================\r\n"));
+        parts.push(centerCmd, encoder.encode(cleanEscPosText("FIRMA DE CONFORMIDAD\r\n\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("___________________________\r\n")));
+        parts.push(feedAndCut);
+
+        const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
+        const combined = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const p of parts) {
+            combined.set(p, offset);
+            offset += p.length;
+        }
+        return combined;
+    }
+
+    // Generador de comandos ESC/POS binarios para Ticket de Prueba
+    function buildEscPosTestTicket() {
+        const encoder = new TextEncoder();
+        const parts = [];
+        const initCmd = new Uint8Array([0x1B, 0x40, 0x1B, 0x32]);
+        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]);
+        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]);
+        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]);
+        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]);
+        const feedAndCut = new Uint8Array([0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x1B, 0x64, 0x04, 0x1D, 0x56, 0x00]);
+
+        parts.push(initCmd);
+        parts.push(centerCmd, boldOn, encoder.encode("NEVERIA LA FUENTE\r\n"), boldOff);
+        parts.push(encoder.encode("IMPRESION DIRECTA BLUETOOTH\r\n"));
+        parts.push(encoder.encode("--------------------------------\r\n"));
+        parts.push(leftCmd);
+        parts.push(encoder.encode(cleanEscPosText("SUCURSAL: " + S.branchName + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("FECHA:    " + fdt(now()) + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("DISPOSITIVO: " + (directBtDevice?.name || "Mini Impresora Gia/Cays") + "\r\n")));
+        parts.push(encoder.encode("--------------------------------\r\n"));
+        parts.push(centerCmd, boldOn, encoder.encode("¡CALIBRACION CORRECTA!\r\n"), boldOff);
+        parts.push(encoder.encode("Mini Impresora Conectada\r\n"));
+        parts.push(encoder.encode("Impresion Directa sin Ventanas\r\n"));
+        parts.push(feedAndCut);
+
+        const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
+        const combined = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const p of parts) {
+            combined.set(p, offset);
+            offset += p.length;
+        }
+        return combined;
+    }
+
+    // 1. Conectar por WebSerial (Puerto USB COM en Windows)
     async function connectSerialDirect(baudRate = 9600) {
         if (!navigator.serial) {
             toast("WebSerial no está soportado en este navegador. Usa Google Chrome o Microsoft Edge en Windows.", "warn", 5000);
@@ -1499,9 +1591,18 @@
         }
     }
 
-    // Desconectar Serial
     async function disconnectSerialDirect() {
         try {
+            if (directBtServer) {
+                await directBtServer.disconnect();
+                directBtServer = null;
+                directBtDevice = null;
+                directBtChar = null;
+            }
+            if (directUsbDevice) {
+                await directUsbDevice.close();
+                directUsbDevice = null;
+            }
             if (directSerialWriter) {
                 await directSerialWriter.close();
                 directSerialWriter = null;
@@ -1512,12 +1613,13 @@
             }
             toast("Impresora desconectada", "info");
         } catch(e) {
+            directBtServer = null;
+            directUsbDevice = null;
             directSerialPort = null;
-            directSerialWriter = null;
         }
     }
 
-    // 2. Conectar por WebUSB (Cable USB directo en Android / Windows)
+    // 2. Conectar por WebUSB (Cable USB / OTG directo en Android / Windows)
     async function connectUsbDirect() {
         if (!navigator.usb) {
             toast("WebUSB no disponible. Usa Chrome en Android o Windows.", "warn", 5000);
@@ -1547,7 +1649,7 @@
             directUsbDevice = device;
             directUsbEndpoint = epNum;
             savePrinterConfig({ ...getPrinterConfig(), connectionType: "usb" });
-            toast("✓ ¡Mini impresora USB conectada exitosamente!", "success", 4000);
+            toast("✓ ¡Mini impresora USB conectada! Los tickets saldrán directo sin ventanas.", "success", 4500);
             return true;
         } catch(err) {
             if (err.name !== "NotFoundError") {
@@ -1558,19 +1660,22 @@
         }
     }
 
-    // 3. Conectar por Web Bluetooth (Ideal para Android / Mini Impresoras Gia y Caysn)
+    // 3. Conectar por Web Bluetooth (Especial para Android / Mini Impresoras Gia y Caysn)
     async function connectBtDirect() {
         if (!navigator.bluetooth) {
-            toast("Bluetooth Web no disponible. Activa Bluetooth y usa Google Chrome en Android o Windows.", "warn", 5000);
+            toast("Bluetooth Web no disponible. Activa Bluetooth y usa Google Chrome en Android.", "warn", 5000);
             return false;
         }
         try {
-            toast("📶 Buscando mini impresoras Bluetooth térmicas (Gia, Cays, etc.)…", "info", 4000);
+            toast("📶 Selecciona tu mini impresora Bluetooth (Ghia / Caysn / POS-58)…", "info", 4000);
             const device = await navigator.bluetooth.requestDevice({
                 acceptAllDevices: true,
                 optionalServices: [
                     "000018f0-0000-1000-8000-00805f9b34fb",
                     "0000e0ff-0000-1000-8000-00805f9b34fb",
+                    "0000ffe0-0000-1000-8000-00805f9b34fb",
+                    "0000ff00-0000-1000-8000-00805f9b34fb",
+                    "0000fee7-0000-1000-8000-00805f9b34fb",
                     "49535343-fe7d-41aa-8d9b-06ec680ca597",
                     "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
                 ]
@@ -1579,33 +1684,66 @@
             directBtDevice = device;
             directBtServer = server;
 
-            const services = await server.getPrimaryServices();
-            for (const service of services) {
-                const chars = await service.getCharacteristics();
-                for (const char of chars) {
-                    if (char.properties.write || char.properties.writeWithoutResponse) {
-                        directBtChar = char;
-                        break;
-                    }
+            let writeChar = null;
+            try {
+                const services = await server.getPrimaryServices();
+                for (const service of services) {
+                    try {
+                        const chars = await service.getCharacteristics();
+                        for (const char of chars) {
+                            if (char.properties.writeWithoutResponse || char.properties.write) {
+                                writeChar = char;
+                                break;
+                            }
+                        }
+                    } catch(e) {}
+                    if (writeChar) break;
                 }
-                if (directBtChar) break;
-            }
+            } catch(e) {}
 
+            directBtChar = writeChar;
             savePrinterConfig({ ...getPrinterConfig(), connectionType: "bt" });
-            toast("✓ ¡Mini impresora Bluetooth vinculada exitosamente!", "success", 4000);
+            toast("✓ ¡Mini impresora '" + device.name + "' conectada por Bluetooth! Los tickets se imprimirán directo sin abrir ventanas.", "success", 5000);
             return true;
         } catch(err) {
             if (err.name !== "NotFoundError") {
                 console.warn("BT connect error:", err);
-                toast("Error al conectar por Bluetooth: " + (err.message || err), "error");
+                toast("Error al conectar Bluetooth: " + (err.message || err), "error");
             }
             return false;
         }
     }
 
-    // Escritura de bytes directa
+    // Escritura de bytes directa al hardware sin pasar por el diálogo del navegador
     async function writeEscPosBytes(uint8Data) {
-        // A. Serial Port
+        // A. Bluetooth Directo (Android Gia / Caysn)
+        if (directBtChar && directBtServer && directBtServer.connected) {
+            try {
+                const CHUNK_SIZE = 100;
+                for (let i = 0; i < uint8Data.length; i += CHUNK_SIZE) {
+                    const chunk = uint8Data.slice(i, i + CHUNK_SIZE);
+                    if (directBtChar.writeValueWithoutResponse) {
+                        await directBtChar.writeValueWithoutResponse(chunk);
+                    } else if (directBtChar.writeValue) {
+                        await directBtChar.writeValue(chunk);
+                    }
+                    await new Promise(r => setTimeout(r, 15));
+                }
+                return true;
+            } catch(e) {
+                console.warn("BT write error:", e);
+            }
+        }
+        // B. USB OTG Directo
+        if (directUsbDevice && directUsbDevice.opened) {
+            try {
+                await directUsbDevice.transferOut(directUsbEndpoint, uint8Data);
+                return true;
+            } catch(e) {
+                console.warn("USB transferOut error:", e);
+            }
+        }
+        // C. Serial Port (Windows)
         if (directSerialPort && directSerialPort.writable) {
             try {
                 if (!directSerialWriter) {
@@ -1620,36 +1758,10 @@
                 directSerialWriter = null;
             }
         }
-        // B. USB Device
-        if (directUsbDevice && directUsbDevice.opened) {
-            try {
-                await directUsbDevice.transferOut(directUsbEndpoint, uint8Data);
-                return true;
-            } catch(e) {
-                console.warn("USB transferOut error:", e);
-            }
-        }
-        // C. Bluetooth
-        if (directBtChar && directBtServer && directBtServer.connected) {
-            try {
-                const CHUNK_SIZE = 512;
-                for (let i = 0; i < uint8Data.length; i += CHUNK_SIZE) {
-                    const chunk = uint8Data.slice(i, i + CHUNK_SIZE);
-                    if (directBtChar.writeValueWithoutResponse) {
-                        await directBtChar.writeValueWithoutResponse(chunk);
-                    } else {
-                        await directBtChar.writeValue(chunk);
-                    }
-                }
-                return true;
-            } catch(e) {
-                console.warn("BT write error:", e);
-            }
-        }
         return false;
     }
 
-    // Invocador Universal del Diálogo de Impresión (Chrome / Android / Windows)
+    // Invocador Universal del Diálogo de Impresión (Chrome / Windows / Ofichido)
     function triggerUniversalPrint(ticketInnerHtml) {
         try {
             const cfg = getPrinterConfig();
@@ -1675,6 +1787,16 @@
 
     function printShiftOpeningReceipt(shiftObj) {
         if (!shiftObj) return;
+
+        // Si Bluetooth o USB está conectado, enviar directo sin ventanas
+        if ((directBtChar && directBtServer && directBtServer.connected) || (directUsbDevice && directUsbDevice.opened) || (directSerialPort && directSerialPort.writable)) {
+            const raw = buildEscPosShiftTicket(shiftObj);
+            writeEscPosBytes(raw).then(ok => {
+                if (ok) toast("✓ Comprobante de apertura impreso en mini impresora", "success", 3000);
+            });
+            return;
+        }
+
         const shiftHtml = `
             <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
             <div class="center" style="font-size:11px; font-style:italic;">-- DESDE 1962 --</div>
@@ -1707,14 +1829,17 @@
         if (!sale) return;
         localStorage.setItem("lf_last_printed_sale", JSON.stringify(sale));
 
-        // 1. Envío binario por hardware directo si está disponible
-        if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
+        // 1. Envío binario por hardware directo si Bluetooth o USB está conectado (CERO VENTANAS)
+        if ((directBtChar && directBtServer && directBtServer.connected) || (directUsbDevice && directUsbDevice.opened) || (directSerialPort && directSerialPort.writable)) {
             const raw = buildEscPosTicket(sale);
             const ok = await writeEscPosBytes(raw);
-            if (ok) return;
+            if (ok) {
+                toast("✓ Ticket impreso directamente en mini impresora", "success", 3000);
+                return;
+            }
         }
 
-        // 2. Impresión nativa del sistema (Windows / Android / Ofichido / Gia / Cays)
+        // 2. Impresión nativa del sistema (Windows / Ofichido)
         const isCard = sale.payment_method === "card";
         const receiptHtml = `
             <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
@@ -1765,6 +1890,17 @@
 
     async function printCutReceipt(cutData) {
         if (!cutData) return;
+
+        // Si Bluetooth o USB está conectado, enviar directo sin ventanas
+        if ((directBtChar && directBtServer && directBtServer.connected) || (directUsbDevice && directUsbDevice.opened) || (directSerialPort && directSerialPort.writable)) {
+            const raw = buildEscPosCutTicket(cutData);
+            const ok = await writeEscPosBytes(raw);
+            if (ok) {
+                toast("✓ Corte de caja impreso en mini impresora", "success", 3000);
+                return;
+            }
+        }
+
         const isM = (cutData.shift_name || "").toLowerCase().includes("mañana") || (cutData.shift_name || "").toLowerCase().includes("matutino");
         const cutHtml = `
             <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
@@ -1849,16 +1985,18 @@
     }
 
     async function printTestReceipt() {
-        const cfg = getPrinterConfig();
-        const conn = getPrinterConnectionStatus();
-        if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
+        // Si Bluetooth o USB está conectado, enviar directo sin ventanas
+        if ((directBtChar && directBtServer && directBtServer.connected) || (directUsbDevice && directUsbDevice.opened) || (directSerialPort && directSerialPort.writable)) {
             const raw = buildEscPosTestTicket();
             const ok = await writeEscPosBytes(raw);
             if (ok) {
-                toast("✓ ¡Ticket enviado directamente a tu impresora térmica!", "success", 4000);
+                toast("✓ ¡Ticket de prueba impreso físicamente por Bluetooth/USB directo!", "success", 4000);
                 return;
             }
         }
+
+        const cfg = getPrinterConfig();
+        const conn = getPrinterConnectionStatus();
 
         const testContent = `
             <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
@@ -1891,7 +2029,8 @@
     function openPrinterSetupModal() {
         const curCfg = getPrinterConfig();
         const conn = getPrinterConnectionStatus();
-        const isConnectedDirect = !!((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected));
+        const isBtConnected = !!(directBtChar && directBtServer && directBtServer.connected);
+        const isConnectedDirect = isBtConnected || !!(directUsbDevice && directUsbDevice.opened) || !!(directSerialPort && directSerialPort.writable);
         
         const overlay = document.createElement("div");
         overlay.id = "printer-modal-overlay";
@@ -1902,8 +2041,8 @@
                     <div style="display:flex;align-items:center;gap:8px">
                         <span style="font-size:28px">🖨️</span>
                         <div>
-                            <h3 style="margin:0;color:var(--wine-950);font-size:18px;font-weight:900">Impresoras Térmicas & POS</h3>
-                            <small style="color:var(--text-muted);font-weight:700">Ofichido (Tagarete / Windows) & Mini Gia / Caysn (Rescate / Android)</small>
+                            <h3 style="margin:0;color:var(--wine-950);font-size:18px;font-weight:900">Impresoras Térmicas</h3>
+                            <small style="color:var(--text-muted);font-weight:700">Gia & Caysn (Rescate / Android) | Ofichido (Tagarete / Windows)</small>
                         </div>
                     </div>
                     <button id="p-close-btn" type="button" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--wine-900);font-weight:900">✕</button>
@@ -1912,102 +2051,69 @@
                 <!-- ESTADO ACTUAL -->
                 <div style="background:#fef3c7;border:1.5px solid #fcd34d;padding:10px 12px;border-radius:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
                     <div>
-                        <div style="font-size:10.5px;color:#92400e;font-weight:900">ESTADO DE CONEXIÓN:</div>
+                        <div style="font-size:10px;color:#92400e;font-weight:900">ESTADO ACTUAL:</div>
                         <strong style="font-size:12px;color:#78350f">${conn.label}</strong>
                     </div>
                     ${isConnectedDirect ? `<button type="button" id="btn-disconnect-printer" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">Desconectar</button>` : ''}
                 </div>
 
-                <!-- BOTÓN PRINCIPAL WINDOWS (TAGARETE / OFICHIDO) -->
-                <div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:14px;margin-bottom:12px">
-                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                <!-- SECCIÓN ANDROID / EL RESCATE (BLUETOOTH DIRECTO SIN VENTANAS) -->
+                <div style="background:#f0fdf4;border:2.5px solid #22c55e;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 4px 12px rgba(34,197,94,0.15)">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                        <span style="font-size:22px">📶</span>
+                        <strong style="color:#15803d;font-size:14px">EL RESCATE (ANDROID / MINI GIA & CAYSN)</strong>
+                    </div>
+                    <p style="margin:0 0 10px 0;font-size:11.5px;color:#166534;line-height:1.4">
+                        Conecta por <strong>Bluetooth</strong> para que cada cobro o ticket salga <strong>físicamente de inmediato sin abrir ventanas en la pantalla</strong>.
+                    </p>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        <button type="button" id="btn-pair-bt-main"
+                            style="width:100%;padding:13px;background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 3px 10px rgba(34,197,94,0.3)">
+                            <span>📶</span>
+                            <span>${isBtConnected ? '✓ Mini Impresora Conectada (Reconectar / Cambiar)' : 'Conectar Mini Impresora por Bluetooth (Gia / Caysn)'}</span>
+                        </button>
+                        ${isBtConnected ? `
+                        <button type="button" id="btn-test-bt-direct"
+                            style="width:100%;padding:10px;background:#fff;color:#15803d;border:1.5px solid #22c55e;border-radius:10px;font-weight:900;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+                            <span>🖨️</span><span>Imprimir Prueba Directa por Bluetooth (Sin Ventanas)</span>
+                        </button>` : ''}
+                    </div>
+                </div>
+
+                <!-- SECCIÓN WINDOWS / TAGARETE (OFICHIDO) -->
+                <div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:14px;margin-bottom:14px">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
                         <span style="font-size:20px">🖨️</span>
-                        <strong style="color:#1e40af;font-size:13.5px">IMPRIMIR EN OFICHIDO (Windows / Tagarete)</strong>
+                        <strong style="color:#1e40af;font-size:13.5px">TAGARETE (WINDOWS / OFICHIDO)</strong>
                     </div>
                     <p style="margin:0 0 10px 0;font-size:11.5px;color:#1e3a8a;line-height:1.4">
-                        Abre la ventana nativa de impresión de Chrome/Windows para enviar el ticket directamente a la impresora <strong>Ofichido</strong>.
+                        Abre la ventana de impresión para enviar directamente a la impresora <strong>Ofichido</strong>.
                     </p>
                     <button type="button" id="btn-test-browser"
-                        style="width:100%;padding:12px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13.5px;cursor:pointer;box-shadow:0 4px 14px rgba(59,130,246,0.3);display:flex;align-items:center;justify-content:center;gap:8px">
+                        style="width:100%;padding:12px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13px;cursor:pointer;box-shadow:0 4px 14px rgba(59,130,246,0.3);display:flex;align-items:center;justify-content:center;gap:8px">
                         <span>🖨️</span>
                         <span>Abrir Diálogo de Impresión (Enviar a Ofichido)</span>
                     </button>
                 </div>
 
-                <!-- BOTÓN PRINCIPAL ANDROID (EL RESCATE / MINI IMPRESORAS GIA & CAYSN) -->
-                <div style="background:#f0fdf4;border:2px solid #22c55e;border-radius:14px;padding:14px;margin-bottom:14px">
-                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-                        <span style="font-size:20px">📱</span>
-                        <strong style="color:#15803d;font-size:13.5px">IMPRIMIR EN ANDROID (El Rescate / Mini Gia & Caysn)</strong>
-                    </div>
-                    <p style="margin:0 0 10px 0;font-size:11.5px;color:#166534;line-height:1.4">
-                        Abre el servicio de impresión de Android para enviar a tu mini impresora <strong>Ghia (Gia)</strong> o <strong>Caysn (Cays)</strong> por Bluetooth o USB.
-                    </p>
-                    <button type="button" id="btn-test-android"
-                        style="width:100%;padding:12px;background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13.5px;cursor:pointer;box-shadow:0 4px 14px rgba(34,197,94,0.3);display:flex;align-items:center;justify-content:center;gap:8px">
-                        <span>📱</span>
-                        <span>Abrir en Android (Mini Gia / Caysn / Servicio del Sistema)</span>
-                    </button>
-                </div>
-
-                <!-- VINCULACIÓN DIRECTA POR HARDWARE (BLUETOOTH / USB / SERIE) -->
-                <div style="background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:14px;padding:12px 14px;margin-bottom:14px">
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-900);display:block;margin-bottom:8px">VINCULAR POR HARDWARE DIRECTO:</label>
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-                        <button type="button" id="btn-pair-bt"
-                            style="padding:10px 6px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);color:#15803d;border:1.5px solid #86efac;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">
-                            <span>📶</span><span>Bluetooth (Gia/Cays)</span>
-                        </button>
+                <!-- OTRAS CONEXIONES -->
+                <div style="background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:14px;padding:10px 12px;margin-bottom:14px">
+                    <label style="font-size:10.5px;font-weight:900;color:var(--wine-900);display:block;margin-bottom:6px">CONEXIONES ALTERNATIVAS POR CABLE:</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
                         <button type="button" id="btn-pair-usb"
-                            style="padding:10px 6px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af;border:1.5px solid #93c5fd;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">
-                            <span>🔌</span><span>USB / OTG</span>
+                            style="padding:8px 6px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af;border:1.5px solid #93c5fd;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">
+                            <span>🔌</span><span>Cable USB / OTG</span>
                         </button>
                         <button type="button" id="btn-pair-serial"
-                            style="padding:10px 6px;background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;border:1.5px solid #fcd34d;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">
-                            <span>⚡</span><span>Serie COM</span>
+                            style="padding:8px 6px;background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;border:1.5px solid #fcd34d;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">
+                            <span>⚡</span><span>Puerto Serie COM</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- SELECTOR DE MODELO Y PREFERENCIAS -->
-                <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
-                    <div>
-                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">MODELO / MARCA DE IMPRESORA:</label>
-                        <select id="p-model" style="width:100%;padding:9px 10px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:800;background:#fff;outline:none">
-                            <option value="Mini Impresora Ghia / Gia (58mm)"${(curCfg.model||"").includes("Ghia")||(curCfg.model||"").includes("Gia")?' selected':''}>🖨️ Mini Impresora Ghia / Gia (58mm Térmica - Rescate Android / Bluetooth / USB)</option>
-                            <option value="Mini Impresora Caysn / Cays (58mm)"${(curCfg.model||"").includes("Caysn")||(curCfg.model||"").includes("Cays")?' selected':''}>🖨️ Mini Impresora Caysn / Cays POS-58 (58mm Térmica - Rescate Android)</option>
-                            <option value="Ofichido / POS-58 (58mm)"${(curCfg.model||"").includes("Ofichido")?' selected':''}>🖨️ Ofichido POS Thermal (Tagarete 2 y Windows)</option>
-                            <option value="EC Line / Impresora Térmica Genérica POS-58"${(curCfg.model||"").includes("EC Line")||(curCfg.model||"").includes("Genérica")?' selected':''}>🖨️ EC Line / Impresora Térmica Genérica POS-58</option>
-                            <option value="Epson TM-T20 / TM-T88 (80mm)"${(curCfg.model||"").includes("Epson")?' selected':''}>🖨️ Epson TM-T20 / TM-T88 (ESC/POS 80mm)</option>
-                        </select>
-                    </div>
-
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                        <div>
-                            <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">ANCHO DE PAPEL:</label>
-                            <select id="p-paper-width" style="width:100%;padding:8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:800;background:#fff">
-                                <option value="58mm"${(curCfg.paperWidth||"58mm")==='58mm'?' selected':''}>58 mm (Mini impresoras Gia / Cays / Ofichido)</option>
-                                <option value="80mm"${curCfg.paperWidth==='80mm'?' selected':''}>80 mm (Rollo ancho)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">BAUDIOS SERIE:</label>
-                            <select id="p-baud-rate" style="width:100%;padding:8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:800;background:#fff">
-                                <option value="9600"${(curCfg.baudRate||9600)==9600?' selected':''}>9600 (Estándar)</option>
-                                <option value="38400"${curCfg.baudRate==38400?' selected':''}>38400</option>
-                                <option value="115200"${curCfg.baudRate==115200?' selected':''}>115200</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="display:flex;justify-content:space-between;gap:8px">
-                    <button type="button" id="btn-save-custom-cfg"
-                        style="padding:10px 14px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:900;font-size:12px;cursor:pointer">
-                        ✓ Guardar Ajustes
-                    </button>
+                <div style="display:flex;justify-content:flex-end;gap:8px">
                     <button id="p-close-btn2" type="button"
-                        style="padding:10px 18px;background:#e2e8f0;color:#334155;border:none;border-radius:10px;font-weight:900;font-size:12px;cursor:pointer">
+                        style="padding:10px 22px;background:#e2e8f0;color:#334155;border:none;border-radius:10px;font-weight:900;font-size:12px;cursor:pointer">
                         Cerrar
                     </button>
                 </div>
@@ -2017,21 +2123,25 @@
         overlay.querySelector("#p-close-btn").onclick = () => overlay.remove();
         overlay.querySelector("#p-close-btn2").onclick = () => overlay.remove();
 
+        // Conectar Bluetooth Principal (Gia / Caysn)
+        overlay.querySelector("#btn-pair-bt-main").onclick = async () => {
+            const ok = await connectBtDirect();
+            if (ok) {
+                overlay.remove();
+                openPrinterSetupModal();
+            }
+        };
+
+        if (overlay.querySelector("#btn-test-bt-direct")) {
+            overlay.querySelector("#btn-test-bt-direct").onclick = async () => {
+                await printTestReceipt();
+            };
+        }
+
         // Disparo para Windows / Ofichido
         overlay.querySelector("#btn-test-browser").onclick = () => {
-            overlay.remove(); // Cerrar modal primero para dar foco
+            overlay.remove(); // Cerrar modal primero para dar foco a Chrome
             printTestReceipt();
-        };
-
-        // Disparo para Android / El Rescate (Mini impresoras Gia y Caysn)
-        overlay.querySelector("#btn-test-android").onclick = () => {
-            overlay.remove(); // Cerrar modal primero para dar foco
-            printTestReceipt();
-        };
-
-        overlay.querySelector("#btn-pair-bt").onclick = async () => {
-            const ok = await connectBtDirect();
-            if (ok) overlay.remove();
         };
 
         overlay.querySelector("#btn-pair-usb").onclick = async () => {
@@ -2040,8 +2150,7 @@
         };
 
         overlay.querySelector("#btn-pair-serial").onclick = async () => {
-            const bRate = overlay.querySelector("#p-baud-rate")?.value || 9600;
-            const ok = await connectSerialDirect(bRate);
+            const ok = await connectSerialDirect(9600);
             if (ok) overlay.remove();
         };
 
@@ -2049,17 +2158,9 @@
             overlay.querySelector("#btn-disconnect-printer").onclick = async () => {
                 await disconnectSerialDirect();
                 overlay.remove();
+                openPrinterSetupModal();
             };
         }
-
-        overlay.querySelector("#btn-save-custom-cfg").onclick = () => {
-            const model = overlay.querySelector("#p-model")?.value || "Ofichido / POS-58 (58mm)";
-            const pWidth = overlay.querySelector("#p-paper-width")?.value || "58mm";
-            const bRate = Number(overlay.querySelector("#p-baud-rate")?.value || 9600);
-            savePrinterConfig({ ...getPrinterConfig(), model, paperWidth: pWidth, baudRate: bRate });
-            toast("✓ Configuración de impresora guardada para esta sucursal", "success");
-            overlay.remove();
-        };
     }
 
     async function directPrintTicketAction() {
