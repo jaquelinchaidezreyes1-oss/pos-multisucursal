@@ -184,7 +184,7 @@
         const ref = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
         const sBranch = normalizeBranchName(sale.branch_name || "");
         const sId = String(sale.branch_id || "").toLowerCase();
-        const sCashier = String(sale.cashier_name || sale.user_name || "").toLowerCase();
+        const sCashier = String(sale.cashier_name || sale.user_name || sale.performed_by_name || "").toLowerCase();
         
         // Match by branch ID directly
         if (typeof branchRef === "object" && branchRef?.id && sId && String(branchRef.id).toLowerCase() === sId) {
@@ -207,8 +207,11 @@
         if (ref.includes("tagarete 2") || (ref.includes("tagarete") && ref.includes("2"))) {
             return (sBranch.includes("tagarete") && sBranch.includes("2")) || sId === "branch-5" || sId.includes("tagarete_2") || sId.includes("tagarete2") || sCashier.includes("encargado9") || sCashier.includes("encargado10");
         }
-        if (ref.includes("cnop")) {
-            return sBranch.includes("cnop") || sId === "branch-6" || sId === "branch_cnop" || sCashier.includes("encargado11") || sCashier.includes("encargado12");
+        if (ref.includes("tagarete")) {
+            return sBranch.includes("tagarete") || sId.includes("tagarete") || sCashier.includes("encargado7") || sCashier.includes("encargado8") || sCashier.includes("encargado9") || sCashier.includes("encargado10");
+        }
+        if (ref.includes("cnop") || ref.includes("cenop")) {
+            return sBranch.includes("cnop") || sBranch.includes("cenop") || sId === "branch-6" || sId === "branch_cnop" || sCashier.includes("encargado11") || sCashier.includes("encargado12");
         }
 
         if (ref && sBranch) {
@@ -3112,7 +3115,6 @@
                                         const opening = Number(ct.opening_amount || 0);
                                         const total = Number(ct.total_sales || 0);
                                         const counted = Number(ct.counted_cash || 0);
-                                        // Filtrar cortes imprecisos o vacíos sin fondo ni ventas
                                         if (opening > 0 || total > 0 || counted > 0) {
                                             const cid = String(ct.id || (Date.now() + Math.random()));
                                             if (!cutsMap.has(cid)) {
@@ -3128,12 +3130,16 @@
             }
         } catch(e) {}
 
-        // 2. Fusionar y enriquecer con los cortes de Supabase
+        // 2. Fusionar y enriquecer con los cortes de Supabase preservando la sucursal de origen
         remoteCuts.forEach(ct => {
             let obs = {};
             try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
             
-            let bName = obs.branch_name || S.branches.find(b=>String(b.id)===String(ct.branch_id))?.name || "";
+            let bName = obs.branch_name || ct.branch_name || "";
+            if (!bName && ct.branch_id) {
+                const foundB = S.branches.find(b => String(b.id) === String(ct.branch_id));
+                if (foundB) bName = foundB.name;
+            }
             const perf = obs.performed_by_name || ct.performed_by || "";
             if (!bName && perf) {
                 const pLower = String(perf).toLowerCase();
@@ -3144,7 +3150,7 @@
                     }
                 }
             }
-            if (!bName) bName = S.branchName;
+            if (!bName) bName = "Tagarete 2"; // Default si no se pudo determinar
 
             const cid = String(ct.id);
             const opening = Number(obs.opening_amount != null ? obs.opening_amount : (ct.opening_amount || 0));
@@ -3155,7 +3161,7 @@
             const diff = Number(ct.difference != null ? ct.difference : (obs.difference || 0));
             const net = Number(obs.net_sales_without_fund != null ? obs.net_sales_without_fund : (counted - opening));
 
-            // Solo agregar si es un corte estructurado y con datos reales
+            // Agregar si es un corte estructurado y con datos reales
             if (opening > 0 || total > 0 || counted > 0 || cash > 0 || card > 0) {
                 cutsMap.set(cid, {
                     id: ct.id,
@@ -3179,7 +3185,7 @@
         const activeFilter = S.isSU ? (S.cutsFilterBranchId || "all") : S.branchId;
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
         
-        // Filtro estricto: descartar entradas nulas, vacías o sin fondo/ventas
+        // Filtro estricto y ordenación cronológica descendente
         const cutsList = Array.from(cutsMap.values())
             .filter(ct => !deletedCutIds.has(String(ct.id)))
             .filter(ct => {
@@ -3207,7 +3213,10 @@
         const currentCashSales = currentTurnSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s)=>a+Number(s.total||0), 0);
         const currentCardSales = currentTurnSales.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0), 0);
         const currentTotalSold = currentCashSales + currentCardSales;
-        const initialFund = Number(S.currentShift?.opening_amount || 500);
+
+        // Obtener el fondo inicial exacto validado del turno activo
+        const activeLocalShift = lr("current_shift", null);
+        const initialFund = Number(activeLocalShift?.opening_amount != null ? activeLocalShift.opening_amount : (S.currentShift?.opening_amount != null ? S.currentShift.opening_amount : 500));
         const expectedCashInDrawer = initialFund + currentCashSales;
 
         const branchSelectHtml = S.isSU ? `
@@ -3239,13 +3248,13 @@
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
                 <h3 style="color:var(--wine-900);margin:0;font-weight:900">✂️ Realizar Corte de Turno Actual (${esc(S.shift)})</h3>
                 <span style="font-size:11px;background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:12px;font-weight:800">
-                    🟢 Turno Activo: ${esc(S.shift)}
+                    🟢 Turno Activo: ${esc(S.shift)} — Fondo Inicial Validado: ${money(initialFund)}
                 </span>
             </div>
 
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:16px">
                 <div style="background:#fff;padding:12px 16px;border-radius:12px;border:1.5px solid var(--gold-400)">
-                    <small style="font-size:10.5px;font-weight:900;color:var(--text-muted);display:block">FONDO INICIAL</small>
+                    <small style="font-size:10.5px;font-weight:900;color:var(--text-muted);display:block">FONDO INICIAL EN CAJA</small>
                     <strong style="font-size:20px;color:var(--wine-900)">${money(initialFund)}</strong>
                 </div>
                 <div style="background:#f0fdf4;padding:12px 16px;border-radius:12px;border:1.5px solid #86efac">
@@ -3265,7 +3274,7 @@
             <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
                 <div style="flex:1;min-width:220px">
                     <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">
-                        EFECTIVO CONTADO EN CAJA ($) *
+                        EFECTIVO CONTADO FÍSICO EN CAJA ($) *
                     </label>
                     <input id="cut-counted-cash" type="number" step="0.5" min="0" placeholder="Ej: 1500.00"
                         style="width:100%;padding:11px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:14px;font-weight:900;box-sizing:border-box">
@@ -3308,7 +3317,7 @@
                     <div style="display:flex;align-items:center;gap:10px">
                         <div style="text-align:right">
                             <small style="font-size:10px;color:var(--text-muted);display:block">CORTE NETO EFECTIVO</small>
-                            <strong style="font-size:20px;color:var(--wine-700);font-weight:900">${money(ct.net_sales_without_fund || (ct.counted_cash - ct.opening_amount))}</strong>
+                            <strong style="font-size:20px;color:var(--wine-700);font-weight:900">${money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (ct.counted_cash - ct.opening_amount))}</strong>
                         </div>
                         <button type="button" class="btn-reprint-cut" data-id="${esc(ct.id)}"
                             style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
@@ -3435,29 +3444,22 @@
                 const ok = await toastConfirm("👑 [Superusuario] ¿Deseas eliminar definitivamente este corte duplicado de " + cbranch + " (" + cshift + ")?");
                 if (!ok) return;
 
-                // 1. Local storage de sucursal
                 let lCuts = lr("cuts", []).filter(x => String(x.id) !== cid);
                 lw("cuts", lCuts);
 
-                // 2. Global storage de directivos
                 let gCuts = gr("all_cuts", []).filter(x => String(x.id) !== cid);
                 gw("all_cuts", gCuts);
 
-                // 3. Registrar en lista negra de eliminados
                 const deletedCutIds = gr("deleted_cut_ids", []);
                 if (!deletedCutIds.includes(cid)) deletedCutIds.push(cid);
                 gw("deleted_cut_ids", deletedCutIds);
 
-                // 4. Base de datos remota Supabase
                 if (db) {
                     try {
                         await db.from("cash_cuts").delete().eq("id", cid);
-                    } catch(e) {
-                        console.warn("Error borrando corte en Supabase:", e);
-                    }
+                    } catch(e) {}
                 }
 
-                // 5. Difusión en tiempo real
                 if (realtimeChannel) {
                     try {
                         realtimeChannel.send({
@@ -3512,7 +3514,7 @@
             }
         } catch(e) {}
 
-        // 2. Extraer aperturas de turnos registradas en los cortes de caja (desde el día 4 en adelante)
+        // 2. Extraer aperturas de turnos registradas en los cortes de caja
         const allCuts = gr("all_cuts", []).concat(lr("cuts", []));
         allCuts.forEach(ct => {
             if (ct && ct.opening_amount !== undefined) {
@@ -3541,7 +3543,12 @@
                         let obs = {};
                         try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
                         const opening = Number(obs.opening_amount != null ? obs.opening_amount : (ct.opening_amount || 0));
-                        const bName = obs.branch_name || S.branches.find(b=>String(b.id)===String(ct.branch_id))?.name || S.branchName;
+                        let bName = obs.branch_name || ct.branch_name || "";
+                        if (!bName && ct.branch_id) {
+                            const foundB = S.branches.find(b=>String(b.id)===String(ct.branch_id));
+                            if (foundB) bName = foundB.name;
+                        }
+                        if (!bName) bName = "Tagarete 2";
                         const cashier = obs.performed_by_name || ct.performed_by || "Encargada";
                         const cutKey = "shift_db_" + ct.id;
                         if (!shiftsMap.has(cutKey)) {
@@ -3577,6 +3584,8 @@
             : allShifts.filter(sh => matchesBranch(sh, { id: activeBranchFilter, name: S.branches.find(b=>String(b.id)===String(activeBranchFilter))?.name || S.branchName }));
 
         const uname = S.profile?.full_name || S.user?.email || "Encargada";
+        const currentSavedShift = lr("current_shift", null);
+        const currentShiftAmount = currentSavedShift?.opening_amount != null ? currentSavedShift.opening_amount : (S.currentShift?.opening_amount != null ? S.currentShift.opening_amount : 500);
 
         const branchSelectHtml = S.isSU ? `
             <div style="display:flex;align-items:center;gap:8px">
@@ -3618,7 +3627,7 @@
                 </div>
                 <div>
                     <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">FONDO INICIAL EN CAJA ($) *</label>
-                    <input id="open-shift-amount" type="number" step="10" min="0" placeholder="Ej: 500.00" value="${S.currentShift?.opening_amount || 500}"
+                    <input id="open-shift-amount" type="number" step="10" min="0" placeholder="Ej: 500.00" value="${currentShiftAmount}"
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:900;box-sizing:border-box">
                 </div>
             </div>
@@ -3648,12 +3657,12 @@
                 </div>
                 <div style="text-align:right">
                     <small style="font-size:10px;color:var(--text-muted);display:block">FONDO INICIAL EN CAJA</small>
-                    <strong style="font-size:20px;color:#15803d;font-weight:900">${money(sh.opening_amount)}</strong>
+                    <strong style="font-size:20px;color:var(--wine-900);font-weight:900">${money(sh.opening_amount)}</strong>
                 </div>
             </article>`).join("")}
         </div>` : `
-        <div class="empty-state" style="padding:30px;text-align:center">
-            <p style="color:var(--text-muted)">No hay registros de apertura de turno con los filtros seleccionados.</p>
+        <div class="empty-state" style="padding:34px;text-align:center">
+            <p style="color:var(--text-muted)">No hay cambios de turno registrados aún.</p>
         </div>`}
         `;
 
@@ -3672,7 +3681,12 @@
 
         document.getElementById("btn-open-shift")?.addEventListener("click", async () => {
             const shiftName = document.getElementById("open-shift-name")?.value || "Mañana";
-            const amount = Number(document.getElementById("open-shift-amount")?.value || 0);
+            const amountInput = document.getElementById("open-shift-amount")?.value;
+            const amount = Number(amountInput);
+
+            if (amountInput === "" || isNaN(amount) || amount < 0) {
+                return toast("Por favor ingresa un fondo inicial válido mayor o igual a $0.00.", "warn", 4000);
+            }
 
             S.shift = shiftName;
             const shiftObj = {
@@ -3708,26 +3722,49 @@
             }
 
             updateUI();
-            toast(`✓ Turno ${shiftName} iniciado con fondo de ${money(amount)}.`, "success", 4000);
+            toast(`✓ Turno ${shiftName} iniciado exitosamente con fondo de ${money(amount)}.`, "success", 4000);
             await loadShiftView();
         });
     }
 
-    /* ── CAJA ACTUAL ── */
+    /* ── CAJA ACTUAL & FONDO PERSISTENTE ── */
     async function loadCurrentShift() {
-        if (!db || !S.branchId) return null;
-        try {
-            let q = db.from("open_shift_cash_summary_view").select("*").limit(1);
-            if (uuid(S.branchId)) q = q.eq("branch_id", S.branchId);
-            const {data} = await safeQuery(q.maybeSingle(), {data: null}, 1000);
-            S.currentShift = data || null;
-            const open = S.currentShift && String(S.currentShift.status||"").toUpperCase() === "OPEN";
-            setT("#cash-status-text,#cashStatus,[data-cash-status]", open ? ("CAJA ABIERTA (" + S.shift + ")") : "CAJA ABIERTA");
-            const dot = $("#cash-dot,.cash-dot");
-            if (dot) dot.style.background = "#10b981";
-        } catch {
-            setT("#cash-status-text,#cashStatus,[data-cash-status]", "CAJA ABIERTA (" + S.shift + ")");
+        // 1. Cargar el fondo activo local para la sucursal actual
+        const localShift = lr("current_shift", null);
+        if (localShift && localShift.opening_amount != null) {
+            S.currentShift = localShift;
+            S.shift = localShift.shift_name || S.shift;
         }
+
+        // 2. Si no hay turno local previo, verificar si hay un turno activo registrado en global/localStorage
+        if (!S.currentShift) {
+            const allShifts = gr("all_shifts", []);
+            const branchShift = allShifts.find(sh => matchesBranch(sh, { id: S.branchId, name: S.branchName }));
+            if (branchShift) {
+                S.currentShift = branchShift;
+                S.shift = branchShift.shift_name || S.shift;
+            }
+        }
+
+        // 3. Fallback de turno por hora del día si no está definido
+        if (!S.currentShift) {
+            const hour = new Date().getHours();
+            const autoShiftName = hour >= 15 ? "Tarde" : "Mañana";
+            S.shift = S.shift || autoShiftName;
+            S.currentShift = {
+                branch_id: S.branchId,
+                branch_name: S.branchName,
+                shift_name: S.shift,
+                opening_amount: 500,
+                opened_at: now(),
+                is_active: true
+            };
+            lw("current_shift", S.currentShift);
+        }
+
+        setT("#cash-status-text,#cashStatus,[data-cash-status]", "CAJA ABIERTA (" + S.shift + ")");
+        const dot = $("#cash-dot,.cash-dot");
+        if (dot) dot.style.background = "#10b981";
         return S.currentShift;
     }
 
