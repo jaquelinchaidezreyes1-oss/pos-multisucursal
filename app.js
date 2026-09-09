@@ -1373,7 +1373,7 @@
         if (directSerialPort && directSerialPort.writable) return { type: "serial", name: "Puerto Serie USB", label: "⚡ Conectado a Ofichido por Puerto Serie/USB (Salida Inmediata)" };
         if (directUsbDevice && directUsbDevice.opened) return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado a Ofichido por Cable USB Directo" };
         if (directBtChar && directBtServer && directBtServer.connected) return { type: "bt", name: directBtDevice?.name || "Impresora Bluetooth", label: "🔵 Conectado a Ofichido por Bluetooth" };
-        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Windows / Chrome)" };
+        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Windows / Chrome / Driver)" };
     }
 
     // Generador de comandos ESC/POS binarios para Ticket de Venta
@@ -1522,47 +1522,33 @@
         return false;
     }
 
-    // Mecanismo Universal de Impresión Inmediata para Chrome / Edge / Windows
-    function triggerUniversalPrint(htmlContent) {
+    // Mecanismo Universal Infalible de Impresión mediante Aislamiento DOM y window.print()
+    function triggerUniversalPrint(ticketInnerHtml) {
         try {
-            let oldFrame = document.getElementById("pos-print-frame");
-            if (oldFrame) {
-                oldFrame.remove();
+            const cfg = getPrinterConfig();
+            const is80mm = cfg.paperWidth === "80mm";
+
+            let container = document.getElementById("pos-thermal-receipt-container");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "pos-thermal-receipt-container";
+                document.body.appendChild(container);
             }
 
-            const frame = document.createElement("iframe");
-            frame.id = "pos-print-frame";
-            frame.style.cssText = "position:fixed;left:0;top:0;width:350px;height:400px;opacity:0.01;pointer-events:none;border:none;z-index:-99999;";
-            document.body.appendChild(frame);
+            container.className = is80mm ? "width-80mm" : "";
+            container.innerHTML = ticketInnerHtml;
 
-            const doc = frame.contentWindow.document;
-            doc.open();
-            doc.write(htmlContent);
-            doc.close();
-
-            const executePrint = () => {
+            // Invocar diálogo nativo de impresión del sistema (Windows / Chrome)
+            setTimeout(() => {
                 try {
-                    frame.contentWindow.focus();
-                    frame.contentWindow.print();
+                    window.focus();
+                    window.print();
                 } catch(e) {
-                    console.warn("Iframe direct print error, trying parent print:", e);
+                    console.warn("Error ejecutando window.print():", e);
                 }
-            };
-
-            setTimeout(executePrint, 200);
+            }, 100);
         } catch(err) {
-            console.warn("triggerUniversalPrint error, fallback popup:", err);
-            try {
-                const printWin = window.open("", "_blank", "width=380,height=600");
-                if (printWin) {
-                    printWin.document.open();
-                    printWin.document.write(htmlContent);
-                    printWin.document.close();
-                    setTimeout(() => {
-                        try { printWin.focus(); printWin.print(); } catch(e) {}
-                    }, 300);
-                }
-            } catch(e) {}
+            console.warn("triggerUniversalPrint error:", err);
         }
     }
 
@@ -1686,88 +1672,50 @@
         }
 
         // 2. Fallback por diálogo de impresión del sistema (Windows/Chrome)
-        const cfg = getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
         const isCard = s.payment_method === "card";
 
-        const ticketHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Ticket #${esc(s.sale_number)}</title>
-    <style>
-        @page { margin: 0; size: auto; }
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px;
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 4px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 5px 0; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        @media print {
-            body { width: 100%; max-width: 100%; margin: 0; padding: 1mm 2mm; }
-        }
-    </style>
-    <script>
-        window.onload = function() {
-            window.focus();
-            window.print();
-        };
-    </script>
-</head>
-<body>
-    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
-    <div class="center" style="font-size:10px;">PALETERIA Y NEVERIA ARTESANAL</div>
-    <div class="divider"></div>
-    <div><strong>SUCURSAL:</strong> ${esc(s.branch_name || S.branchName)}</div>
-    <div><strong>TURNO:</strong> ${esc(s.shift_name || S.shift)}</div>
-    <div><strong>FECHA:</strong> ${fdt(s.created_at)}</div>
-    <div><strong>ATENDIÓ:</strong> ${esc(s.cashier_name || "Encargada")}</div>
-    <div><strong>TICKET:</strong> #${esc(s.sale_number)}</div>
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:10px;">
-        <span>CANT / DESCRIPCION</span>
-        <span>IMPORTE</span>
-    </div>
-    <div class="divider"></div>
-    ${(s.items || []).map(i => `
-        <div class="row">
-            <span>${i.quantity}x ${esc(i.product_name)}</span>
-            <span>${money(i.subtotal != null ? i.subtotal : (i.price * i.quantity))}</span>
-        </div>
-    `).join("")}
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:13px;">
-        <span>TOTAL:</span>
-        <span>${money(s.total)}</span>
-    </div>
-    <div class="row">
-        <span>FORMA DE PAGO:</span>
-        <span>${isCard ? "TARJETA (DEB/CRE)" : "EFECTIVO"}</span>
-    </div>
-    <div class="double-divider"></div>
-    <div class="center bold" style="margin-top:6px;font-size:10px;">
-        ¡GRACIAS POR SU COMPRA!
-    </div>
-    <div class="center" style="font-size:9px;">
-        Conserve este ticket para cualquier aclaración
-    </div>
-    <div style="height: 18mm;"></div>
-</body>
-</html>`;
+        const ticketContent = `
+            <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
+            <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
+            <div class="center" style="font-size:10px;">PALETERIA Y NEVERIA ARTESANAL</div>
+            <div class="divider"></div>
+            <div><strong>SUCURSAL:</strong> ${esc(s.branch_name || S.branchName)}</div>
+            <div><strong>TURNO:</strong> ${esc(s.shift_name || S.shift)}</div>
+            <div><strong>FECHA:</strong> ${fdt(s.created_at)}</div>
+            <div><strong>ATENDIÓ:</strong> ${esc(s.cashier_name || "Encargada")}</div>
+            <div><strong>TICKET:</strong> #${esc(s.sale_number)}</div>
+            <div class="divider"></div>
+            <div class="row bold" style="font-size:10px;">
+                <span>CANT / DESCRIPCION</span>
+                <span>IMPORTE</span>
+            </div>
+            <div class="divider"></div>
+            ${(s.items || []).map(i => `
+                <div class="row">
+                    <span>${i.quantity}x ${esc(i.product_name)}</span>
+                    <span>${money(i.subtotal != null ? i.subtotal : (i.price * i.quantity))}</span>
+                </div>
+            `).join("")}
+            <div class="divider"></div>
+            <div class="row bold" style="font-size:13px;">
+                <span>TOTAL:</span>
+                <span>${money(s.total)}</span>
+            </div>
+            <div class="row">
+                <span>FORMA DE PAGO:</span>
+                <span>${isCard ? "TARJETA (DEB/CRE)" : "EFECTIVO"}</span>
+            </div>
+            <div class="double-divider"></div>
+            <div class="center bold" style="margin-top:6px;font-size:10px;">
+                ¡GRACIAS POR SU COMPRA!
+            </div>
+            <div class="center" style="font-size:9px;">
+                Conserve este ticket para cualquier aclaración
+            </div>
+            <div style="height: 18mm;"></div>
+        `;
 
-        triggerUniversalPrint(ticketHtml);
+        triggerUniversalPrint(ticketContent);
     }
 
     // Generador de comandos ESC/POS binarios para Corte de Caja
@@ -1840,207 +1788,130 @@
         }
 
         // 2. Fallback de ventana de impresión del sistema
-        const cfg = getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
         const diff = Number(ct.difference || 0);
         const diffLabel = diff > 0 ? ("+" + money(diff) + " (Sobrante)") : diff < 0 ? (money(diff) + " (Faltante)") : "$0.00 (Exacto)";
         const isMorning = String(ct.shift || "").toLowerCase().includes("mañ") || String(ct.shift || "").toLowerCase().includes("mat");
         const shiftLabel = isMorning ? "MATUTINO (MAÑANA)" : "VESPERTINO (TARDE)";
 
-        const cutHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Recibo de Corte de Caja</title>
-    <style>
-        @page { margin: 0; size: auto; }
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px;
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 4px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 5px 0; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        @media print {
-            body { width: 100%; max-width: 100%; margin: 0; padding: 1mm 2mm; }
-        }
-    </style>
-    <script>
-        window.onload = function() {
-            window.focus();
-            window.print();
-        };
-    </script>
-</head>
-<body>
-    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-    <div class="center bold" style="font-size:12px;">CORTE DE CAJA OFICIAL</div>
-    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
-    <div class="divider"></div>
-    <div><strong>SUCURSAL:</strong> ${esc(ct.branch_name || S.branchName)}</div>
-    <div><strong>TURNO:</strong> ${shiftLabel}</div>
-    <div><strong>FECHA/HORA:</strong> ${fdt(ct.created_at)}</div>
-    <div><strong>ENCARGADA:</strong> ${esc(ct.performed_by_name || "Encargada")}</div>
-    <div class="divider"></div>
-    <div class="bold" style="font-size:11px;margin-bottom:3px;">DESGLOSE FINANCIERO:</div>
-    <div class="row">
-        <span>Fondo Inicial:</span>
-        <span>${money(ct.opening_amount || 0)}</span>
-    </div>
-    <div class="row">
-        <span>Ventas Efectivo:</span>
-        <span>${money(ct.cash_sales || (Number(ct.total_sales||0) - Number(ct.card_sales||0)))}</span>
-    </div>
-    <div class="row">
-        <span>Ventas Tarjeta:</span>
-        <span>${money(ct.card_sales || 0)}</span>
-    </div>
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:12px;">
-        <span>TOTAL VENDIDO:</span>
-        <span>${money(ct.total_sales || 0)}</span>
-    </div>
-    <div class="divider"></div>
-    <div class="bold" style="font-size:11px;margin-bottom:3px;">ARQUEO DE CAJA FISICA:</div>
-    <div class="row">
-        <span>Efectivo Esperado:</span>
-        <span>${money(ct.expected_cash || (Number(ct.opening_amount||0) + Number(ct.cash_sales||0)))}</span>
-    </div>
-    <div class="row bold">
-        <span>Efectivo Contado:</span>
-        <span>${money(ct.counted_cash || 0)}</span>
-    </div>
-    <div class="row bold" style="font-size:12px;margin-top:2px;">
-        <span>CORTE NETO ENTREGAR:</span>
-        <span>${money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash||0) - Number(ct.opening_amount||0)))}</span>
-    </div>
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:11px;">
-        <span>DIFERENCIA:</span>
-        <span>${diffLabel}</span>
-    </div>
-    <div class="double-divider"></div>
-    <div style="margin-top:22px;text-align:center;">
-        ___________________________<br>
-        <span style="font-size:10px;">Firma de la Encargada</span>
-    </div>
-    <div style="margin-top:20px;text-align:center;">
-        ___________________________<br>
-        <span style="font-size:10px;">Firma Supervisión / Dirección</span>
-    </div>
-    <div style="height: 18mm;"></div>
-</body>
-</html>`;
+        const cutContent = `
+            <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
+            <div class="center bold" style="font-size:12px;">CORTE DE CAJA OFICIAL</div>
+            <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
+            <div class="divider"></div>
+            <div><strong>SUCURSAL:</strong> ${esc(ct.branch_name || S.branchName)}</div>
+            <div><strong>TURNO:</strong> ${shiftLabel}</div>
+            <div><strong>FECHA/HORA:</strong> ${fdt(ct.created_at)}</div>
+            <div><strong>ENCARGADA:</strong> ${esc(ct.performed_by_name || "Encargada")}</div>
+            <div class="divider"></div>
+            <div class="bold" style="font-size:11px;margin-bottom:3px;">DESGLOSE FINANCIERO:</div>
+            <div class="row">
+                <span>Fondo Inicial:</span>
+                <span>${money(ct.opening_amount || 0)}</span>
+            </div>
+            <div class="row">
+                <span>Ventas Efectivo:</span>
+                <span>${money(ct.cash_sales || (Number(ct.total_sales||0) - Number(ct.card_sales||0)))}</span>
+            </div>
+            <div class="row">
+                <span>Ventas Tarjeta:</span>
+                <span>${money(ct.card_sales || 0)}</span>
+            </div>
+            <div class="divider"></div>
+            <div class="row bold" style="font-size:12px;">
+                <span>TOTAL VENDIDO:</span>
+                <span>${money(ct.total_sales || 0)}</span>
+            </div>
+            <div class="divider"></div>
+            <div class="bold" style="font-size:11px;margin-bottom:3px;">ARQUEO DE CAJA FISICA:</div>
+            <div class="row">
+                <span>Efectivo Esperado:</span>
+                <span>${money(ct.expected_cash || (Number(ct.opening_amount||0) + Number(ct.cash_sales||0)))}</span>
+            </div>
+            <div class="row bold">
+                <span>Efectivo Contado:</span>
+                <span>${money(ct.counted_cash || 0)}</span>
+            </div>
+            <div class="row bold" style="font-size:12px;margin-top:2px;">
+                <span>CORTE NETO ENTREGAR:</span>
+                <span>${money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash||0) - Number(ct.opening_amount||0)))}</span>
+            </div>
+            <div class="divider"></div>
+            <div class="row bold" style="font-size:11px;">
+                <span>DIFERENCIA:</span>
+                <span>${diffLabel}</span>
+            </div>
+            <div class="double-divider"></div>
+            <div style="margin-top:22px;text-align:center;">
+                ___________________________<br>
+                <span style="font-size:10px;">Firma de la Encargada</span>
+            </div>
+            <div style="margin-top:20px;text-align:center;">
+                ___________________________<br>
+                <span style="font-size:10px;">Firma Supervisión / Dirección</span>
+            </div>
+            <div style="height: 18mm;"></div>
+        `;
 
-        triggerUniversalPrint(cutHtml);
+        triggerUniversalPrint(cutContent);
     }
 
     async function printDailyAccountingReceipt(rep) {
         if (!rep) return;
-        const cfg = getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
 
-        const accHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Reporte Contable - Nevería La Fuente</title>
-    <style>
-        @page { margin: 0; size: auto; }
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px;
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 4px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 5px 0; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        @media print {
-            body { width: 100%; max-width: 100%; margin: 0; padding: 1mm 2mm; }
-        }
-    </style>
-    <script>
-        window.onload = function() {
-            window.focus();
-            window.print();
-        };
-    </script>
-</head>
-<body>
-    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-    <div class="center bold" style="font-size:11px;">REPORTE CONSOLIDADO DE CADENA</div>
-    <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
-    <div class="divider"></div>
-    <div><strong>FECHA / JORNADA:</strong> ${rep.date}</div>
-    <div><strong>IMPRESO:</strong> ${fdt(now())}</div>
-    <div><strong>TOTAL TICKETS:</strong> ${rep.totalTickets || 0}</div>
-    <div class="divider"></div>
-    <div class="bold" style="font-size:11px;">DESGLOSE POR SUCURSAL:</div>
-    ${(rep.branchBreakdown || []).map(b => `
-        <div class="row" style="margin-top:2px;">
-            <span>${esc(b.name)}:</span>
-            <span class="bold">${money(b.total)}</span>
-        </div>
-        <div class="row" style="font-size:9.5px;color:#555;padding-left:6px;">
-            <span>Efe: ${money(b.cash || 0)} | Tarj: ${money(b.card || 0)}</span>
-            <span>(${b.tickets || 0} vts)</span>
-        </div>
-    `).join("")}
-    <div class="divider"></div>
-    <div class="row bold" style="font-size:13px;">
-        <span>TOTAL CADENA:</span>
-        <span>${money(rep.totalChain || 0)}</span>
-    </div>
-    <div class="row">
-        <span>Efectivo Total:</span>
-        <span>${money(rep.cashTotal || 0)}</span>
-    </div>
-    <div class="row">
-        <span>Tarjeta Total:</span>
-        <span>${money(rep.cardTotal || 0)}</span>
-    </div>
-    <div class="divider"></div>
-    <div class="row" style="font-size:10px;">
-        <span>Turno Matutino:</span>
-        <span>${money(rep.matTotal || 0)}</span>
-    </div>
-    <div class="row" style="font-size:10px;">
-        <span>Turno Vespertino:</span>
-        <span>${money(rep.vesTotal || 0)}</span>
-    </div>
-    <div class="double-divider"></div>
-    <div class="center" style="font-size:9px;margin-top:4px;">
-        Auditoría y Control Interno
-    </div>
-    <div style="height: 18mm;"></div>
-</body>
-</html>`;
+        const accContent = `
+            <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
+            <div class="center bold" style="font-size:11px;">REPORTE CONSOLIDADO DE CADENA</div>
+            <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
+            <div class="divider"></div>
+            <div><strong>FECHA / JORNADA:</strong> ${rep.date}</div>
+            <div><strong>IMPRESO:</strong> ${fdt(now())}</div>
+            <div><strong>TOTAL TICKETS:</strong> ${rep.totalTickets || 0}</div>
+            <div class="divider"></div>
+            <div class="bold" style="font-size:11px;">DESGLOSE POR SUCURSAL:</div>
+            ${(rep.branchBreakdown || []).map(b => `
+                <div class="row" style="margin-top:2px;">
+                    <span>${esc(b.name)}:</span>
+                    <span class="bold">${money(b.total)}</span>
+                </div>
+                <div class="row" style="font-size:9.5px;color:#555;padding-left:6px;">
+                    <span>Efe: ${money(b.cash || 0)} | Tarj: ${money(b.card || 0)}</span>
+                    <span>(${b.tickets || 0} vts)</span>
+                </div>
+            `).join("")}
+            <div class="divider"></div>
+            <div class="row bold" style="font-size:13px;">
+                <span>TOTAL CADENA:</span>
+                <span>${money(rep.totalChain || 0)}</span>
+            </div>
+            <div class="row">
+                <span>Efectivo Total:</span>
+                <span>${money(rep.cashTotal || 0)}</span>
+            </div>
+            <div class="row">
+                <span>Tarjeta Total:</span>
+                <span>${money(rep.cardTotal || 0)}</span>
+            </div>
+            <div class="divider"></div>
+            <div class="row" style="font-size:10px;">
+                <span>Turno Matutino:</span>
+                <span>${money(rep.matTotal || 0)}</span>
+            </div>
+            <div class="row" style="font-size:10px;">
+                <span>Turno Vespertino:</span>
+                <span>${money(rep.vesTotal || 0)}</span>
+            </div>
+            <div class="double-divider"></div>
+            <div class="center" style="font-size:9px;margin-top:4px;">
+                Auditoría y Control Interno
+            </div>
+            <div style="height: 18mm;"></div>
+        `;
 
-        triggerUniversalPrint(accHtml);
+        triggerUniversalPrint(accContent);
     }
 
     async function printTestReceipt(customCfg = null) {
         const cfg = customCfg || getPrinterConfig();
-        const pWidth = cfg.paperWidth || "58mm";
         const conn = getPrinterConnectionStatus();
 
         // 1. Intentar impresión física directa ESC/POS
@@ -2054,68 +1925,33 @@
         }
 
         // 2. Fallback de ventana de impresión del sistema
-        const testHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Ticket de Prueba - Ofichido</title>
-    <style>
-        @page { margin: 0; size: auto; }
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px;
-            color: #000;
-            background: #fff;
-            width: ${pWidth};
-            max-width: ${pWidth};
-            margin: 0 auto;
-            padding: 4px 2px;
-            box-sizing: border-box;
-        }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .divider { border-top: 1px dashed #000; margin: 4px 0; }
-        .double-divider { border-top: 2px solid #000; margin: 5px 0; }
-        @media print {
-            body { width: 100%; max-width: 100%; margin: 0; padding: 1mm 2mm; }
-        }
-    </style>
-    <script>
-        window.onload = function() {
-            window.focus();
-            window.print();
-        };
-    </script>
-</head>
-<body>
-    <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-    <div class="center" style="font-size:10px;">PRUEBA DE IMPRESORA TÉRMICA</div>
-    <div class="divider"></div>
-    <div><strong>MODELO:</strong> ${esc(cfg.model)}</div>
-    <div><strong>CONEXIÓN:</strong> ${esc(conn.label)}</div>
-    <div><strong>ANCHO DE ROLLO:</strong> ${esc(pWidth)}</div>
-    <div><strong>FECHA Y HORA:</strong> ${fdt(now())}</div>
-    <div><strong>SUCURSAL:</strong> ${esc(S.branchName)}</div>
-    <div><strong>USUARIO:</strong> ${esc(S.profile?.full_name || S.user?.email || "Usuario")}</div>
-    <div class="divider"></div>
-    <div class="bold center" style="font-size:12px; margin:4px 0;">¡CALIBRACIÓN CORRECTA!</div>
-    <div class="center" style="font-size:10px;">
-        Esta impresora está lista para imprimir:<br>
-        ✓ Tickets de Venta a Clientes (Obligatorio)<br>
-        ✓ Cortes de Caja por Turno<br>
-        ✓ Reportes Diarios Consolidados<br>
-        ✓ Aperturas de Turno con Firma
-    </div>
-    <div class="double-divider"></div>
-    <div class="center bold" style="font-size:11px; margin-top:6px;">
-        [ CORTAR AQUI ]
-    </div>
-    <div style="height: 20mm;"></div>
-</body>
-</html>`;
+        const testContent = `
+            <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
+            <div class="center" style="font-size:10px;">PRUEBA DE IMPRESORA TÉRMICA</div>
+            <div class="divider"></div>
+            <div><strong>MODELO:</strong> ${esc(cfg.model)}</div>
+            <div><strong>CONEXIÓN:</strong> ${esc(conn.label)}</div>
+            <div><strong>ANCHO DE ROLLO:</strong> ${esc(cfg.paperWidth || '58mm')}</div>
+            <div><strong>FECHA Y HORA:</strong> ${fdt(now())}</div>
+            <div><strong>SUCURSAL:</strong> ${esc(S.branchName)}</div>
+            <div><strong>USUARIO:</strong> ${esc(S.profile?.full_name || S.user?.email || "Usuario")}</div>
+            <div class="divider"></div>
+            <div class="bold center" style="font-size:12px; margin:4px 0;">¡CALIBRACIÓN CORRECTA!</div>
+            <div class="center" style="font-size:10px;">
+                Esta impresora está lista para imprimir:<br>
+                ✓ Tickets de Venta a Clientes (Obligatorio)<br>
+                ✓ Cortes de Caja por Turno<br>
+                ✓ Reportes Diarios Consolidados<br>
+                ✓ Aperturas de Turno con Firma
+            </div>
+            <div class="double-divider"></div>
+            <div class="center bold" style="font-size:11px; margin-top:6px;">
+                [ CORTAR AQUI ]
+            </div>
+            <div style="height: 20mm;"></div>
+        `;
 
-        triggerUniversalPrint(testHtml);
+        triggerUniversalPrint(testContent);
     }
 
     function openPrinterSetupModal() {
@@ -2150,7 +1986,7 @@
                 <div style="background:#ecfdf5;border:2px solid #10b981;border-radius:14px;padding:14px;margin-bottom:16px">
                     <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
                         <span style="font-size:20px">⭐</span>
-                        <strong style="color:#065f46;font-size:13px">RECOMENDADO: Conectar por Cable USB (Impresión Instantánea)</strong>
+                        <strong style="color:#065f46;font-size:13px">OPCIÓN 1: Conectar por Cable USB (Impresión Física 1 Clic)</strong>
                     </div>
                     <p style="margin:0 0 10px 0;font-size:11.5px;color:#047857;line-height:1.4">
                         Conecta tu Ofichido por cable USB a la computadora y presiona este botón. Al vincularla, <strong>los tickets saldrán físicamente de inmediato sin abrir ninguna ventana</strong>.
@@ -2158,7 +1994,7 @@
                     <button type="button" id="btn-pair-serial"
                         style="width:100%;padding:14px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:12px;font-weight:900;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 14px rgba(16,185,129,0.35)">
                         <span>⚡</span>
-                        <span>1. Conectar Ofichido por Cable USB (1 Clic)</span>
+                        <span>1. Conectar Ofichido por Cable USB</span>
                     </button>
                 </div>
 

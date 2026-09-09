@@ -1178,10 +1178,14 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus, 
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── MOTOR UNIVERSAL DE IMPRESIÓN TÉRMICA (58MM & 80MM) ── */
+#pos-thermal-receipt-container {
+    display: none;
+}
+
 @media print {
     @page {
-        margin: 0;
-        size: auto;
+        margin: 0 !important;
+        size: auto !important;
     }
     html, body {
         background: #fff !important;
@@ -1192,4 +1196,33 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus, 
         height: auto !important;
         overflow: visible !important;
     }
+    /* Ocultar todo el sistema POS al imprimir */
+    body > *:not(#pos-thermal-receipt-container) {
+        display: none !important;
+    }
+    /* Mostrar únicamente el contenedor del ticket */
+    #pos-thermal-receipt-container {
+        display: block !important;
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        max-width: 58mm !important;
+        margin: 0 auto !important;
+        padding: 2mm 3mm !important;
+        box-sizing: border-box !important;
+        font-family: 'Courier New', Courier, monospace !important;
+        font-size: 11px !important;
+        line-height: 1.25 !important;
+        color: #000 !important;
+        background: #fff !important;
+    }
+    #pos-thermal-receipt-container.width-80mm {
+        max-width: 80mm !important;
+    }
+    #pos-thermal-receipt-container .center { text-align: center !important; }
+    #pos-thermal-receipt-container .bold { font-weight: bold !important; }
+    #pos-thermal-receipt-container .divider { border-top: 1px dashed #000 !important; margin: 4px 0 !important; }
+    #pos-thermal-receipt-container .double-divider { border-top: 2px solid #000 !important; margin: 5px 0 !important; }
+    #pos-thermal-receipt-container .row { display: flex !important; justify-content: space-between !important; margin: 2px 0 !important; }
 }
