@@ -4921,15 +4921,16 @@
     let _lastCutsCount = 0;
 
     let _lastRefreshHash = "";
-    function safeSilentRefresh() {
+    function safeSilentRefresh(force = false) {
         if (!S.user) return;
         const active = document.activeElement;
         const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.isContentEditable);
         const hasOpenModal = !!document.querySelector(".modal.open, .modal.show, [data-modal-open='true'], #checkout-modal:not(.hidden), .confirm-modal");
         if (isTyping || hasOpenModal) return;
 
-        const currentHash = S.view + "_" + (gr("all_sales", []).length) + "_" + (gr("all_cuts", []).length) + "_" + (gr("all_shifts", []).length);
-        if (currentHash === _lastRefreshHash) return;
+        const cancelledCount = Object.keys(gr("cancelled_reasons", {})).length;
+        const currentHash = S.view + "_" + (gr("all_sales", []).length) + "_" + cancelledCount + "_" + (gr("all_cuts", []).length) + "_" + (gr("all_shifts", []).length);
+        if (!force && currentHash === _lastRefreshHash) return;
         _lastRefreshHash = currentHash;
 
         if (S.view === "private-access" && S.isSU) loadPrivateAccess(true);
@@ -4977,6 +4978,53 @@
         try {
             realtimeChannel = db.channel("lafuente-pos-mesh", { config: { broadcast: { self: false } } })
                 // 1. RECEPCIÓN DIRECTA DE VENTAS EN TIEMPO REAL (MESH BROADCAST)
+                .on("broadcast", { event: "sale_cancelled" }, async ({ payload }) => {
+                    if (!payload || (!payload.id && !payload.sale_number)) return;
+                    const sid = String(payload.id || "");
+                    const snum = String(payload.sale_number || "");
+                    const reason = payload.reason || "Venta cancelada";
+                    const cancelledBy = payload.by || "Encargada";
+                    const cancelledAt = payload.at || now();
+
+                    // 1. Guardar motivo de cancelación
+                    const cr = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
+                    if (sid) cr[sid] = reason;
+                    if (snum) cr[snum] = reason;
+                    gw("cancelled_reasons", cr);
+                    lw("cancelled_reasons", cr);
+
+                    // 2. Marcar en all_sales global
+                    let allGSales = gr("all_sales", []);
+                    const target = allGSales.find(x => (sid && String(x.id) === sid) || (snum && String(x.sale_number) === snum) || (x.local_id && (x.local_id === sid || x.local_id === snum)));
+                    if (target) {
+                        target.status = "CANCELLED";
+                        target.cancelled_reason = reason;
+                        target.cancelled_by = cancelledBy;
+                        target.cancelled_at = cancelledAt;
+                        gw("all_sales", allGSales);
+                    }
+
+                    // 3. Marcar en ventas locales
+                    let lSales = lr("sales", []);
+                    const lTarget = lSales.find(x => (sid && String(x.id) === sid) || (snum && String(x.sale_number) === snum));
+                    if (lTarget) {
+                        lTarget.status = "CANCELLED";
+                        lTarget.cancelled_reason = reason;
+                        lTarget.cancelled_by = cancelledBy;
+                        lTarget.cancelled_at = cancelledAt;
+                        lw("sales", lSales);
+                    }
+
+                    _cachedConsolidatedSales = null;
+                    await getConsolidatedSalesForChain(true);
+
+                    if (S.isSU) {
+                        const bName = target?.branch_name || payload.branch_name || "Sucursal";
+                        toast(`⚠️ Ticket #${snum || sid} CANCELADO en ${bName}. Descontado de Contabilidad y Acceso Privado.`, "warn", 5000);
+                    }
+
+                    safeSilentRefresh(true);
+                })
                 .on("broadcast", { event: "sale_created" }, async ({ payload }) => {
                     if (!payload || !payload.sale) return;
                     const s = payload.sale;
