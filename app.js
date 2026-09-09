@@ -543,6 +543,9 @@
         // 2. Establecer nueva sucursal
         S.branchId = b.id;
         S.branchName = b.name;
+        S.cutsFilterBranchId = b.id;
+        S.salesFilterBranchId = b.id;
+        S.shiftFilterBranchId = b.id;
         S.currentShift = null;
         S.cart = [];
         
@@ -555,7 +558,7 @@
         alertInv();
         
         // Sincronizar todos los selectores de sucursales en la vista
-        document.querySelectorAll("#branch-selector, #inv-branch-filter, #sales-branch-filter, #admin-branch-filter").forEach(sel => {
+        document.querySelectorAll("#branch-selector, #inv-branch-filter, #sales-branch-filter, #admin-branch-filter, #cuts-branch-filter, #shift-branch-filter").forEach(sel => {
             if (sel) sel.value = b.id;
         });
 
@@ -573,7 +576,7 @@
         if (S.view === "damage-reports") await loadDamageReports();
         if (S.view === "accounting")     await loadAccounting();
         
-        toast("📍 Sucursal activa: " + S.branchName + " (Inventario actualizado)", "success", 3000);
+        toast("📍 Sucursal activa: " + S.branchName + " (Inventario y Cortes actualizados)", "success", 3000);
     }
 
     function updateUI() {
@@ -3415,27 +3418,15 @@
 
 
     /* ── CORTES DE CAJA (ARQUEOS Y CIERRES DE TURNO) ── */
-    async function loadCuts(silent = false) {
-        const c = $("#cuts-container");
-        if (!c || !S.branchId) return;
-        if (!silent && !c.children.length) {
-            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando cortes de caja de ${esc(S.branchName)}…</p></div>`;
-        }
-
-        let remoteCuts = [];
-        if (db) {
-            try {
-                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 5000);
-                remoteCuts = data || [];
-            } catch(e) {}
-        }
-
+    async function getConsolidatedCutsForChain() {
         const cutsMap = new Map();
 
-        // 1. Cargar explícitamente desde llaves locales y globales directas
-        const addCutToMap = (ct, fallbackBranchName) => {
-            if (!ct || (!ct.id && !ct.created_at)) return;
-            let bName = ct.branch_name || fallbackBranchName || "";
+        // 1. Cargar cortes guardados localmente para cada sucursal
+        const addCut = (ct, fallbackBranch) => {
+            if (!ct) return;
+            let bName = ct.branch_name || fallbackBranch || "";
+            let bId = ct.branch_id || "";
+
             if (!bName && ct.performed_by_name) {
                 const pLow = String(ct.performed_by_name).toLowerCase();
                 for (const [em, staffInfo] of Object.entries(STAFF)) {
@@ -3445,7 +3436,14 @@
                     }
                 }
             }
-            if (!bName) bName = S.branchName;
+            if (!bName && bId) {
+                const found = S.branches.find(b => String(b.id) === String(bId));
+                if (found) bName = found.name;
+            }
+            if (!bName) bName = fallbackBranch || S.branchName;
+
+            const targetBranchObj = S.branches.find(b => normalizeBranchName(b.name) === normalizeBranchName(bName));
+            if (targetBranchObj && !bId) bId = targetBranchObj.id;
 
             const cid = String(ct.id || (ct.created_at + "_" + bName));
             if (!cutsMap.has(cid)) {
@@ -3461,9 +3459,9 @@
                 cutsMap.set(cid, {
                     ...ct,
                     id: ct.id || cid,
-                    branch_id: ct.branch_id || S.branchId,
+                    branch_id: bId || S.branchId,
                     branch_name: bName,
-                    shift_name: ct.shift_name || S.shift,
+                    shift_name: ct.shift_name || "Turno",
                     performed_by_name: ct.performed_by_name || ct.cashier_name || "Encargada",
                     cashier_name: ct.cashier_name || ct.performed_by_name || "Encargada",
                     opening_amount: opening,
@@ -3479,43 +3477,38 @@
             }
         };
 
-        // Cortes locales de la sucursal actual
-        const localBranchCuts = lr("cuts", []);
-        if (Array.isArray(localBranchCuts)) {
-            localBranchCuts.forEach(ct => addCutToMap(ct, S.branchName));
+        // Cortes locales de la sucursal activa
+        const curBranchCuts = lr("cuts", []);
+        if (Array.isArray(curBranchCuts)) {
+            curBranchCuts.forEach(c => addCut(c, S.branchName));
         }
 
         // Cortes globales
         const globalCuts = gr("all_cuts", []);
         if (Array.isArray(globalCuts)) {
-            globalCuts.forEach(ct => addCutToMap(ct, ""));
+            globalCuts.forEach(c => addCut(c, ""));
         }
 
-        // Último corte impreso
-        const lastPrintedCut = lr("last_printed_cut", null) || gr("last_printed_cut", null);
-        if (lastPrintedCut && typeof lastPrintedCut === "object") {
-            addCutToMap(lastPrintedCut, S.branchName);
-        }
-
-        // 2. Escaneo exhaustivo de todas las demás llaves de cortes en localStorage
+        // Escanear llaves de cada sucursal en localStorage
         try {
             if (typeof localStorage !== "undefined") {
                 for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key && (key.startsWith("lf_") || key.includes("cuts") || key.includes("cut"))) {
+                    const k = localStorage.key(i);
+                    if (k && k.startsWith("lf_") && k.includes("_cuts")) {
                         try {
-                            const raw = localStorage.getItem(key);
+                            const raw = localStorage.getItem(k);
                             if (!raw) continue;
-                            if (raw.startsWith("[")) {
-                                const parsed = JSON.parse(raw);
-                                if (Array.isArray(parsed)) {
-                                    parsed.forEach(ct => addCutToMap(ct, ""));
-                                }
-                            } else if (raw.startsWith("{")) {
-                                const parsed = JSON.parse(raw);
-                                if (parsed && (parsed.counted_cash != null || parsed.total_sales != null || parsed.opening_amount != null)) {
-                                    addCutToMap(parsed, "");
-                                }
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                let keyBranchName = "";
+                                if (k.includes("branch-1") || k.includes("calzada")) keyBranchName = "La Fuente Calzada";
+                                else if (k.includes("branch-2") || k.includes("rescate")) keyBranchName = "Rescate";
+                                else if (k.includes("branch-3") || k.includes("mollotes")) keyBranchName = "Mollotes";
+                                else if (k.includes("branch-4") || k.includes("tagarete_1") || k.includes("tagarete1")) keyBranchName = "Tagarete 1";
+                                else if (k.includes("branch-5") || k.includes("tagarete_2") || k.includes("tagarete2")) keyBranchName = "Tagarete 2";
+                                else if (k.includes("branch-6") || k.includes("cnop")) keyBranchName = "CNOP";
+
+                                parsed.forEach(item => addCut(item, keyBranchName));
                             }
                         } catch(e) {}
                     }
@@ -3523,74 +3516,59 @@
             }
         } catch(e) {}
 
-        // 3. Fusionar y enriquecer con los cortes de Supabase
-        remoteCuts.forEach(ct => {
-            let obs = {};
-            try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
-            
-            let bName = obs.branch_name || ct.branch_name || "";
-            const perf = obs.performed_by_name || ct.performed_by || obs.cashier_name || "";
-            if (!bName && perf) {
-                const pLower = String(perf).toLowerCase();
-                for (const [em, staffInfo] of Object.entries(STAFF)) {
-                    if (pLower.includes(em.toLowerCase()) || (pLower.match(/encargado\d+/) && em.includes(pLower.match(/encargado\d+/)[0]))) {
-                        bName = staffInfo.b;
-                        break;
-                    }
+        // Consultar Supabase si está disponible
+        if (db) {
+            try {
+                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}).limit(100), null, 3000);
+                if (data && Array.isArray(data)) {
+                    data.forEach(ct => {
+                        let obs = {};
+                        try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
+                        
+                        let bName = obs.branch_name || ct.branch_name || "";
+                        if (!bName && ct.branch_id) {
+                            const fb = S.branches.find(b => String(b.id) === String(ct.branch_id));
+                            if (fb) bName = fb.name;
+                        }
+                        addCut({
+                            ...ct,
+                            branch_name: bName,
+                            ...obs
+                        }, bName);
+                    });
                 }
-            }
-            if (!bName && ct.branch_id) {
-                const foundB = S.branches.find(b => String(b.id) === String(ct.branch_id));
-                if (foundB) bName = foundB.name;
-            }
-            if (!bName) bName = S.branchName;
+            } catch(e) {}
+        }
 
-            const cid = String(ct.id);
-            const opening = Number(obs.opening_amount != null ? obs.opening_amount : (ct.opening_amount || 0));
-            const counted = Number(ct.counted_cash != null ? ct.counted_cash : (obs.counted_cash || 0));
-            const total = Number(ct.total_sales != null ? ct.total_sales : (obs.total_sales || 0));
-            const cash = Number(obs.cash_sales || 0);
-            const card = Number(obs.card_sales || 0);
-            const diff = Number(ct.difference != null ? ct.difference : (obs.difference || 0));
-            const net = Number(obs.net_sales_without_fund != null ? obs.net_sales_without_fund : (counted - opening));
+        return Array.from(cutsMap.values());
+    }
 
-            cutsMap.set(cid, {
-                id: ct.id,
-                branch_id: ct.branch_id,
-                branch_name: bName,
-                shift_name: obs.shift_name || "Turno",
-                performed_by_name: obs.performed_by_name || perf || "Encargada",
-                cashier_name: obs.cashier_name || obs.performed_by_name || perf || "Encargada",
-                opening_amount: opening,
-                cash_sales: cash,
-                card_sales: card,
-                total_sales: total,
-                expected_cash: Number(ct.expected_cash != null ? ct.expected_cash : (obs.expected_cash || (opening + cash))),
-                counted_cash: counted,
-                difference: diff,
-                net_sales_without_fund: net,
-                created_at: ct.created_at || now()
-            });
-        });
+    async function loadCuts(silent = false) {
+        const c = $("#cuts-container");
+        if (!c || !S.branchId) return;
+        if (!silent && !c.children.length) {
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando cortes de caja de ${esc(S.branchName)}…</p></div>`;
+        }
 
-        const activeFilter = S.isSU ? (S.cutsFilterBranchId || "all") : S.branchId;
+        const allConsolidatedCuts = await getConsolidatedCutsForChain();
+        const activeFilter = S.isSU ? (S.cutsFilterBranchId || S.branchId) : S.branchId;
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
-        
-        // Filtro y ordenación cronológica descendente
-        const cutsList = Array.from(cutsMap.values())
+
+        // Filtrar según sucursal activa o seleccionada
+        const cutsList = allConsolidatedCuts
             .filter(ct => !deletedCutIds.has(String(ct.id)))
             .filter(ct => {
                 if (!S.isSU) return matchesBranch(ct, { id: S.branchId, name: S.branchName });
                 if (activeFilter === "all") return true;
-                return matchesBranch(ct, { id: activeFilter, name: S.branches.find(b=>String(b.id)===String(activeFilter))?.name });
+                return matchesBranch(ct, { id: activeFilter, name: S.branches.find(b=>String(b.id)===String(activeFilter))?.name || S.branchName });
             })
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
         // Calcular ventas activas del turno actual para el corte
-        const consolidated = await getConsolidatedSalesForChain();
-        const branchSales = consolidated.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
+        const consolidatedSales = await getConsolidatedSalesForChain();
+        const currentBranchSales = consolidatedSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
         const todayStr = toDateKey();
-        const todayActiveSales = branchSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
+        const todayActiveSales = currentBranchSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
         
         const currentCategory = (S.shift.toLowerCase().includes("tarde") || S.shift.toLowerCase().includes("vesp")) ? "vespertino" : "matutino";
         const currentTurnSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory);
@@ -3604,19 +3582,21 @@
         const initialFund = Number(activeLocalShift?.opening_amount != null ? activeLocalShift.opening_amount : (S.currentShift?.opening_amount != null ? S.currentShift.opening_amount : 500));
         const expectedCashInDrawer = initialFund + currentCashSales;
 
+        const currentBranchDisplayName = S.branches.find(b => String(b.id) === String(activeFilter))?.name || S.branchName;
+
         const branchSelectHtml = S.isSU ? `
             <div style="display:flex;align-items:center;gap:8px">
                 <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 FILTRAR CORTES:</label>
-                <select id="cuts-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
-                    <option value="all"${activeFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${cutsList.length} cortes)</option>
-                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeFilter)?' selected':''}>${esc(b.name)}</option>`).join("")}
+                <select id="cuts-branch-filter" style="padding:7px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
+                    <option value="all"${activeFilter==='all'?' selected':''}>🌐 Todas las Sucursales (${allConsolidatedCuts.length} cortes)</option>
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeFilter)?' selected':''}>📍 ${esc(b.name)}</option>`).join("")}
                 </select>
             </div>` : '';
 
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
-                <strong style="font-size:17px;color:#ffffff;font-weight:900">Cortes de Caja Oficiales — ${esc(S.branchName)} (${esc(S.shift)})</strong>
+                <strong style="font-size:18px;color:#ffffff;font-weight:900">Cortes de Caja Oficiales — ${esc(currentBranchDisplayName)} (${esc(S.shift)})</strong>
                 <div style="font-size:12px;color:#fcebd2;margin-top:2px">Arqueos de efectivo, fondo inicial validado y balance de turnos en tiempo real</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -3631,7 +3611,7 @@
         <!-- FORMULARIO NUEVO CORTE DE CAJA -->
         <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-                <h3 style="color:var(--wine-900);margin:0;font-weight:900">✂️ Realizar Corte de Turno Actual (${esc(S.shift)})</h3>
+                <h3 style="color:var(--wine-900);margin:0;font-weight:900">✂️ Realizar Corte de Turno Actual (${esc(S.shift)}) — ${esc(S.branchName)}</h3>
                 <span style="font-size:11px;background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:12px;font-weight:800;border:1px solid #86efac">
                     🟢 Turno Activo: ${esc(S.shift)} — Fondo Inicial Validado: ${money(initialFund)}
                 </span>
@@ -3671,9 +3651,9 @@
             </div>
         </div>
 
-        <!-- HISTORIAL DE CORTES PLASMADOS DIGITALMENTE -->
+        <!-- HISTORIAL DE CORTES DE CAJA DE LA SUCURSAL -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja (${cutsList.length} registrados)</h3>
+            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja — ${esc(currentBranchDisplayName)} (${cutsList.length} registrados)</h3>
         </div>
         ${cutsList.length ? `
         <div style="display:flex;flex-direction:column;gap:14px">
@@ -3699,8 +3679,8 @@
 
                         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                             <button type="button" class="btn-reprint-cut" data-id="${esc(ct.id)}"
-                                style="padding:8px 16px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
-                                <span>🖨️</span><span>Reimprimir Ticket</span>
+                                style="padding:8px 16px;background:linear-gradient(135deg,#701721,#3b0a10);color:#ffffff;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
+                                <span style="color:#fcd34d">🖨️</span><span style="color:#ffffff">Reimprimir Ticket</span>
                             </button>
                             ${S.isSU ? `
                             <button type="button" class="btn-delete-cut" data-id="${esc(ct.id)}" data-shift="${esc(ct.shift_name)}" data-branch="${esc(ct.branch_name)}"
@@ -3749,7 +3729,7 @@
             }).join("")}
         </div>` : `
         <div class="empty-state" style="padding:34px;text-align:center">
-            <p style="color:var(--text-muted)">No hay cortes de caja registrados aún en esta vista.</p>
+            <p style="color:var(--text-muted)">No hay cortes de caja registrados aún en ${esc(currentBranchDisplayName)}.</p>
         </div>`}
         `;
 
@@ -3757,8 +3737,9 @@
             S.cutsFilterBranchId = e.target.value;
             if (e.target.value !== "all") {
                 await changeBranch(e.target.value);
+            } else {
+                await loadCuts();
             }
-            await loadCuts();
         });
 
         document.getElementById("btn-ref-cuts")?.addEventListener("click", async () => {
@@ -3780,7 +3761,7 @@
             const diff = countedVal - expectedCashInDrawer;
             const netWithoutFund = countedVal - initialFund;
 
-            const ok = await toastConfirm(`Confirmar Corte de Turno (${S.shift}):\n• Fondo Inicial: ${money(initialFund)}\n• Cobrado Efectivo: ${money(currentCashSales)}\n• Cobrado Tarjeta: ${money(currentCardSales)}\n• Total Vendido: ${money(currentTotalSold)}\n• Efectivo Contado: ${money(countedVal)}\n• Diferencia: ${diff>=0?'+':''}${money(diff)}\n• Corte Neto Efectivo: ${money(netWithoutFund)}`);
+            const ok = await toastConfirm(`Confirmar Corte de Turno (${S.shift}) — ${S.branchName}:\n• Fondo Inicial: ${money(initialFund)}\n• Cobrado Efectivo: ${money(currentCashSales)}\n• Cobrado Tarjeta: ${money(currentCardSales)}\n• Total Vendido: ${money(currentTotalSold)}\n• Efectivo Contado: ${money(countedVal)}\n• Diferencia: ${diff>=0?'+':''}${money(diff)}\n• Corte Neto Efectivo: ${money(netWithoutFund)}`);
             if (!ok) return;
 
             const uname = S.profile?.full_name || S.user?.email || "Encargada";
@@ -3918,7 +3899,6 @@
             toast("🗑️ Corte eliminado del sistema.", "info", 3000);
         }));
     }
-
     /* ── GESTIÓN DE TURNOS & APERTURA ── */
     async function getConsolidatedShiftsForChain() {
         const shiftsMap = new Map();
