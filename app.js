@@ -1530,6 +1530,36 @@
         return merged;
     }
 
+    function triggerUniversalPrint(ticketInnerHtml) {
+        try {
+            const cfg = getPrinterConfig();
+            const is80mm = cfg.paperWidth === "80mm";
+
+            let container = document.getElementById("pos-thermal-receipt-container");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "pos-thermal-receipt-container";
+                document.body.appendChild(container);
+            }
+
+            container.className = is80mm ? "width-80mm" : "";
+            container.innerHTML = ticketInnerHtml;
+
+            const modal = document.getElementById("printer-modal-overlay");
+            if (modal) {
+                modal.style.display = "none";
+                setTimeout(() => { if (modal && document.body.contains(modal)) modal.style.display = "flex"; }, 1500);
+            }
+
+            window.focus();
+            setTimeout(() => {
+                window.print();
+            }, 80);
+        } catch(err) {
+            console.warn("triggerUniversalPrint error:", err);
+        }
+    }
+
     async function printSaleReceipt(sale) {
         if (!sale) return;
         localStorage.setItem("lf_last_printed_sale", JSON.stringify(sale));
