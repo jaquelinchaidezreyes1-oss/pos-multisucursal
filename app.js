@@ -1364,7 +1364,7 @@
             if (raw) return JSON.parse(raw);
         } catch(e) {}
         return {
-            model: "Ofichido / POS-58 (58mm)",
+            model: "Mini Impresora Gia / Cays / Ofichido (58mm)",
             paperWidth: "58mm",
             baudRate: 9600,
             autoPrint: true,
@@ -1379,10 +1379,11 @@
     }
 
     function getPrinterConnectionStatus() {
-        if (directSerialPort && directSerialPort.writable) return { type: "serial", name: "Puerto Serie USB", label: "⚡ Conectado a Ofichido por Puerto Serie/USB (Baudio: " + (getPrinterConfig().baudRate || 9600) + ")" };
-        if (directUsbDevice && directUsbDevice.opened) return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado a Ofichido por Cable USB Directo" };
-        if (directBtChar && directBtServer && directBtServer.connected) return { type: "bt", name: directBtDevice?.name || "Impresora Bluetooth", label: "🔵 Conectado a Ofichido por Bluetooth" };
-        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Windows / Chrome / Ofichido)" };
+        const cfg = getPrinterConfig();
+        if (directSerialPort && directSerialPort.writable) return { type: "serial", name: "Puerto Serie USB", label: "⚡ Conectado por Puerto Serie / COM (Baudio: " + (cfg.baudRate || 9600) + ")" };
+        if (directUsbDevice && directUsbDevice.opened) return { type: "usb", name: directUsbDevice.productName || "Impresora USB", label: "🟢 Conectado por Cable USB / OTG Directo (" + (directUsbDevice.productName || cfg.model) + ")" };
+        if (directBtChar && directBtServer && directBtServer.connected) return { type: "bt", name: directBtDevice?.name || "Mini Impresora Bluetooth", label: "🔵 Conectado por Bluetooth (" + (directBtDevice?.name || cfg.model) + ")" };
+        return { type: "browser", name: "Impresora del Sistema", label: "🖨️ Modo Impresión del Sistema (Android Spooler / Windows / Ofichido / Gia / Cays)" };
     }
 
     // Generador de comandos ESC/POS binarios para Ticket de Venta con retorno de carro (CR+LF) y vaciado de búfer
@@ -1459,12 +1460,10 @@
         parts.push(leftCmd);
         parts.push(encoder.encode(cleanEscPosText("SUCURSAL: " + S.branchName + "\r\n")));
         parts.push(encoder.encode(cleanEscPosText("FECHA:    " + fdt(now()) + "\r\n")));
-        parts.push(encoder.encode(cleanEscPosText("USUARIO:  " + (S.profile?.full_name || S.user?.email || "Encargada") + "\r\n")));
+        parts.push(encoder.encode(cleanEscPosText("MODELO:   " + getPrinterConfig().model + "\r\n")));
         parts.push(encoder.encode("--------------------------------\r\n"));
-        parts.push(centerCmd, boldOn, encoder.encode("IMPRESORA OFICHIDO LISTA\r\n"), boldOff);
-        parts.push(encoder.encode("Conexion fisica 100% exitosa\r\n"));
-        parts.push(encoder.encode("1234567890 ABCDEFGHIJKLMNOP\r\n"));
-        parts.push(encoder.encode("================================\r\n"));
+        parts.push(centerCmd, boldOn, encoder.encode("¡IMPRESION CORRECTA!\r\n"), boldOff);
+        parts.push(encoder.encode("Mini Impresora Lista\r\n"));
         parts.push(feedAndCut);
 
         const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
@@ -1477,135 +1476,55 @@
         return combined;
     }
 
-    async function writeEscPosBytes(bytes) {
-        // 1. Intentar por Puerto Serial / USB (WebSerial)
-        if (directSerialPort && directSerialPort.writable) {
-            try {
-                if (!directSerialWriter) {
-                    directSerialWriter = directSerialPort.writable.getWriter();
-                }
-                await directSerialWriter.write(bytes);
-                directSerialWriter.releaseLock();
-                directSerialWriter = null;
-                console.log("✓ Bytes ESC/POS transmitidos por Puerto Serial/USB");
-                return true;
-            } catch(e) {
-                console.warn("Error en Serial Writer:", e);
-                try { if (directSerialWriter) directSerialWriter.releaseLock(); } catch(err) {}
-                directSerialWriter = null;
-            }
-        }
-
-        // 2. Intentar por WebUSB directo
-        if (directUsbDevice && directUsbDevice.opened) {
-            try {
-                await directUsbDevice.transferOut(directUsbEndpoint || 1, bytes);
-                console.log("✓ Bytes ESC/POS transmitidos por WebUSB");
-                return true;
-            } catch(e) {
-                console.warn("Error en WebUSB transferOut:", e);
-            }
-        }
-
-        // 3. Intentar por Bluetooth directo
-        if (directBtChar && directBtServer && directBtServer.connected) {
-            try {
-                const chunkSize = 512;
-                for (let i = 0; i < bytes.length; i += chunkSize) {
-                    const chunk = bytes.slice(i, i + chunkSize);
-                    if (directBtChar.writeValueWithoutResponse) {
-                        await directBtChar.writeValueWithoutResponse(chunk);
-                    } else {
-                        await directBtChar.writeValue(chunk);
-                    }
-                }
-                console.log("✓ Bytes ESC/POS transmitidos por Bluetooth");
-                return true;
-            } catch(e) {
-                console.warn("Error en Bluetooth write:", e);
-            }
-        }
-
-        return false;
-    }
-
-    // Mecanismo Universal Directo e Infalible de Impresión en Windows / Chrome
-    function triggerUniversalPrint(ticketInnerHtml) {
-        try {
-            const cfg = getPrinterConfig();
-            const is80mm = cfg.paperWidth === "80mm";
-
-            let container = document.getElementById("pos-thermal-receipt-container");
-            if (!container) {
-                container = document.createElement("div");
-                container.id = "pos-thermal-receipt-container";
-                document.body.appendChild(container);
-            }
-
-            container.className = is80mm ? "width-80mm" : "";
-            container.innerHTML = ticketInnerHtml;
-
-            // Disparar diálogo nativo de impresión directamente
-            window.focus();
-            window.print();
-        } catch(err) {
-            console.warn("triggerUniversalPrint error:", err);
-        }
-    }
-
-    // 1. Conectar por WebSerial (Puerto USB COM en Windows)
-    async function connectSerialDirect(baudRate = null) {
+    // 1. Conectar por WebSerial (Puerto USB COM en Windows - 100% infalible)
+    async function connectSerialDirect(baudRate = 9600) {
         if (!navigator.serial) {
             toast("WebSerial no está soportado en este navegador. Usa Google Chrome o Microsoft Edge en Windows.", "warn", 5000);
             return false;
         }
-        const bRate = baudRate || getPrinterConfig().baudRate || 9600;
         try {
-            if (directSerialPort) {
-                try { await directSerialPort.close(); } catch(e) {}
-                directSerialPort = null;
-            }
-            toast("⚡ Selecciona tu impresora Ofichido en la lista que aparece…", "info", 4000);
+            toast("⚡ Selecciona el puerto USB de tu impresora en la lista…", "info", 4000);
             const port = await navigator.serial.requestPort();
-            await port.open({ baudRate: Number(bRate) });
+            await port.open({ baudRate: Number(baudRate) });
             directSerialPort = port;
-            const cfg = getPrinterConfig();
-            cfg.connectionType = "serial";
-            cfg.baudRate = Number(bRate);
-            savePrinterConfig(cfg);
-            toast("✓ ¡Conectado a " + bRate + " baudios! Ahora tus tickets saldrán físicamente.", "success", 5000);
+            savePrinterConfig({ ...getPrinterConfig(), connectionType: "serial", baudRate: Number(baudRate) });
+            toast("✓ ¡Impresora conectada exitosamente por Puerto Serie USB!", "success", 4000);
             return true;
         } catch(err) {
-            console.warn("Serial connect error:", err);
-            if (err.name !== "NotFoundError") toast("Error al conectar por puerto USB: " + err.message, "error", 4000);
+            if (err.name !== "NotFoundError") {
+                console.warn("Serial connection error:", err);
+                toast("No se pudo conectar por Puerto Serie: " + (err.message || err), "error", 5000);
+            }
             return false;
         }
     }
 
-    // Desconectar puerto serial y volver a modo Windows
+    // Desconectar Serial
     async function disconnectSerialDirect() {
-        if (directSerialPort) {
-            try { await directSerialPort.close(); } catch(e) {}
+        try {
+            if (directSerialWriter) {
+                await directSerialWriter.close();
+                directSerialWriter = null;
+            }
+            if (directSerialPort) {
+                await directSerialPort.close();
+                directSerialPort = null;
+            }
+            toast("Impresora desconectada", "info");
+        } catch(e) {
             directSerialPort = null;
+            directSerialWriter = null;
         }
-        if (directUsbDevice) {
-            try { await directUsbDevice.close(); } catch(e) {}
-            directUsbDevice = null;
-        }
-        const cfg = getPrinterConfig();
-        cfg.connectionType = "browser";
-        savePrinterConfig(cfg);
-        toast("Modo Impresora de Windows (Ofichido) activo.", "info", 3000);
     }
 
-    // 2. Conectar por WebUSB directo
+    // 2. Conectar por WebUSB (Cable USB directo en Android / Windows)
     async function connectUsbDirect() {
         if (!navigator.usb) {
-            toast("WebUSB no disponible. Usa Chrome o Edge en Windows/Android.", "warn", 5000);
+            toast("WebUSB no disponible. Usa Chrome en Android o Windows.", "warn", 5000);
             return false;
         }
         try {
-            toast("🔌 Selecciona tu impresora Ofichido en la lista USB…", "info", 4000);
+            toast("🔌 Selecciona tu mini impresora en la lista USB…", "info", 4000);
             const device = await navigator.usb.requestDevice({ filters: [] });
             await device.open();
             if (device.configuration === null) await device.selectConfiguration(1);
@@ -1627,26 +1546,26 @@
             }
             directUsbDevice = device;
             directUsbEndpoint = epNum;
-            const cfg = getPrinterConfig();
-            cfg.connectionType = "usb";
-            savePrinterConfig(cfg);
-            toast("✓ Conectado por Cable USB a " + (device.productName || "Impresora Ofichido"), "success", 5000);
+            savePrinterConfig({ ...getPrinterConfig(), connectionType: "usb" });
+            toast("✓ ¡Mini impresora USB conectada exitosamente!", "success", 4000);
             return true;
         } catch(err) {
-            console.warn("USB connect error:", err);
-            if (err.name !== "NotFoundError") toast("Error al vincular USB: " + err.message, "error", 4000);
+            if (err.name !== "NotFoundError") {
+                console.warn("USB connect error:", err);
+                toast("Error al conectar por USB: " + (err.message || err), "error");
+            }
             return false;
         }
     }
 
-    // 3. Conectar por Web Bluetooth
+    // 3. Conectar por Web Bluetooth (Ideal para Android / Mini Impresoras Gia y Caysn)
     async function connectBtDirect() {
         if (!navigator.bluetooth) {
-            toast("Bluetooth Web no disponible. Activa Bluetooth y usa Google Chrome.", "warn", 5000);
+            toast("Bluetooth Web no disponible. Activa Bluetooth y usa Google Chrome en Android o Windows.", "warn", 5000);
             return false;
         }
         try {
-            toast("📶 Buscando impresoras Ofichido Bluetooth térmicas cercanas…", "info", 4000);
+            toast("📶 Buscando mini impresoras Bluetooth térmicas (Gia, Cays, etc.)…", "info", 4000);
             const device = await navigator.bluetooth.requestDevice({
                 acceptAllDevices: true,
                 optionalServices: [
@@ -1672,296 +1591,289 @@
                 if (directBtChar) break;
             }
 
-            const cfg = getPrinterConfig();
-            cfg.connectionType = "bluetooth";
-            savePrinterConfig(cfg);
-            toast("✓ Conectado por Bluetooth a " + (device.name || "Impresora Ofichido"), "success", 5000);
+            savePrinterConfig({ ...getPrinterConfig(), connectionType: "bt" });
+            toast("✓ ¡Mini impresora Bluetooth vinculada exitosamente!", "success", 4000);
             return true;
         } catch(err) {
-            console.warn("Bluetooth connect error:", err);
-            if (err.name !== "NotFoundError") toast("Error al vincular Bluetooth: " + err.message, "error", 4000);
+            if (err.name !== "NotFoundError") {
+                console.warn("BT connect error:", err);
+                toast("Error al conectar por Bluetooth: " + (err.message || err), "error");
+            }
             return false;
         }
     }
 
-    async function printSaleReceipt(s) {
-        if (!s) return;
-        
-        // 1. Intentar envío físico directo ESC/POS (si está vinculada por serial/bluetooth)
+    // Escritura de bytes directa
+    async function writeEscPosBytes(uint8Data) {
+        // A. Serial Port
+        if (directSerialPort && directSerialPort.writable) {
+            try {
+                if (!directSerialWriter) {
+                    directSerialWriter = directSerialPort.writable.getWriter();
+                }
+                await directSerialWriter.write(uint8Data);
+                directSerialWriter.releaseLock();
+                directSerialWriter = null;
+                return true;
+            } catch(e) {
+                try { directSerialWriter?.releaseLock(); } catch(err) {}
+                directSerialWriter = null;
+            }
+        }
+        // B. USB Device
+        if (directUsbDevice && directUsbDevice.opened) {
+            try {
+                await directUsbDevice.transferOut(directUsbEndpoint, uint8Data);
+                return true;
+            } catch(e) {
+                console.warn("USB transferOut error:", e);
+            }
+        }
+        // C. Bluetooth
+        if (directBtChar && directBtServer && directBtServer.connected) {
+            try {
+                const CHUNK_SIZE = 512;
+                for (let i = 0; i < uint8Data.length; i += CHUNK_SIZE) {
+                    const chunk = uint8Data.slice(i, i + CHUNK_SIZE);
+                    if (directBtChar.writeValueWithoutResponse) {
+                        await directBtChar.writeValueWithoutResponse(chunk);
+                    } else {
+                        await directBtChar.writeValue(chunk);
+                    }
+                }
+                return true;
+            } catch(e) {
+                console.warn("BT write error:", e);
+            }
+        }
+        return false;
+    }
+
+    // Invocador Universal del Diálogo de Impresión (Chrome / Android / Windows)
+    function triggerUniversalPrint(ticketInnerHtml) {
+        try {
+            const cfg = getPrinterConfig();
+            const is80mm = cfg.paperWidth === "80mm";
+
+            let container = document.getElementById("pos-thermal-receipt-container");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "pos-thermal-receipt-container";
+                document.body.appendChild(container);
+            }
+
+            container.className = is80mm ? "width-80mm" : "";
+            container.innerHTML = ticketInnerHtml;
+
+            // Disparar diálogo nativo de impresión directamente
+            window.focus();
+            window.print();
+        } catch(err) {
+            console.warn("triggerUniversalPrint error:", err);
+        }
+    }
+
+    function printShiftOpeningReceipt(shiftObj) {
+        if (!shiftObj) return;
+        const shiftHtml = `
+            <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
+            <div class="center" style="font-size:11px; font-style:italic;">-- DESDE 1962 --</div>
+            <div class="center" style="font-size:10px; margin-bottom:4px;">APERTURA DE TURNO Y FONDO DE CAJA</div>
+            <div class="divider"></div>
+            <div><strong>SUCURSAL:</strong> ${esc(shiftObj.branch_name || S.branchName)}</div>
+            <div><strong>TURNO:</strong> ${esc(shiftObj.shift_name || S.shift)}</div>
+            <div><strong>FECHA / HORA:</strong> ${fdt(shiftObj.opened_at || now())}</div>
+            <div><strong>ENCARGADA:</strong> ${esc(shiftObj.cashier_name || "Encargada")}</div>
+            <div class="divider"></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin: 6px 0;">
+                <span>FONDO INICIAL:</span>
+                <span>${money(shiftObj.opening_amount)}</span>
+            </div>
+            <div class="divider"></div>
+            <div class="center" style="font-size:10px; margin-top:4px;">
+                Fondo de caja validado y asignado para el turno.<br>
+                Este importe se reflejará en el corte de caja.
+            </div>
+            <div style="height: 18mm;"></div>
+            <div class="center" style="border-top: 1px dashed #000; padding-top: 4px; font-size:10px; margin: 0 10mm;">
+                FIRMA DE CONFORMIDAD
+            </div>
+            <div style="height: 15mm;"></div>
+        `;
+        triggerUniversalPrint(shiftHtml);
+    }
+
+    async function printSaleReceipt(sale) {
+        if (!sale) return;
+        localStorage.setItem("lf_last_printed_sale", JSON.stringify(sale));
+
+        // 1. Envío binario por hardware directo si está disponible
         if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
-            const raw = buildEscPosTicket(s);
+            const raw = buildEscPosTicket(sale);
             const ok = await writeEscPosBytes(raw);
             if (ok) return;
         }
 
-        // 2. Diálogo nativo de impresión del sistema (Windows/Chrome)
-        const isCard = s.payment_method === "card";
-
-        const ticketContent = `
-            <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-            <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
-            <div class="center" style="font-size:10px;">PALETERIA Y NEVERIA ARTESANAL</div>
+        // 2. Impresión nativa del sistema (Windows / Android / Ofichido / Gia / Cays)
+        const isCard = sale.payment_method === "card";
+        const receiptHtml = `
+            <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
+            <div class="center" style="font-size:11px; font-style:italic;">-- DESDE 1962 --</div>
+            <div class="center" style="font-size:10px; margin-bottom:4px;">PALETERIA Y NEVERIA ARTESANAL</div>
             <div class="divider"></div>
-            <div><strong>SUCURSAL:</strong> ${esc(s.branch_name || S.branchName)}</div>
-            <div><strong>TURNO:</strong> ${esc(s.shift_name || S.shift)}</div>
-            <div><strong>FECHA:</strong> ${fdt(s.created_at)}</div>
-            <div><strong>ATENDIÓ:</strong> ${esc(s.cashier_name || "Encargada")}</div>
-            <div><strong>TICKET:</strong> #${esc(s.sale_number)}</div>
+            <div><strong>SUCURSAL:</strong> ${esc(sale.branch_name || S.branchName)}</div>
+            <div><strong>TURNO:</strong> ${esc(sale.shift_name || S.shift)}</div>
+            <div><strong>FECHA:</strong> ${fdt(sale.created_at)}</div>
+            <div><strong>ATENDIÓ:</strong> ${esc(sale.cashier_name || "Encargada")}</div>
+            <div><strong>TICKET:</strong> #${esc(sale.sale_number || sale.id)}</div>
             <div class="divider"></div>
-            <div class="row bold" style="font-size:10px;">
-                <span>CANT / DESCRIPCION</span>
-                <span>IMPORTE</span>
-            </div>
+            <table style="width:100%; font-size:11px; border-collapse:collapse;">
+                <thead>
+                    <tr style="border-bottom:1px dashed #000;">
+                        <th style="text-align:left; width:15%;">CANT</th>
+                        <th style="text-align:left; width:55%;">DESCRIPCIÓN</th>
+                        <th style="text-align:right; width:30%;">TOTAL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${(sale.items || []).map(i => `
+                        <tr>
+                            <td style="vertical-align:top;">${i.quantity}x</td>
+                            <td style="vertical-align:top;">${esc(i.product_name)}</td>
+                            <td style="text-align:right; vertical-align:top;">${money(i.subtotal != null ? i.subtotal : (i.price * i.quantity))}</td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
             <div class="divider"></div>
-            ${(s.items || []).map(i => `
-                <div class="row">
-                    <span>${i.quantity}x ${esc(i.product_name)}</span>
-                    <span>${money(i.subtotal != null ? i.subtotal : (i.price * i.quantity))}</span>
-                </div>
-            `).join("")}
-            <div class="divider"></div>
-            <div class="row bold" style="font-size:13px;">
+            <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin: 4px 0;">
                 <span>TOTAL:</span>
-                <span>${money(s.total)}</span>
+                <span>${money(sale.total)}</span>
             </div>
-            <div class="row">
-                <span>FORMA DE PAGO:</span>
-                <span>${isCard ? "TARJETA (DEB/CRE)" : "EFECTIVO"}</span>
+            <div style="display:flex; justify-content:space-between; font-size:11px;">
+                <span>MÉTODO DE PAGO:</span>
+                <span>${isCard ? "💳 TARJETA" : "💵 EFECTIVO"}</span>
             </div>
             <div class="double-divider"></div>
-            <div class="center bold" style="margin-top:6px;font-size:10px;">
-                ¡GRACIAS POR SU COMPRA!
-            </div>
-            <div class="center" style="font-size:9px;">
-                Conserve este ticket para cualquier aclaración
-            </div>
+            <div class="center bold" style="font-size:12px; margin-top:4px;">¡GRACIAS POR SU COMPRA!</div>
+            <div class="center" style="font-size:10px;">Conserve este ticket para cualquier aclaración</div>
             <div style="height: 18mm;"></div>
         `;
 
-        triggerUniversalPrint(ticketContent);
+        triggerUniversalPrint(receiptHtml);
     }
 
-    // Generador de comandos ESC/POS binarios para Corte de Caja
-    function buildEscPosCutTicket(ct) {
-        const encoder = new TextEncoder();
-        const parts = [];
-        const width = 32;
-        const diff = Number(ct.difference || 0);
-        const diffLabel = diff > 0 ? ("+" + money(diff) + " Sobrante") : diff < 0 ? (money(diff) + " Faltante") : "$0.00 Exacto";
-        const isMorning = String(ct.shift || ct.shift_name || "").toLowerCase().includes("mañ") || String(ct.shift || ct.shift_name || "").toLowerCase().includes("mat");
-        const shiftLabel = isMorning ? "MATUTINO (MANANA)" : "VESPERTINO (TARDE)";
-
-        const initCmd = new Uint8Array([0x1B, 0x40, 0x1B, 0x32]);
-        const centerCmd = new Uint8Array([0x1B, 0x61, 0x01]);
-        const leftCmd = new Uint8Array([0x1B, 0x61, 0x00]);
-        const boldOn = new Uint8Array([0x1B, 0x45, 0x01]);
-        const boldOff = new Uint8Array([0x1B, 0x45, 0x00]);
-        const feedAndCut = new Uint8Array([0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x0D, 0x0A, 0x1B, 0x64, 0x05, 0x1D, 0x56, 0x00]);
-
-        parts.push(initCmd);
-        parts.push(centerCmd, boldOn, encoder.encode("NEVERIA LA FUENTE\r\n"), boldOff);
-        parts.push(encoder.encode("CORTE DE CAJA OFICIAL\r\n"));
-        parts.push(encoder.encode("-- DESDE 1962 --\r\n"));
-        parts.push(encoder.encode("--------------------------------\r\n"));
-        parts.push(leftCmd);
-        parts.push(encoder.encode(cleanEscPosText("SUCURSAL: " + (ct.branch_name || S.branchName) + "\r\n")));
-        parts.push(encoder.encode(cleanEscPosText("TURNO:    " + shiftLabel + "\r\n")));
-        parts.push(encoder.encode(cleanEscPosText("FECHA:    " + fdt(ct.created_at) + "\r\n")));
-        parts.push(encoder.encode(cleanEscPosText("ENCARGADA:" + (ct.performed_by_name || "Encargada") + "\r\n")));
-        parts.push(encoder.encode("--------------------------------\r\n"));
-        parts.push(boldOn, encoder.encode("DESGLOSE FINANCIERO:\r\n"), boldOff);
-        parts.push(encoder.encode("Fondo Inicial:  " + money(ct.opening_amount || 0).padStart(16, " ") + "\r\n"));
-        parts.push(encoder.encode("Ventas Efectivo:" + money(ct.cash_sales || 0).padStart(16, " ") + "\r\n"));
-        parts.push(encoder.encode("Ventas Tarjeta: " + money(ct.card_sales || 0).padStart(16, " ") + "\r\n"));
-        parts.push(encoder.encode("--------------------------------\r\n"));
-        parts.push(boldOn, encoder.encode("TOTAL VENDIDO:  " + money(ct.total_sales || 0).padStart(16, " ") + "\r\n"), boldOff);
-        parts.push(encoder.encode("--------------------------------\r\n"));
-        parts.push(boldOn, encoder.encode("ARQUEO DE CAJA:\r\n"), boldOff);
-        parts.push(encoder.encode("Esperado:       " + money(ct.expected_cash || 0).padStart(16, " ") + "\r\n"));
-        parts.push(boldOn, encoder.encode("Contado Fisico: " + money(ct.counted_cash || 0).padStart(16, " ") + "\r\n"), boldOff);
-        parts.push(boldOn, encoder.encode("CORTE NETO ENT: " + money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (ct.counted_cash - ct.opening_amount)).padStart(16, " ") + "\r\n"), boldOff);
-        parts.push(encoder.encode(cleanEscPosText("Diferencia:     " + diffLabel.padStart(16, " ") + "\r\n")));
-        parts.push(encoder.encode("================================\r\n\r\n"));
-        parts.push(centerCmd);
-        parts.push(encoder.encode("___________________________\r\n"));
-        parts.push(encoder.encode("Firma Encargada\r\n\r\n"));
-        parts.push(encoder.encode("___________________________\r\n"));
-        parts.push(encoder.encode("Firma Direccion\r\n"));
-        parts.push(feedAndCut);
-
-        const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
-        const combined = new Uint8Array(totalLen);
-        let offset = 0;
-        for (const p of parts) {
-            combined.set(p, offset);
-            offset += p.length;
-        }
-        return combined;
-    }
-
-    async function printCutReceipt(ct) {
-        if (!ct) return;
-
-        // 1. Intentar impresión física directa ESC/POS
-        if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
-            const raw = buildEscPosCutTicket(ct);
-            const ok = await writeEscPosBytes(raw);
-            if (ok) return;
-        }
-
-        // 2. Diálogo nativo de impresión del sistema
-        const diff = Number(ct.difference || 0);
-        const diffLabel = diff > 0 ? ("+" + money(diff) + " (Sobrante)") : diff < 0 ? (money(diff) + " (Faltante)") : "$0.00 (Exacto)";
-        const isMorning = String(ct.shift || "").toLowerCase().includes("mañ") || String(ct.shift || "").toLowerCase().includes("mat");
-        const shiftLabel = isMorning ? "MATUTINO (MAÑANA)" : "VESPERTINO (TARDE)";
-
-        const cutContent = `
-            <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-            <div class="center bold" style="font-size:12px;">CORTE DE CAJA OFICIAL</div>
-            <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
+    async function printCutReceipt(cutData) {
+        if (!cutData) return;
+        const isM = (cutData.shift_name || "").toLowerCase().includes("mañana") || (cutData.shift_name || "").toLowerCase().includes("matutino");
+        const cutHtml = `
+            <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
+            <div class="center" style="font-size:11px; font-style:italic;">-- CORTE DE CAJA OFICIAL --</div>
             <div class="divider"></div>
-            <div><strong>SUCURSAL:</strong> ${esc(ct.branch_name || S.branchName)}</div>
-            <div><strong>TURNO:</strong> ${shiftLabel}</div>
-            <div><strong>FECHA/HORA:</strong> ${fdt(ct.created_at)}</div>
-            <div><strong>ENCARGADA:</strong> ${esc(ct.performed_by_name || "Encargada")}</div>
+            <div><strong>SUCURSAL:</strong> ${esc(cutData.branch_name || S.branchName)}</div>
+            <div><strong>TURNO:</strong> ${isM ? "🌅 MATUTINO (MAÑANA)" : "🌇 VESPERTINO (TARDE)"}</div>
+            <div><strong>FECHA / HORA:</strong> ${fdt(cutData.created_at)}</div>
+            <div><strong>ENCARGADA:</strong> ${esc(cutData.cashier_name || "Encargada")}</div>
             <div class="divider"></div>
-            <div class="bold" style="font-size:11px;margin-bottom:3px;">DESGLOSE FINANCIERO:</div>
-            <div class="row">
-                <span>Fondo Inicial:</span>
-                <span>${money(ct.opening_amount || 0)}</span>
+            <div style="display:flex; justify-content:space-between; font-size:11.5px; margin: 3px 0;">
+                <span>FONDO INICIAL:</span>
+                <strong>${money(cutData.opening_amount || 0)}</strong>
             </div>
-            <div class="row">
-                <span>Ventas Efectivo:</span>
-                <span>${money(ct.cash_sales || (Number(ct.total_sales||0) - Number(ct.card_sales||0)))}</span>
+            <div style="display:flex; justify-content:space-between; font-size:11.5px; margin: 3px 0;">
+                <span>VENTAS EN EFECTIVO:</span>
+                <strong>${money(cutData.cash_sales || 0)}</strong>
             </div>
-            <div class="row">
-                <span>Ventas Tarjeta:</span>
-                <span>${money(ct.card_sales || 0)}</span>
+            <div style="display:flex; justify-content:space-between; font-size:11.5px; margin: 3px 0;">
+                <span>VENTAS EN TARJETA:</span>
+                <strong>${money(cutData.card_sales || 0)}</strong>
             </div>
-            <div class="divider"></div>
-            <div class="row bold" style="font-size:12px;">
+            <div style="display:flex; justify-content:space-between; font-size:11.5px; margin: 3px 0;">
                 <span>TOTAL VENDIDO:</span>
-                <span>${money(ct.total_sales || 0)}</span>
+                <strong>${money(cutData.total_sales || 0)}</strong>
             </div>
             <div class="divider"></div>
-            <div class="bold" style="font-size:11px;margin-bottom:3px;">ARQUEO DE CAJA FISICA:</div>
-            <div class="row">
-                <span>Efectivo Esperado:</span>
-                <span>${money(ct.expected_cash || (Number(ct.opening_amount||0) + Number(ct.cash_sales||0)))}</span>
+            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin: 4px 0;">
+                <span>EFECTIVO ESPERADO:</span>
+                <span>${money(cutData.expected_cash || 0)}</span>
             </div>
-            <div class="row bold">
-                <span>Efectivo Contado:</span>
-                <span>${money(ct.counted_cash || 0)}</span>
+            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin: 4px 0;">
+                <span>EFECTIVO CONTADO:</span>
+                <span>${money(cutData.counted_cash || 0)}</span>
             </div>
-            <div class="row bold" style="font-size:12px;margin-top:2px;">
-                <span>CORTE NETO ENTREGAR:</span>
-                <span>${money(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash||0) - Number(ct.opening_amount||0)))}</span>
-            </div>
-            <div class="divider"></div>
-            <div class="row bold" style="font-size:11px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin: 4px 0; color:${(cutData.difference||0)<0?'#b91c1c':((cutData.difference||0)>0?'#15803d':'#000')}">
                 <span>DIFERENCIA:</span>
-                <span>${diffLabel}</span>
+                <span>${(cutData.difference||0)>0?'+':''}${money(cutData.difference || 0)}</span>
             </div>
             <div class="double-divider"></div>
-            <div style="margin-top:22px;text-align:center;">
-                ___________________________<br>
-                <span style="font-size:10px;">Firma de la Encargada</span>
-            </div>
-            <div style="margin-top:20px;text-align:center;">
-                ___________________________<br>
-                <span style="font-size:10px;">Firma Supervisión / Dirección</span>
-            </div>
             <div style="height: 18mm;"></div>
+            <div class="center" style="border-top: 1px dashed #000; padding-top: 4px; font-size:10px; margin: 0 10mm;">
+                FIRMA ENCARGADA DE TURNO
+            </div>
+            <div style="height: 15mm;"></div>
         `;
 
-        triggerUniversalPrint(cutContent);
+        triggerUniversalPrint(cutHtml);
     }
 
-    async function printDailyAccountingReceipt(rep) {
-        if (!rep) return;
-
-        const accContent = `
-            <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-            <div class="center bold" style="font-size:11px;">REPORTE CONSOLIDADO DE CADENA</div>
-            <div class="center" style="font-size:9px;">-- DESDE 1962 --</div>
+    async function printDailyAccountingReceipt(accData) {
+        if (!accData) return;
+        const repHtml = `
+            <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
+            <div class="center" style="font-size:11px; font-style:italic;">-- BALANCE DIARIO CONSOLIDADO --</div>
             <div class="divider"></div>
-            <div><strong>FECHA / JORNADA:</strong> ${rep.date}</div>
-            <div><strong>IMPRESO:</strong> ${fdt(now())}</div>
-            <div><strong>TOTAL TICKETS:</strong> ${rep.totalTickets || 0}</div>
+            <div><strong>FECHA REPORTE:</strong> ${accData.dateLabel}</div>
+            <div><strong>SUCURSAL:</strong> ${esc(accData.branchName || "Cadena Completa")}</div>
             <div class="divider"></div>
-            <div class="bold" style="font-size:11px;">DESGLOSE POR SUCURSAL:</div>
-            ${(rep.branchBreakdown || []).map(b => `
-                <div class="row" style="margin-top:2px;">
-                    <span>${esc(b.name)}:</span>
-                    <span class="bold">${money(b.total)}</span>
-                </div>
-                <div class="row" style="font-size:9.5px;color:#555;padding-left:6px;">
-                    <span>Efe: ${money(b.cash || 0)} | Tarj: ${money(b.card || 0)}</span>
-                    <span>(${b.tickets || 0} vts)</span>
-                </div>
-            `).join("")}
-            <div class="divider"></div>
-            <div class="row bold" style="font-size:13px;">
-                <span>TOTAL CADENA:</span>
-                <span>${money(rep.totalChain || 0)}</span>
+            <div style="display:flex; justify-content:space-between; font-size:11px; margin: 2px 0;">
+                <span>VENTAS EFECTIVO:</span>
+                <strong>${money(accData.cashTotal || 0)}</strong>
             </div>
-            <div class="row">
-                <span>Efectivo Total:</span>
-                <span>${money(rep.cashTotal || 0)}</span>
+            <div style="display:flex; justify-content:space-between; font-size:11px; margin: 2px 0;">
+                <span>VENTAS TARJETA:</span>
+                <strong>${money(accData.cardTotal || 0)}</strong>
             </div>
-            <div class="row">
-                <span>Tarjeta Total:</span>
-                <span>${money(rep.cardTotal || 0)}</span>
+            <div style="display:flex; justify-content:space-between; font-size:11px; margin: 2px 0;">
+                <span>TOTAL TICKETS:</span>
+                <strong>${accData.ticketsCount || 0}</strong>
             </div>
             <div class="divider"></div>
-            <div class="row" style="font-size:10px;">
-                <span>Turno Matutino:</span>
-                <span>${money(rep.matTotal || 0)}</span>
-            </div>
-            <div class="row" style="font-size:10px;">
-                <span>Turno Vespertino:</span>
-                <span>${money(rep.vesTotal || 0)}</span>
+            <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin: 4px 0;">
+                <span>TOTAL DEL DÍA:</span>
+                <span>${money(accData.grandTotal || 0)}</span>
             </div>
             <div class="double-divider"></div>
-            <div class="center" style="font-size:9px;margin-top:4px;">
-                Auditoría y Control Interno
-            </div>
-            <div style="height: 18mm;"></div>
+            <div style="height: 15mm;"></div>
         `;
 
-        triggerUniversalPrint(accContent);
+        triggerUniversalPrint(repHtml);
     }
 
-    async function printTestReceipt(customCfg = null, forceBrowser = true) {
-        const cfg = customCfg || getPrinterConfig();
+    async function printTestReceipt() {
+        const cfg = getPrinterConfig();
         const conn = getPrinterConnectionStatus();
-
-        // 1. Intentar impresión física directa ESC/POS si está conectada por serial
-        if (!forceBrowser && ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected))) {
+        if ((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected)) {
             const raw = buildEscPosTestTicket();
             const ok = await writeEscPosBytes(raw);
             if (ok) {
-                toast("✓ ¡Ticket enviado por cable directo a tu Ofichido!", "success", 4000);
+                toast("✓ ¡Ticket enviado directamente a tu impresora térmica!", "success", 4000);
                 return;
             }
         }
 
-        // 2. Diálogo nativo de impresión del sistema (Windows / Chrome / Driver)
         const testContent = `
-            <div class="center bold" style="font-size:14px;">NEVERIA LA FUENTE</div>
-            <div class="center" style="font-size:10px;">PRUEBA DE IMPRESORA TÉRMICA</div>
+            <div class="center bold" style="font-size:15px; margin-bottom:2px;">NEVERIA LA FUENTE</div>
+            <div class="center" style="font-size:11px; font-style:italic;">-- PRUEBA DE IMPRESION --</div>
             <div class="divider"></div>
-            <div><strong>MODELO:</strong> ${esc(cfg.model)}</div>
-            <div><strong>CONEXIÓN:</strong> ${esc(conn.label)}</div>
-            <div><strong>ANCHO DE ROLLO:</strong> ${esc(cfg.paperWidth || '58mm')}</div>
-            <div><strong>FECHA Y HORA:</strong> ${fdt(now())}</div>
+            <div><strong>MODELO:</strong> ${esc(cfg.model || "Ofichido / Gia / Caysn 58mm")}</div>
+            <div><strong>ESTADO:</strong> ${esc(conn.label)}</div>
+            <div><strong>FECHA / HORA:</strong> ${fdt(now())}</div>
             <div><strong>SUCURSAL:</strong> ${esc(S.branchName)}</div>
             <div><strong>USUARIO:</strong> ${esc(S.profile?.full_name || S.user?.email || "Usuario")}</div>
             <div class="divider"></div>
-            <div class="bold center" style="font-size:12px; margin:4px 0;">¡CALIBRACIÓN CORRECTA!</div>
+            <div class="bold center" style="font-size:12px; margin:4px 0;">¡CALIBRACION CORRECTA!</div>
             <div class="center" style="font-size:10px;">
-                Esta impresora está lista para imprimir:<br>
-                ✓ Tickets de Venta a Clientes (Obligatorio)<br>
+                Esta impresora esta lista para:<br>
+                ✓ Tickets de Venta a Clientes<br>
                 ✓ Cortes de Caja por Turno<br>
                 ✓ Reportes Diarios Consolidados<br>
                 ✓ Aperturas de Turno con Firma
@@ -1979,7 +1891,7 @@
     function openPrinterSetupModal() {
         const curCfg = getPrinterConfig();
         const conn = getPrinterConnectionStatus();
-        const isConnectedDirect = !!((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened));
+        const isConnectedDirect = !!((directSerialPort && directSerialPort.writable) || (directUsbDevice && directUsbDevice.opened) || (directBtChar && directBtServer && directBtServer.connected));
         
         const overlay = document.createElement("div");
         overlay.id = "printer-modal-overlay";
@@ -1990,51 +1902,112 @@
                     <div style="display:flex;align-items:center;gap:8px">
                         <span style="font-size:28px">🖨️</span>
                         <div>
-                            <h3 style="margin:0;color:var(--wine-950);font-size:18px;font-weight:900">Impresora Ofichido / Térmica</h3>
-                            <small style="color:var(--text-muted);font-weight:700">Impresión física directa mediante Windows o cable</small>
+                            <h3 style="margin:0;color:var(--wine-950);font-size:18px;font-weight:900">Impresoras Térmicas & POS</h3>
+                            <small style="color:var(--text-muted);font-weight:700">Ofichido (Tagarete / Windows) & Mini Gia / Caysn (Rescate / Android)</small>
                         </div>
                     </div>
                     <button id="p-close-btn" type="button" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--wine-900);font-weight:900">✕</button>
                 </div>
 
-                <!-- BOTÓN PRINCIPAL PARA IMPRIMIR DE INMEDIATO EN WINDOWS -->
-                <div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:14px;margin-bottom:16px">
-                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-                        <span style="font-size:22px">🖨️</span>
-                        <strong style="color:#1e40af;font-size:14px">IMPRIMIR TICKET DE PRUEBA EN OFICHIDO</strong>
+                <!-- ESTADO ACTUAL -->
+                <div style="background:#fef3c7;border:1.5px solid #fcd34d;padding:10px 12px;border-radius:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <div style="font-size:10.5px;color:#92400e;font-weight:900">ESTADO DE CONEXIÓN:</div>
+                        <strong style="font-size:12px;color:#78350f">${conn.label}</strong>
                     </div>
-                    <p style="margin:0 0 12px 0;font-size:12px;color:#1e3a8a;line-height:1.45">
-                        Tu impresora ya está lista en Windows. Presiona este botón para abrir la ventana de impresión y enviar el ticket directamente a la <strong>Ofichido</strong>.
+                    ${isConnectedDirect ? `<button type="button" id="btn-disconnect-printer" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">Desconectar</button>` : ''}
+                </div>
+
+                <!-- BOTÓN PRINCIPAL WINDOWS (TAGARETE / OFICHIDO) -->
+                <div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:14px;margin-bottom:12px">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                        <span style="font-size:20px">🖨️</span>
+                        <strong style="color:#1e40af;font-size:13.5px">IMPRIMIR EN OFICHIDO (Windows / Tagarete)</strong>
+                    </div>
+                    <p style="margin:0 0 10px 0;font-size:11.5px;color:#1e3a8a;line-height:1.4">
+                        Abre la ventana nativa de impresión de Chrome/Windows para enviar el ticket directamente a la impresora <strong>Ofichido</strong>.
                     </p>
                     <button type="button" id="btn-test-browser"
-                        style="width:100%;padding:14px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;border:none;border-radius:12px;font-weight:900;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(59,130,246,0.35);display:flex;align-items:center;justify-content:center;gap:8px">
+                        style="width:100%;padding:12px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13.5px;cursor:pointer;box-shadow:0 4px 14px rgba(59,130,246,0.3);display:flex;align-items:center;justify-content:center;gap:8px">
                         <span>🖨️</span>
                         <span>Abrir Diálogo de Impresión (Enviar a Ofichido)</span>
                     </button>
                 </div>
 
-                <!-- OPCIÓN ALTERNATIVA: CABLE SERIAL DIRECTO -->
-                <div style="background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:14px;padding:12px 14px;margin-bottom:16px">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-                        <strong style="color:#334155;font-size:12px">⚡ Conexión Directa por Cable USB (Avanzado)</strong>
-                        ${isConnectedDirect ? `<button type="button" id="btn-disconnect-printer" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;padding:3px 6px;border-radius:6px;font-size:10px;font-weight:800;cursor:pointer">Desconectar</button>` : ''}
+                <!-- BOTÓN PRINCIPAL ANDROID (EL RESCATE / MINI IMPRESORAS GIA & CAYSN) -->
+                <div style="background:#f0fdf4;border:2px solid #22c55e;border-radius:14px;padding:14px;margin-bottom:14px">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                        <span style="font-size:20px">📱</span>
+                        <strong style="color:#15803d;font-size:13.5px">IMPRIMIR EN ANDROID (El Rescate / Mini Gia & Caysn)</strong>
                     </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                        <select id="p-baud-rate" style="padding:7px;border:1.5px solid #94a3b8;border-radius:8px;font-weight:800;font-size:11.5px;background:#fff">
-                            <option value="9600"${(curCfg.baudRate||9600)==9600?' selected':''}>9600 baudios</option>
-                            <option value="38400"${curCfg.baudRate==38400?' selected':''}>38400 baudios</option>
-                            <option value="115200"${curCfg.baudRate==115200?' selected':''}>115200 baudios</option>
-                        </select>
+                    <p style="margin:0 0 10px 0;font-size:11.5px;color:#166534;line-height:1.4">
+                        Abre el servicio de impresión de Android para enviar a tu mini impresora <strong>Ghia (Gia)</strong> o <strong>Caysn (Cays)</strong> por Bluetooth o USB.
+                    </p>
+                    <button type="button" id="btn-test-android"
+                        style="width:100%;padding:12px;background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:13.5px;cursor:pointer;box-shadow:0 4px 14px rgba(34,197,94,0.3);display:flex;align-items:center;justify-content:center;gap:8px">
+                        <span>📱</span>
+                        <span>Abrir en Android (Mini Gia / Caysn / Servicio del Sistema)</span>
+                    </button>
+                </div>
+
+                <!-- VINCULACIÓN DIRECTA POR HARDWARE (BLUETOOTH / USB / SERIE) -->
+                <div style="background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:14px;padding:12px 14px;margin-bottom:14px">
+                    <label style="font-size:11px;font-weight:900;color:var(--wine-900);display:block;margin-bottom:8px">VINCULAR POR HARDWARE DIRECTO:</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+                        <button type="button" id="btn-pair-bt"
+                            style="padding:10px 6px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);color:#15803d;border:1.5px solid #86efac;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">
+                            <span>📶</span><span>Bluetooth (Gia/Cays)</span>
+                        </button>
+                        <button type="button" id="btn-pair-usb"
+                            style="padding:10px 6px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af;border:1.5px solid #93c5fd;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">
+                            <span>🔌</span><span>USB / OTG</span>
+                        </button>
                         <button type="button" id="btn-pair-serial"
-                            style="padding:7px;background:#0f172a;color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer">
-                            Vincular Puerto USB
+                            style="padding:10px 6px;background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;border:1.5px solid #fcd34d;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">
+                            <span>⚡</span><span>Serie COM</span>
                         </button>
                     </div>
                 </div>
 
-                <div style="display:flex;justify-content:flex-end">
+                <!-- SELECTOR DE MODELO Y PREFERENCIAS -->
+                <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+                    <div>
+                        <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">MODELO / MARCA DE IMPRESORA:</label>
+                        <select id="p-model" style="width:100%;padding:9px 10px;border:1.5px solid var(--gold-500);border-radius:8px;font-size:12px;font-weight:800;background:#fff;outline:none">
+                            <option value="Mini Impresora Ghia / Gia (58mm)"${(curCfg.model||"").includes("Ghia")||(curCfg.model||"").includes("Gia")?' selected':''}>🖨️ Mini Impresora Ghia / Gia (58mm Térmica - Rescate Android / Bluetooth / USB)</option>
+                            <option value="Mini Impresora Caysn / Cays (58mm)"${(curCfg.model||"").includes("Caysn")||(curCfg.model||"").includes("Cays")?' selected':''}>🖨️ Mini Impresora Caysn / Cays POS-58 (58mm Térmica - Rescate Android)</option>
+                            <option value="Ofichido / POS-58 (58mm)"${(curCfg.model||"").includes("Ofichido")?' selected':''}>🖨️ Ofichido POS Thermal (Tagarete 2 y Windows)</option>
+                            <option value="EC Line / Impresora Térmica Genérica POS-58"${(curCfg.model||"").includes("EC Line")||(curCfg.model||"").includes("Genérica")?' selected':''}>🖨️ EC Line / Impresora Térmica Genérica POS-58</option>
+                            <option value="Epson TM-T20 / TM-T88 (80mm)"${(curCfg.model||"").includes("Epson")?' selected':''}>🖨️ Epson TM-T20 / TM-T88 (ESC/POS 80mm)</option>
+                        </select>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                        <div>
+                            <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">ANCHO DE PAPEL:</label>
+                            <select id="p-paper-width" style="width:100%;padding:8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:800;background:#fff">
+                                <option value="58mm"${(curCfg.paperWidth||"58mm")==='58mm'?' selected':''}>58 mm (Mini impresoras Gia / Cays / Ofichido)</option>
+                                <option value="80mm"${curCfg.paperWidth==='80mm'?' selected':''}>80 mm (Rollo ancho)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:900;color:var(--wine-800);display:block;margin-bottom:4px">BAUDIOS SERIE:</label>
+                            <select id="p-baud-rate" style="width:100%;padding:8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:800;background:#fff">
+                                <option value="9600"${(curCfg.baudRate||9600)==9600?' selected':''}>9600 (Estándar)</option>
+                                <option value="38400"${curCfg.baudRate==38400?' selected':''}>38400</option>
+                                <option value="115200"${curCfg.baudRate==115200?' selected':''}>115200</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:flex;justify-content:space-between;gap:8px">
+                    <button type="button" id="btn-save-custom-cfg"
+                        style="padding:10px 14px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:900;font-size:12px;cursor:pointer">
+                        ✓ Guardar Ajustes
+                    </button>
                     <button id="p-close-btn2" type="button"
-                        style="padding:10px 20px;background:#e2e8f0;color:#334155;border:none;border-radius:10px;font-weight:900;font-size:12.5px;cursor:pointer">
+                        style="padding:10px 18px;background:#e2e8f0;color:#334155;border:none;border-radius:10px;font-weight:900;font-size:12px;cursor:pointer">
                         Cerrar
                     </button>
                 </div>
@@ -2044,9 +2017,26 @@
         overlay.querySelector("#p-close-btn").onclick = () => overlay.remove();
         overlay.querySelector("#p-close-btn2").onclick = () => overlay.remove();
 
+        // Disparo para Windows / Ofichido
         overlay.querySelector("#btn-test-browser").onclick = () => {
-            overlay.remove(); // Cerrar modal primero para que el diálogo de Chrome tome foco
-            printTestReceipt({ model: "Ofichido / POS-58", paperWidth: "58mm" }, true);
+            overlay.remove(); // Cerrar modal primero para dar foco
+            printTestReceipt();
+        };
+
+        // Disparo para Android / El Rescate (Mini impresoras Gia y Caysn)
+        overlay.querySelector("#btn-test-android").onclick = () => {
+            overlay.remove(); // Cerrar modal primero para dar foco
+            printTestReceipt();
+        };
+
+        overlay.querySelector("#btn-pair-bt").onclick = async () => {
+            const ok = await connectBtDirect();
+            if (ok) overlay.remove();
+        };
+
+        overlay.querySelector("#btn-pair-usb").onclick = async () => {
+            const ok = await connectUsbDirect();
+            if (ok) overlay.remove();
         };
 
         overlay.querySelector("#btn-pair-serial").onclick = async () => {
@@ -2061,15 +2051,24 @@
                 overlay.remove();
             };
         }
+
+        overlay.querySelector("#btn-save-custom-cfg").onclick = () => {
+            const model = overlay.querySelector("#p-model")?.value || "Ofichido / POS-58 (58mm)";
+            const pWidth = overlay.querySelector("#p-paper-width")?.value || "58mm";
+            const bRate = Number(overlay.querySelector("#p-baud-rate")?.value || 9600);
+            savePrinterConfig({ ...getPrinterConfig(), model, paperWidth: pWidth, baudRate: bRate });
+            toast("✓ Configuración de impresora guardada para esta sucursal", "success");
+            overlay.remove();
+        };
     }
 
     async function directPrintTicketAction() {
         const lastSale = lr("last_printed_sale", null) || lr("sales", [])[0];
         if (lastSale) {
-            toast("🖨️ Imprimiendo Ticket #" + (lastSale.sale_number || '') + " en la Ofichido…", "info", 3000);
+            toast("🖨️ Imprimiendo Ticket #" + (lastSale.sale_number || '') + "…", "info", 3000);
             await printSaleReceipt(lastSale);
         } else {
-            toast("🖨️ Imprimiendo ticket de prueba en la Ofichido…", "info", 3000);
+            toast("🖨️ Imprimiendo ticket de prueba…", "info", 3000);
             await printTestReceipt();
         }
     }
@@ -2083,7 +2082,7 @@
                     const port = ports[0];
                     await port.open({ baudRate: Number(cfg.baudRate || 9600) });
                     directSerialPort = port;
-                    console.log("✓ Impresora Ofichido Serial reconectada automáticamente");
+                    console.log("✓ Impresora Serial reconectada automáticamente");
                 }
             } catch(e) {}
         }
