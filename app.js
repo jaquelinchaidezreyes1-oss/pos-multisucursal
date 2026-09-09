@@ -2628,6 +2628,136 @@
     }
 
     /* ── MIS VENTAS (FILTRO POR FECHA, TURNOS, MÉTODO DE PAGO Y CANCELACIONES) ── */
+    
+    let _lastSalesFetchTime = 0;
+    let _cachedConsolidatedSales = null;
+
+    async function getConsolidatedSalesForChain(forceRefresh = false) {
+        const nowMs = Date.now();
+        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 2500)) {
+            return _cachedConsolidatedSales;
+        }
+        let remoteSales = [];
+        if (db) {
+            try {
+                const {data, error} = await safeQuery(db.from("sales")
+                    .select("*")
+                    .order("created_at", {ascending:false})
+                    .limit(5000), null, 8000);
+                if (data && data.length) {
+                    remoteSales = data.map(s => {
+                        let obs = {};
+                        try {
+                            obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
+                        } catch(e) {}
+
+                        let bName = obs.branch_name || s.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
+                        const cashierName = obs.cashier_name || s.user_name || obs.performed_by_name || "";
+                        if (!bName && cashierName) {
+                            const cLower = cashierName.toLowerCase();
+                            for (const [em, staffInfo] of Object.entries(STAFF)) {
+                                if (cLower.includes(em.toLowerCase()) || (cLower.match(/encargado\d+/) && em.includes(cLower.match(/encargado\d+/)[0]))) {
+                                    bName = staffInfo.b;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!bName) bName = "La Fuente Calzada";
+
+                        return {
+                            id: s.id,
+                            sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
+                            branch_id: s.branch_id,
+                            branch_name: bName,
+                            shift_name: obs.shift_name || (getShiftCategory({ cashier_name: cashierName, created_at: s.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
+                            cashier_id: s.user_id,
+                            cashier_name: cashierName || "Encargada",
+                            total: Number(s.total || 0),
+                            payment_method: obs.payment_method || "cash",
+                            status: (String(s.status||"").toUpperCase() === "CANCELLED" || String(obs.status||"").toUpperCase() === "CANCELLED") ? "CANCELLED" : "COMPLETED",
+                            cancelled_reason: obs.cancelled_reason || null,
+                            cancelled_by: obs.cancelled_by || null,
+                            cancelled_at: obs.cancelled_at || null,
+                            items: obs.items || [],
+                            created_at: s.created_at || now(),
+                            local_id: obs.local_id || s.id
+                        };
+                    });
+                }
+            } catch(e) {
+                console.warn("Supabase fetch sales error:", e);
+            }
+        }
+
+        const salesMap = new Map();
+        const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
+        const deletedSaleIds = new Set(gr("deleted_sale_ids", []));
+
+        // 1. Escaneo exhaustivo de todas las ventas guardadas en cualquier llave localStorage
+        try {
+            if (typeof localStorage !== "undefined") {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith("lf_") || key.includes("sales"))) {
+                        try {
+                            const raw = localStorage.getItem(key);
+                            if (!raw || !raw.startsWith("[")) continue;
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                parsed.forEach(item => {
+                                    if (item && (item.total != null || item.sale_number || item.items)) {
+                                        const sid = String(item.id || item.sale_number || (Date.now() + Math.random()));
+                                        if (!salesMap.has(sid)) {
+                                            salesMap.set(sid, item);
+                                        }
+                                    }
+                                });
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // 2. Fusionar y deduplicar con las ventas de Supabase
+        remoteSales.forEach(s => {
+            const sid = String(s.id);
+            let matchedKey = null;
+            for (const [key, existing] of salesMap.entries()) {
+                if (key === sid || 
+                   (s.local_id && (key === String(s.local_id) || String(existing.local_id) === String(s.local_id) || String(existing.id) === String(s.local_id))) || 
+                   (s.sale_number && existing.sale_number === s.sale_number)) {
+                    matchedKey = key;
+                    break;
+                }
+            }
+            if (matchedKey) {
+                salesMap.set(matchedKey, { ...salesMap.get(matchedKey), ...s });
+            } else {
+                salesMap.set(sid, s);
+            }
+        });
+
+        // 3. Normalizar estado de cancelaciones y motivos
+        for (const [k, s] of salesMap.entries()) {
+            const reason = cancelledReasons[String(s.id)] || cancelledReasons[String(s.sale_number)];
+            if (reason) {
+                s.status = "CANCELLED";
+                if (!s.cancelled_reason) s.cancelled_reason = reason;
+            }
+        }
+
+        // 4. Filtrar ventas definitivamente borradas y ordenar
+        const consolidated = Array.from(salesMap.values())
+            .filter(s => !deletedSaleIds.has(String(s.id)) && !deletedSaleIds.has(String(s.sale_number)))
+            .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+        gw("all_sales", consolidated);
+        _lastSalesFetchTime = Date.now();
+        _cachedConsolidatedSales = consolidated;
+        return consolidated;
+    }
+
     async function loadSales(silent = false) {
         const c = $("#sales-container");
         if (!c || !S.branchId) return;
