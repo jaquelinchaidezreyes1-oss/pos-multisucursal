@@ -2212,6 +2212,8 @@
         if (!c) return;
         const catOpts = CATS.filter(x => x.id !== "all").map(x => `<option value="${x.id}">${x.e} ${x.label}</option>`).join("");
 
+        const activeAdminFilter = S.adminBranchFilter || S.branchId || "all";
+
         const branchSelectHtml = S.isSU ? `
             <div>
                 <label style="font-size:11px;font-weight:800;color:var(--wine-700);display:block;margin-bottom:5px">📍 SUCURSAL DESTINO (👑 SUPERUSUARIO)</label>
@@ -2229,14 +2231,27 @@
 
         const adminBranchSelectHtml = S.isSU ? `
             <div style="display:flex;align-items:center;gap:8px">
-                <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 SUCURSAL:</label>
-                <select id="admin-branch-filter" style="padding:6px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
-                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(S.branchId)?' selected':''}>${esc(b.name)}</option>`).join("")}
+                <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 VER SUCURSAL:</label>
+                <select id="admin-branch-filter" style="padding:7px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
+                    <option value="all"${activeAdminFilter==='all'?' selected':''}>🌐 Catálogo Completo (${S.products.length} productos)</option>
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeAdminFilter)?' selected':''}>📍 ${esc(b.name)}</option>`).join("")}
                 </select>
             </div>` : '';
 
         // Lista de insumos/desechables disponibles para ser componentes
         const availableSupplies = S.products.filter(p => p.is_supply || p.category === "desechables").sort((a,b) => (a.product_name || "").localeCompare(b.product_name || ""));
+
+        // Filtrar productos según la sucursal seleccionada
+        const displayedProducts = S.products.filter(p => {
+            if (activeAdminFilter === "all") return true;
+            const targetBranch = S.branches.find(b => String(b.id) === String(activeAdminFilter));
+            if (!targetBranch) return true;
+            const isGen = !p.branch_name || p.branch_name === "General" || p.branch_id === "all";
+            if (isGen) return true;
+            return matchesBranch({ branch_id: p.branch_id, branch_name: p.branch_name }, targetBranch);
+        });
+
+        const activeBranchName = S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name || S.branchName;
 
         c.innerHTML = `
         <!-- FORMULARIO: AGREGAR O EDITAR PRODUCTO / COMPUESTO -->
@@ -2356,7 +2371,7 @@
 
         <!-- LISTA GENERAL DE PRODUCTOS EN CATÁLOGO -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">Catálogo de Productos en ${esc(S.branchName)} (${S.products.length})</h3>
+            <h3 style="color:#ffffff;margin:0;font-weight:900">Catálogo de Productos — ${esc(activeBranchName)} (${displayedProducts.length} productos)</h3>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${adminBranchSelectHtml}
                 <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
@@ -2365,7 +2380,7 @@
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
-            ${S.products.map(p => {
+            ${displayedProducts.map(p => {
                 const stock = getStock(p.product_id);
                 const isGeneral = !p.branch_name || p.branch_name === "General" || p.branch_id === "all";
                 const bTag = isGeneral ? "🏢 Catálogo General" : ("📍 Solo " + p.branch_name);
@@ -2604,7 +2619,10 @@
         });
 
         document.getElementById("admin-branch-filter")?.addEventListener("change", async e => {
-            await changeBranch(e.target.value);
+            S.adminBranchFilter = e.target.value;
+            if (e.target.value !== "all") {
+                await changeBranch(e.target.value);
+            }
             await loadProductsAdmin();
         });
 
@@ -2715,7 +2733,6 @@
             await loadProductsAdmin();
         }));
     }
-
     /* ── INVENTARIO (CONTROL POR PAQUETES/BOLSAS Y PRODUCTOS COMPUESTOS) ── */
     async function loadInventory() {
         const c = $("#inventory-container");
@@ -2946,7 +2963,7 @@
 
     async function getConsolidatedSalesForChain(forceRefresh = false) {
         const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 2500)) {
+        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 3000)) {
             return _cachedConsolidatedSales;
         }
         let remoteSales = [];
@@ -2955,7 +2972,7 @@
                 const {data, error} = await safeQuery(db.from("sales")
                     .select("*")
                     .order("created_at", {ascending:false})
-                    .limit(5000), null, 8000);
+                    .limit(5000), null, 4000);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
@@ -2974,12 +2991,11 @@
                                 }
                             }
                         }
-                        if (!bName) bName = "La Fuente Calzada";
 
                         return {
                             id: s.id,
                             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                            branch_id: s.branch_id,
+                            branch_id: s.branch_id || (bName ? S.branches.find(b => b.name === bName)?.id : ""),
                             branch_name: bName,
                             shift_name: obs.shift_name || (getShiftCategory({ cashier_name: cashierName, created_at: s.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
                             cashier_id: s.user_id,
@@ -3005,12 +3021,12 @@
         const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
         const deletedSaleIds = new Set(gr("deleted_sale_ids", []));
 
-        // 1. Escaneo exhaustivo de todas las ventas guardadas en cualquier llave localStorage
+        // 1. Escaneo de ventas guardadas en localStorage agrupadas por sucursal
         try {
             if (typeof localStorage !== "undefined") {
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
-                    if (key && (key.startsWith("lf_") || key.includes("sales"))) {
+                    if (key && (key.startsWith("lf_") && key.includes("sales"))) {
                         try {
                             const raw = localStorage.getItem(key);
                             if (!raw || !raw.startsWith("[")) continue;
