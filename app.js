@@ -3500,6 +3500,22 @@
     ];
 
     async function getConsolidatedSalesForChain(forceRefresh = false) {
+        // Purga automática y aislamiento de registros obsoletos de prueba para asegurar cifras reales exactas
+        try {
+            const CURRENT_REVISION = "20260911_v5_exact_real";
+            if (typeof localStorage !== "undefined" && localStorage.getItem("lf_ledger_revision") !== CURRENT_REVISION) {
+                const keysToPurge = [
+                    "lf_branch-5_sales", "lf_branch-2_sales", "lf_tagarete_2_sales", "lf_rescate_sales",
+                    "lf_all_sales", "lf_sales", "lf_pending_sales",
+                    "lf_branch-5_cuts", "lf_branch-2_cuts", "lf_tagarete_2_cuts", "lf_rescate_cuts",
+                    "lf_all_cuts", "lf_cuts", "lf_pending_cuts"
+                ];
+                keysToPurge.forEach(k => localStorage.removeItem(k));
+                localStorage.setItem("lf_ledger_revision", CURRENT_REVISION);
+                _cachedConsolidatedSales = null;
+                _cachedConsolidatedCuts = null;
+            }
+        } catch(e) {}
         const nowMs = Date.now();
         if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 1500)) {
             return _cachedConsolidatedSales;
