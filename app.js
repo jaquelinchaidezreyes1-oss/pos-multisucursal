@@ -3850,9 +3850,15 @@
             }).join("")}
         </div>` : `
         <div class="empty-state" style="padding:34px;text-align:center">
-            <p style="color:var(--text-muted)">No hay ventas registradas con los filtros seleccionados.</p>
+            <p style="color:var(--text-muted);margin:0 0 12px;font-size:14px;font-weight:700">No hay ventas registradas con los filtros seleccionados.</p>
+            ${(branchSales && branchSales.length) ? `<button type="button" id="btn-view-all-sales-hist" style="padding:10px 20px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.15)">📅 Ver todo el histórico de ventas (${branchSales.length} tickets)</button>` : ''}
         </div>`}
         `;
+
+        document.getElementById("btn-view-all-sales-hist")?.addEventListener("click", async () => {
+            S.salesFilterDate = "all";
+            await loadSales();
+        });
 
         document.getElementById("sales-branch-filter")?.addEventListener("change", async e => {
             S.salesFilterBranchId = e.target.value;
@@ -5047,8 +5053,8 @@
                 <div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                         <strong style="font-size:16px;color:var(--wine-900)">🍦 ${esc(b.name)}</strong>
-                        <span style="font-size:10px;padding:4px 10px;border-radius:20px;font-weight:bold;${b.sales > 0 ? 'background:#dcfce7;color:#15803d' : 'background:#fef3c7;color:#92400e'}">
-                            ${b.sales > 0 ? '🟢 EN VIVO' : '🟡 LISTO'}</span>
+                        <span style="font-size:10px;padding:4px 10px;border-radius:20px;font-weight:bold;background:#dcfce7;color:#15803d">
+                            🟢 EN VIVO</span>
                     </div>
                     <div style="background:#fffcf0;border:1px solid #f2e6b5;border-radius:10px;padding:12px;margin-bottom:12px">
                         <div style="display:flex;justify-content:space-between;margin-bottom:6px">
@@ -5182,13 +5188,20 @@
             window.changeView("accounting");
         });
 
-        c.querySelectorAll(".btn-pv-sales").forEach(btn => btn.addEventListener("click", async () => { await changeBranch(btn.dataset.branch); window.changeView("sales"); }));
+        c.querySelectorAll(".btn-pv-sales").forEach(btn => btn.addEventListener("click", async () => { 
+            S.salesFilterBranchId = btn.dataset.branch;
+            await changeBranch(btn.dataset.branch); 
+            window.changeView("sales"); 
+        }));
         c.querySelectorAll(".btn-pv-cuts").forEach(btn =>  btn.addEventListener("click", async () => { 
             S.cutsFilterBranchId = btn.dataset.branch;
             await changeBranch(btn.dataset.branch); 
             window.changeView("cuts"); 
         }));
-        c.querySelectorAll(".btn-pv-pos").forEach(btn =>   btn.addEventListener("click", async () => { await changeBranch(btn.dataset.branch); window.changeView("pos"); }));
+        c.querySelectorAll(".btn-pv-pos").forEach(btn =>   btn.addEventListener("click", async () => { 
+            await changeBranch(btn.dataset.branch); 
+            window.changeView("pos"); 
+        }));
     }
 
     /* ── GESTIÓN DE VENTAS / CONTABILIDAD (DESGLOSE MATUTINO & VESPERTINO) ── */
