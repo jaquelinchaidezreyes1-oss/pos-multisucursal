@@ -128,12 +128,14 @@
         if (!s) return "matutino";
         const email = String(s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
         
-        // 1. Detección por número oficial de encargada (1, 3, 5, 7, 9, 11 = Matutino | 2, 4, 6, 8, 10, 12 = Vespertino)
-        const match = email.match(/encargad[oa](\d+)/);
-        if (match) {
-            const num = parseInt(match[1], 10);
-            if ([1, 3, 5, 7, 9, 11].includes(num)) return "matutino";
-            if ([2, 4, 6, 8, 10, 12].includes(num)) return "vespertino";
+        // 1. Mapeo oficial por encargada:
+        // Matutino (1, 3, 5, 7, 9, 11)
+        if (email.includes("encargado11") || email.includes("encargado9") || email.includes("encargado7") || email.includes("encargado5") || email.includes("encargado3") || email.includes("encargado1")) {
+            return "matutino";
+        }
+        // Vespertino (2, 4, 6, 8, 10, 12)
+        if (email.includes("encargado12") || email.includes("encargado10") || email.includes("encargado8") || email.includes("encargado6") || email.includes("encargado4") || email.includes("encargado2")) {
+            return "vespertino";
         }
 
         // 2. Detección por nombre explícito de turno
@@ -141,33 +143,9 @@
         if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
         if (sn.includes("mañana") || sn.includes("mat") || sn.includes("dia")) return "matutino";
 
-        // 3. Detección por horario de creación del ticket (hora local de México, >= 15:00 hrs es Vespertino)
-        if (s.created_at) {
-            const dateObj = new Date(s.created_at);
-            if (!isNaN(dateObj.getTime())) {
-                const hour = dateObj.getHours();
-                const min = dateObj.getMinutes();
-                const timeDec = hour + (min / 60);
-                return (timeDec >= 15.0) ? "vespertino" : "matutino";
-            }
-        }
         return "matutino";
     }
 
-    const lk = k => "lf_" + (S.branchId || "x") + "_" + k;
-    const lw = (k, d) => { 
-        try { 
-            localStorage.setItem(lk(k), JSON.stringify(d)); 
-        } catch(e) {
-            console.warn("Storage warning:", e);
-        } 
-    };
-    const lr = (k, d) => { try { const x = localStorage.getItem(lk(k)); return x ? JSON.parse(x) : d; } catch(e) { return d; } };
-
-    const gw = (k, d) => { try { localStorage.setItem("lf_global_" + k, JSON.stringify(d)); } catch(e) {} };
-    const gr = (k, d) => { try { const x = localStorage.getItem("lf_global_" + k); return x ? JSON.parse(x) : d; } catch(e) { return d; } };
-
-    /* ── NORMALIZADOR Y COMPARADOR ROBUSTO DE SUCURSALES ── */
     function normalizeBranchName(str) {
         if (!str) return "";
         return String(str)
