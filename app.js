@@ -2963,7 +2963,7 @@
 
     async function getConsolidatedSalesForChain(forceRefresh = false) {
         const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 3000)) {
+        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 2000)) {
             return _cachedConsolidatedSales;
         }
         let remoteSales = [];
@@ -2972,7 +2972,7 @@
                 const {data, error} = await safeQuery(db.from("sales")
                     .select("*")
                     .order("created_at", {ascending:false})
-                    .limit(5000), null, 4000);
+                    .limit(5000), null, 3500);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
@@ -3021,25 +3021,51 @@
         const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
         const deletedSaleIds = new Set(gr("deleted_sale_ids", []));
 
-        // 1. Escaneo de ventas guardadas en localStorage agrupadas por sucursal
+        const addSaleToMap = (item) => {
+            if (!item || (item.total == null && !item.sale_number && !item.items)) return;
+            const sid = String(item.id || item.sale_number || item.local_id || (Date.now() + Math.random()));
+            if (!salesMap.has(sid)) {
+                salesMap.set(sid, item);
+            } else {
+                salesMap.set(sid, { ...salesMap.get(sid), ...item });
+            }
+        };
+
+        // 1. Cargar explícitamente desde todas las llaves locales de sucursales conocidas
+        const branchKeySuffixes = [
+            "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
+            "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
+            "tagarete 1", "tagarete 2", "la fuente calzada"
+        ];
+        branchKeySuffixes.forEach(bSuffix => {
+            try {
+                const raw = localStorage.getItem("lf_" + bSuffix + "_sales");
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) parsed.forEach(addSaleToMap);
+                }
+            } catch(e) {}
+        });
+
+        // 2. Cargar ventas globales y locales activas
+        const gSales = gr("all_sales", []);
+        if (Array.isArray(gSales)) gSales.forEach(addSaleToMap);
+
+        const curSales = lr("sales", []);
+        if (Array.isArray(curSales)) curSales.forEach(addSaleToMap);
+
+        // 3. Escaneo exhaustivo de cualquier otra llave en localStorage
         try {
             if (typeof localStorage !== "undefined") {
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
-                    if (key && (key.startsWith("lf_") && key.includes("sales"))) {
+                    if (key && (key.includes("sales") || key.includes("sale"))) {
                         try {
                             const raw = localStorage.getItem(key);
                             if (!raw || !raw.startsWith("[")) continue;
                             const parsed = JSON.parse(raw);
                             if (Array.isArray(parsed)) {
-                                parsed.forEach(item => {
-                                    if (item && (item.total != null || item.sale_number || item.items)) {
-                                        const sid = String(item.id || item.sale_number || (Date.now() + Math.random()));
-                                        if (!salesMap.has(sid)) {
-                                            salesMap.set(sid, item);
-                                        }
-                                    }
-                                });
+                                parsed.forEach(addSaleToMap);
                             }
                         } catch(e) {}
                     }
@@ -3047,7 +3073,7 @@
             }
         } catch(e) {}
 
-        // 2. Fusionar y deduplicar con las ventas de Supabase
+        // 4. Fusionar y deduplicar con las ventas de Supabase
         remoteSales.forEach(s => {
             const sid = String(s.id);
             let matchedKey = null;
@@ -3066,7 +3092,7 @@
             }
         });
 
-        // 3. Normalizar estado de cancelaciones y motivos
+        // 5. Normalizar estado de cancelaciones y motivos
         for (const [k, s] of salesMap.entries()) {
             const reason = cancelledReasons[String(s.id)] || cancelledReasons[String(s.sale_number)];
             if (reason) {
@@ -3075,7 +3101,7 @@
             }
         }
 
-        // 4. Filtrar ventas definitivamente borradas y ordenar
+        // 6. Filtrar ventas definitivamente borradas y ordenar cronológicamente
         const consolidated = Array.from(salesMap.values())
             .filter(s => !deletedSaleIds.has(String(s.id)) && !deletedSaleIds.has(String(s.sale_number)))
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
@@ -5092,47 +5118,68 @@
                 .on("broadcast", { event: "request_sync" }, async () => {
                     const mySales = lr("sales", []);
                     const myCuts = lr("cuts", []);
-                    if ((mySales.length || myCuts.length) && realtimeChannel) {
-                        realtimeChannel.send({
-                            type: "broadcast",
-                            event: "sync_response",
-                            payload: {
-                                branch_name: S.branchName,
-                                shift_name: S.shift,
-                                sales: mySales,
-                                cuts: myCuts
-                            }
-                        });
+                    const allGSales = gr("all_sales", []);
+                    const allGCuts = gr("all_cuts", []);
+                    const salesToSend = (mySales.length ? mySales : allGSales);
+                    const cutsToSend = (myCuts.length ? myCuts : allGCuts);
+
+                    if (realtimeChannel) {
+                        try {
+                            realtimeChannel.send({
+                                type: "broadcast",
+                                event: "sync_response",
+                                payload: {
+                                    branch_name: S.branchName,
+                                    branch_id: S.branchId,
+                                    shift_name: S.shift,
+                                    sales: salesToSend,
+                                    cuts: cutsToSend,
+                                    inv: S.inv
+                                }
+                            });
+                        } catch(e) {}
                     }
                 })
                 // 4. RESPUESTA DE SINCRONIZACIÓN RECIBIDA DE OTRAS SUCURSALES
                 .on("broadcast", { event: "sync_response" }, async ({ payload }) => {
                     if (!payload) return;
+                    let hasNew = false;
                     if (payload.sales && payload.sales.length) {
                         let allGSales = gr("all_sales", []);
                         const map = new Map();
-                        allGSales.forEach(s => map.set(String(s.id), s));
+                        allGSales.forEach(s => map.set(String(s.id || s.sale_number), s));
                         payload.sales.forEach(s => {
-                            const sid = String(s.id);
+                            const sid = String(s.id || s.sale_number);
                             if (!map.has(sid)) {
                                 map.set(sid, s);
+                                hasNew = true;
+                            } else {
+                                map.set(sid, { ...map.get(sid), ...s });
                             }
                         });
-                        const merged = Array.from(map.values()).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+                        const merged = Array.from(map.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
                         gw("all_sales", merged);
                     }
                     if (payload.cuts && payload.cuts.length) {
                         let allCuts = gr("all_cuts", []);
                         const mapC = new Map();
-                        allCuts.forEach(c => mapC.set(String(c.id), c));
+                        allCuts.forEach(c => mapC.set(String(c.id || c.created_at), c));
                         payload.cuts.forEach(c => {
-                            if (!mapC.has(String(c.id))) mapC.set(String(c.id), c);
+                            const cid = String(c.id || c.created_at);
+                            if (!mapC.has(cid)) {
+                                mapC.set(cid, c);
+                                hasNew = true;
+                            }
                         });
                         gw("all_cuts", Array.from(mapC.values()));
                     }
-                    safeSilentRefresh();
+                    if (payload.inv && payload.branch_id) {
+                        gw("inv_" + payload.branch_id, payload.inv);
+                    }
+                    _cachedConsolidatedSales = null;
+                    await getConsolidatedSalesForChain(true);
+                    safeSilentRefresh(true);
                 })
-                // 5. EVENTOS POSTGRESQL NATIVOS SUPABASE
                 .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, async payload => {
                     if (payload.eventType === "INSERT" && payload.new) {
                         const n = payload.new;
