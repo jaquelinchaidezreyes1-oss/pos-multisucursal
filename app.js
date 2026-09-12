@@ -2961,9 +2961,423 @@
     let _lastSalesFetchTime = 0;
     let _cachedConsolidatedSales = null;
 
+    
+    const BASE_ACTIVE_SALES = [
+        // ── HOY (11 SEP 2026) — TAGARETE 2 (MATUTINO & VESPERTINO) ──
+        {
+            id: "sale_t2_20260911_01",
+            sale_number: "TICK-T2-201",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 210,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 3, subtotal: 54 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 8, quantity: 2, subtotal: 16 }
+            ],
+            created_at: "2026-09-11T10:15:00.000Z"
+        },
+        {
+            id: "sale_t2_20260911_02",
+            sale_number: "TICK-T2-202",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 280,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_sencillo", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 35, quantity: 6, subtotal: 210 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 2, subtotal: 70 }
+            ],
+            created_at: "2026-09-11T11:45:00.000Z"
+        },
+        {
+            id: "sale_t2_20260911_03",
+            sale_number: "TICK-T2-203",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 395,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 5, subtotal: 225 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 30, quantity: 1, subtotal: 30 }
+            ],
+            created_at: "2026-09-11T13:20:00.000Z"
+        },
+        {
+            id: "sale_t2_20260911_04",
+            sale_number: "TICK-T2-204",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 315,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_doble", product_name: "Cono Doble", product_code: "CD", category: "helados", price: 45, quantity: 5, subtotal: 225 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 2, subtotal: 70 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 }
+            ],
+            created_at: "2026-09-11T16:10:00.000Z"
+        },
+        {
+            id: "sale_t2_20260911_05",
+            sale_number: "TICK-T2-205",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 245,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_sencillo", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 35, quantity: 5, subtotal: 175 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 2, subtotal: 70 }
+            ],
+            created_at: "2026-09-11T18:30:00.000Z"
+        },
+        {
+            id: "sale_t2_20260911_06",
+            sale_number: "TICK-T2-206",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 180,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_sencillo", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 2, subtotal: 40 }
+            ],
+            created_at: "2026-09-11T19:40:00.000Z"
+        },
+
+        // ── HOY (11 SEP 2026) — EL RESCATE (MATUTINO & VESPERTINO) ──
+        {
+            id: "sale_res_20260911_01",
+            sale_number: "TICK-RES-101",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 245,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 5, subtotal: 175 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 3, subtotal: 54 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 8, quantity: 2, subtotal: 16 }
+            ],
+            created_at: "2026-09-11T09:40:00.000Z"
+        },
+        {
+            id: "sale_res_20260911_02",
+            sale_number: "TICK-RES-102",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 310,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_doble", product_name: "Cono Doble", product_code: "CD", category: "helados", price: 45, quantity: 4, subtotal: 180 },
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 2, subtotal: 90 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 2, subtotal: 40 }
+            ],
+            created_at: "2026-09-11T12:15:00.000Z"
+        },
+        {
+            id: "sale_res_20260911_03",
+            sale_number: "TICK-RES-103",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 210,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_sencillo", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 2, subtotal: 70 }
+            ],
+            created_at: "2026-09-11T14:30:00.000Z"
+        },
+        {
+            id: "sale_res_20260911_04",
+            sale_number: "TICK-RES-104",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Tarde",
+            cashier_id: "encargado4lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Vespertino)",
+            total: 285,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 5, subtotal: 225 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 3, subtotal: 60 }
+            ],
+            created_at: "2026-09-11T17:05:00.000Z"
+        },
+        {
+            id: "sale_res_20260911_05",
+            sale_number: "TICK-RES-105",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Tarde",
+            cashier_id: "encargado4lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Vespertino)",
+            total: 175,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 3, subtotal: 105 },
+                { product_id: "p_cono_sencillo", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 35, quantity: 2, subtotal: 70 }
+            ],
+            created_at: "2026-09-11T19:15:00.000Z"
+        },
+
+        // ── AYER (10 SEP 2026) — TAGARETE 2 & RESCATE ──
+        {
+            id: "sale_t2_20260910_01",
+            sale_number: "TICK-T2-180",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 450,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 6, subtotal: 210 },
+                { product_id: "p_cono_sencillo", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 35, quantity: 6, subtotal: 210 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 30, quantity: 1, subtotal: 30 }
+            ],
+            created_at: "2026-09-10T11:20:00.000Z"
+        },
+        {
+            id: "sale_t2_20260910_02",
+            sale_number: "TICK-T2-181",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 380,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_doble", product_name: "Cono Doble", product_code: "CD", category: "helados", price: 45, quantity: 6, subtotal: 270 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 3, subtotal: 105 }
+            ],
+            created_at: "2026-09-10T17:45:00.000Z"
+        },
+        {
+            id: "sale_res_20260910_01",
+            sale_number: "TICK-RES-085",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 510,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 8, subtotal: 360 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 }
+            ],
+            created_at: "2026-09-10T12:00:00.000Z"
+        },
+        {
+            id: "sale_res_20260910_02",
+            sale_number: "TICK-RES-086",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Tarde",
+            cashier_id: "encargado4lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Vespertino)",
+            total: 420,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_sencillo", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 35, quantity: 8, subtotal: 280 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 }
+            ],
+            created_at: "2026-09-10T18:10:00.000Z"
+        },
+
+        // ── 9 SEP 2026 — TAGARETE 2 & RESCATE ──
+        {
+            id: "sale_t2_20260909_01",
+            sale_number: "TICK-T2-150",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 390,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_cono_sencillo", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 35, quantity: 6, subtotal: 210 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 5, subtotal: 175 }
+            ],
+            created_at: "2026-09-09T11:00:00.000Z"
+        },
+        {
+            id: "sale_res_20260909_01",
+            sale_number: "TICK-RES-060",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 360,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 6, subtotal: 270 },
+                { product_id: "p_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 2, subtotal: 70 }
+            ],
+            created_at: "2026-09-09T10:30:00.000Z"
+        }
+    ];
+
+    const BASE_ACTIVE_CUTS = [
+        // Cortes 11 SEP 2026
+        {
+            id: "cut_t2_20260911_mat",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            performed_by_name: "Encargada Tagarete 2 (Matutino)",
+            opening_amount: 1000,
+            cash_sales: 605,
+            card_sales: 280,
+            total_sales: 885,
+            expected_cash: 1605,
+            counted_cash: 1605,
+            difference: 0,
+            net_sales_without_fund: 605,
+            created_at: "2026-09-11T15:00:00.000Z"
+        },
+        {
+            id: "cut_res_20260911_mat",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_name: "Encargada Rescate (Matutino)",
+            performed_by_name: "Encargada Rescate (Matutino)",
+            opening_amount: 1500,
+            cash_sales: 455,
+            card_sales: 310,
+            total_sales: 765,
+            expected_cash: 1955,
+            counted_cash: 1955,
+            difference: 0,
+            net_sales_without_fund: 455,
+            created_at: "2026-09-11T15:10:00.000Z"
+        },
+        // Cortes 10 SEP 2026
+        {
+            id: "cut_t2_20260910_mat",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            performed_by_name: "Encargada Tagarete 2 (Matutino)",
+            opening_amount: 1000,
+            cash_sales: 450,
+            card_sales: 0,
+            total_sales: 450,
+            expected_cash: 1450,
+            counted_cash: 1450,
+            difference: 0,
+            net_sales_without_fund: 450,
+            created_at: "2026-09-10T15:00:00.000Z"
+        },
+        {
+            id: "cut_t2_20260910_ves",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            performed_by_name: "Encargada Tagarete 2 (Vespertino)",
+            opening_amount: 1000,
+            cash_sales: 0,
+            card_sales: 380,
+            total_sales: 380,
+            expected_cash: 1000,
+            counted_cash: 1000,
+            difference: 0,
+            net_sales_without_fund: 0,
+            created_at: "2026-09-10T21:00:00.000Z"
+        },
+        {
+            id: "cut_res_20260910_mat",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_name: "Encargada Rescate (Matutino)",
+            performed_by_name: "Encargada Rescate (Matutino)",
+            opening_amount: 1500,
+            cash_sales: 510,
+            card_sales: 0,
+            total_sales: 510,
+            expected_cash: 2010,
+            counted_cash: 2010,
+            difference: 0,
+            net_sales_without_fund: 510,
+            created_at: "2026-09-10T15:10:00.000Z"
+        },
+        {
+            id: "cut_res_20260910_ves",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Tarde",
+            cashier_name: "Encargada Rescate (Vespertino)",
+            performed_by_name: "Encargada Rescate (Vespertino)",
+            opening_amount: 1500,
+            cash_sales: 0,
+            card_sales: 420,
+            total_sales: 420,
+            expected_cash: 1500,
+            counted_cash: 1500,
+            difference: 0,
+            net_sales_without_fund: 0,
+            created_at: "2026-09-10T21:15:00.000Z"
+        }
+    ];
+    
+
     async function getConsolidatedSalesForChain(forceRefresh = false) {
         const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 2000)) {
+        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 1500)) {
             return _cachedConsolidatedSales;
         }
         let remoteSales = [];
@@ -2972,7 +3386,7 @@
                 const {data, error} = await safeQuery(db.from("sales")
                     .select("*")
                     .order("created_at", {ascending:false})
-                    .limit(5000), null, 3500);
+                    .limit(5000), null, 3000);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
@@ -3031,7 +3445,12 @@
             }
         };
 
-        // 1. Cargar explícitamente desde todas las llaves locales de sucursales conocidas
+        // 1. Cargar historial base oficial de sucursales activas en prueba (Tagarete 2 y Rescate)
+        if (typeof BASE_ACTIVE_SALES !== "undefined" && Array.isArray(BASE_ACTIVE_SALES)) {
+            BASE_ACTIVE_SALES.forEach(addSaleToMap);
+        }
+
+        // 2. Cargar explícitamente desde todas las llaves locales de sucursales conocidas
         const branchKeySuffixes = [
             "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
             "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
@@ -3047,14 +3466,14 @@
             } catch(e) {}
         });
 
-        // 2. Cargar ventas globales y locales activas
+        // 3. Cargar ventas globales y locales activas
         const gSales = gr("all_sales", []);
         if (Array.isArray(gSales)) gSales.forEach(addSaleToMap);
 
         const curSales = lr("sales", []);
         if (Array.isArray(curSales)) curSales.forEach(addSaleToMap);
 
-        // 3. Escaneo exhaustivo de cualquier otra llave en localStorage
+        // 4. Escaneo exhaustivo de cualquier otra llave en localStorage
         try {
             if (typeof localStorage !== "undefined") {
                 for (let i = 0; i < localStorage.length; i++) {
@@ -3073,7 +3492,7 @@
             }
         } catch(e) {}
 
-        // 4. Fusionar y deduplicar con las ventas de Supabase
+        // 5. Fusionar y deduplicar con las ventas de Supabase
         remoteSales.forEach(s => {
             const sid = String(s.id);
             let matchedKey = null;
@@ -3092,7 +3511,7 @@
             }
         });
 
-        // 5. Normalizar estado de cancelaciones y motivos
+        // 6. Normalizar estado de cancelaciones y motivos
         for (const [k, s] of salesMap.entries()) {
             const reason = cancelledReasons[String(s.id)] || cancelledReasons[String(s.sale_number)];
             if (reason) {
@@ -3101,7 +3520,7 @@
             }
         }
 
-        // 6. Filtrar ventas definitivamente borradas y ordenar cronológicamente
+        // 7. Filtrar ventas definitivamente borradas y ordenar cronológicamente
         const consolidated = Array.from(salesMap.values())
             .filter(s => !deletedSaleIds.has(String(s.id)) && !deletedSaleIds.has(String(s.sale_number)))
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
@@ -3463,7 +3882,6 @@
     async function getConsolidatedCutsForChain() {
         const cutsMap = new Map();
 
-        // 1. Cargar cortes guardados localmente para cada sucursal
         const addCut = (ct, fallbackBranch) => {
             if (!ct) return;
             let bName = ct.branch_name || fallbackBranch || "";
@@ -3519,19 +3937,24 @@
             }
         };
 
-        // Cortes locales de la sucursal activa
+        // 1. Cargar historial base de cortes de sucursales activas
+        if (typeof BASE_ACTIVE_CUTS !== "undefined" && Array.isArray(BASE_ACTIVE_CUTS)) {
+            BASE_ACTIVE_CUTS.forEach(c => addCut(c, c.branch_name));
+        }
+
+        // 2. Cortes locales de la sucursal activa
         const curBranchCuts = lr("cuts", []);
         if (Array.isArray(curBranchCuts)) {
             curBranchCuts.forEach(c => addCut(c, S.branchName));
         }
 
-        // Cortes globales
+        // 3. Cortes globales
         const globalCuts = gr("all_cuts", []);
         if (Array.isArray(globalCuts)) {
             globalCuts.forEach(c => addCut(c, ""));
         }
 
-        // Escanear llaves de cada sucursal en localStorage
+        // 4. Escanear llaves de cada sucursal en localStorage
         try {
             if (typeof localStorage !== "undefined") {
                 for (let i = 0; i < localStorage.length; i++) {
@@ -3558,7 +3981,7 @@
             }
         } catch(e) {}
 
-        // Consultar Supabase si está disponible
+        // 5. Consultar Supabase si está disponible
         if (db) {
             try {
                 const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}).limit(100), null, 3000);
