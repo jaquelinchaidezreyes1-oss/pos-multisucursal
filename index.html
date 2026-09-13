@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Cinzel:wght@400;700&family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="styles.css?v=22">
+    <link rel="stylesheet" href="styles.css?v=23">
 </head>
 <body class="login-active">
 
@@ -120,6 +120,10 @@
                     <button type="button" class="menu-item" id="menu-accounting" onclick="changeView('accounting')" style="display:none;">
                         <span class="menu-icon">&#128202;</span>
                         <span class="menu-text">Contabilidad</span>
+                    </button>
+                    <button type="button" class="menu-item" id="menu-sales-count" onclick="changeView('sales-count')">
+                        <span class="menu-icon">📊</span>
+                        <span class="menu-text">Conteo de Ventas</span>
                     </button>
                     <button type="button" class="menu-item" id="menu-shift" onclick="changeView('shift')">
                         <span class="menu-icon">&#128337;</span>
@@ -299,7 +303,13 @@
                 </section>
 
                 <!-- VISTA: CORTES -->
-                <section class="app-view" id="view-cuts" data-page="cuts" style="display:none;">
+                
+                <!-- VISTA: CONTEO DE VENTAS (PRODUCTOS VENDIDOS POR SUCURSAL Y TURNO) -->
+                <section class="app-view" id="view-sales-count" data-page="sales-count" style="display:none;">
+                    <div id="sales-count-container"></div>
+                </section>
+
+<section class="app-view" id="view-cuts" data-page="cuts" style="display:none;">
                     <div id="cuts-container"></div>
                 </section>
 
@@ -334,6 +344,7 @@
                 "inventory":      { title: "Inventario de Sucursal",      sub: "Existencias y stock disponible por producto" },
                 "sales":          { title: "Mis Ventas",                  sub: "Historial de tickets cobrados y ventas canceladas" },
                 "cuts":           { title: "Cortes de Caja",              sub: "Arqueos y cierres clasificados por turno" },
+                "sales-count":    { title: "Conteo Diario de Productos Vendidos", sub: "Desglose en tiempo real de unidades vendidas por sucursal y turnos" },
                 "damage-reports": { title: "Daños & Avisos",              sub: "Reporte de daños en productos y peticiones a dirección" }
             };
             var info = titles[target] || titles["pos"];
@@ -350,6 +361,7 @@
                 if (target === "inventory" && window.LaFuentePOS.loadInventory)      window.LaFuentePOS.loadInventory();
                 if (target === "shift" && window.LaFuentePOS.loadShiftView)          window.LaFuentePOS.loadShiftView();
                 if (target === "products" && window.LaFuentePOS.loadProductsAdmin)       window.LaFuentePOS.loadProductsAdmin();
+                if (target === "sales-count" && window.LaFuentePOS.loadSalesCount) { window.LaFuentePOS.loadSalesCount(); }
                 if (target === "damage-reports" && window.LaFuentePOS.loadDamageReports) window.LaFuentePOS.loadDamageReports();
             }
         };
@@ -530,6 +542,6 @@
             if (btnTopbar) btnTopbar.style.display = 'none';
         });
     </script>
-    <script src="app.js?v=22"></script>
+    <script src="app.js?v=23"></script>
 </body>
 </html>

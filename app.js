@@ -520,28 +520,12 @@
         if (!S.isSU) {
             c.innerHTML = `<div class="branch-pill-active">
                 <span style="font-size:8px;font-weight:900;color:var(--wine-700)">SUCURSAL:</span>
-                <strong style="font-size:11px;color:var(--wine-900)">📍 ${esc(S.branchName)}
-
-        // Purga automática de datos acumulados en superusuarios para visualización limpia
-        try {
-            const SU_PURGE_KEY = "lf_su_data_cleaned_v1";
-            if (S.isSU && typeof localStorage !== "undefined" && localStorage.getItem("lf_su_cleaned") !== SU_PURGE_KEY) {
-                const keysToClear = [
-                    "lf_all_sales", "lf_all_cuts", "lf_all_shifts", "lf_all_damage_reports",
-                    "lf_closed_business_days", "lf_deleted_sale_ids", "lf_deleted_cut_ids"
-                ];
-                keysToClear.forEach(k => localStorage.removeItem(k));
-                localStorage.setItem("lf_su_cleaned", SU_PURGE_KEY);
-                _cachedConsolidatedSales = null;
-            }
-        } catch(e) {}
-    
-</strong>
+                <strong style="font-size:11px;color:var(--wine-900)">📍 ${esc(S.branchName)}</strong>
                 <small style="font-size:9px;color:var(--emerald);font-weight:800">(${esc(S.shift)})</small>
             </div>`;
             return;
         }
-        c.innerHTML = `<div class="branch-selector-box"><label>CAMBIAR SUCURSAL</label>
+        c.innerHTML = `<div class="branch-selector-box"><label>CAMBIAR SUCURSAL (👑)</label>
             <select id="branch-selector" class="branch-select-dropdown">
                 ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(S.branchId)?" selected":""}>${esc(b.name)}</option>`).join("")}
             </select></div>`;
@@ -4483,7 +4467,12 @@
                     ${Array.from(datesMap.keys()).filter(d => d !== todayStr).sort().reverse().map(d => `<option value="${d}" ${selectedDate === d ? 'selected' : ''}>📆 ${d}</option>`).join('')}
                     <option value="all" ${selectedDate === 'all' ? 'selected' : ''}>🌐 Todas las fechas</option>
                 </select>
-            </div>
+            
+            <div style="display:flex;align-items:center;gap:8px;margin-top:10px;width:100%;justify-content:flex-end">
+                <button type="button" id="btn-close-business-day" style="padding:10px 18px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);display:flex;align-items:center;gap:6px">
+                    <span>🔒</span><span>Realizar Corte General & Cerrar Día Oficial</span>
+                </button>
+            </div></div>
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
@@ -4605,6 +4594,38 @@
                 await getConsolidatedSalesForChain(true);
                 await loadPrivateAccess();
                 toast("✓ Caché de superusuario limpiada con éxito.", "success", 3000);
+            });
+        }
+        
+        const btnCloseDay = $("#btn-close-business-day");
+        if (btnCloseDay) {
+            btnCloseDay.addEventListener("click", async () => {
+                const ok = await toastConfirm(`👑 [SUPERUSUARIO] ¿Deseas realizar el CORTE GENERAL del día ${selectedDate}?\n• Se archivarán las ventas y cortes del día en el historial.\n• El monitor en vivo se preparará para el nuevo día.`);
+                if (!ok) return;
+
+                const closedDays = gr("closed_business_days", []);
+                if (!closedDays.includes(selectedDate)) {
+                    closedDays.push(selectedDate);
+                    gw("closed_business_days", closedDays);
+                }
+
+                // Archivar resumen
+                const ledgers = gr("historical_daily_ledgers", {});
+                ledgers[selectedDate] = {
+                    date: selectedDate,
+                    total: chainTotal,
+                    cashTotal: chainCashTotal,
+                    cardTotal: chainCardTotal,
+                    matTotal: chainMatTotal,
+                    vesTotal: chainVesTotal,
+                    branches: summary,
+                    closed_at: now(),
+                    closed_by: S.profile?.full_name || S.user?.email || "Dirección General"
+                };
+                gw("historical_daily_ledgers", ledgers);
+
+                toast(`✓ Corte General del día ${selectedDate} completado y archivado.`, "success", 5000);
+                await loadPrivateAccess();
             });
         }
         const selDate = $("#sel-private-access-date");
@@ -5108,6 +5129,276 @@
     let _lastCutsCount = 0;
 
     let _lastRefreshHash = "";
+    
+    /* ── CONTEO DIARIO DE PRODUCTOS VENDIDOS POR SUCURSAL Y TURNO ── */
+    async function loadSalesCount(silent = false) {
+        const c = document.getElementById("sales-count-container");
+        if (!c) return;
+
+        if (!silent && !c.children.length) {
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando conteo de productos vendidos…</p></div>`;
+        }
+
+        const consolidatedSales = await getConsolidatedSalesForChain();
+        const todayStr = toDateKey();
+
+        // 1. Recoger todas las fechas disponibles
+        const datesSet = new Set([todayStr]);
+        consolidatedSales.forEach(s => {
+            const d = toDateKey(s.created_at);
+            if (d) datesSet.add(d);
+        });
+        const availableDates = Array.from(datesSet).sort().reverse();
+
+        if (!S.salesCountDate) S.salesCountDate = todayStr;
+        const selectedDate = S.salesCountDate;
+        const isAllDates = (selectedDate === "all");
+
+        // 2. Filtrar ventas por fecha seleccionada y activas (no canceladas)
+        const activeSales = consolidatedSales.filter(s => {
+            if (String(s.status || "").toUpperCase() === "CANCELLED") return false;
+            if (isAllDates) return true;
+            return toDateKey(s.created_at) === selectedDate;
+        });
+
+        // 3. Filtros de Sucursal y Turno
+        const selectedBranchFilter = S.isSU ? (S.salesCountBranch || "all") : (S.branchId || S.branchName);
+        const selectedShiftFilter = S.salesCountShift || "all";
+
+        const filteredSales = activeSales.filter(s => {
+            if (selectedBranchFilter !== "all" && !matchesBranch(s, { id: selectedBranchFilter, name: selectedBranchFilter })) {
+                return false;
+            }
+            if (selectedShiftFilter !== "all") {
+                const shiftCat = getShiftCategory(s);
+                if (selectedShiftFilter === "matutino" && shiftCat !== "matutino") return false;
+                if (selectedShiftFilter === "vespertino" && shiftCat !== "vespertino") return false;
+            }
+            return true;
+        });
+
+        // 4. Calcular conteo por producto (Matutino vs Vespertino)
+        const productStats = new Map();
+
+        // Inicializar con los productos del catálogo
+        S.products.forEach(p => {
+            if (!p.is_supply && p.category !== "desechables") {
+                productStats.set(p.product_id, {
+                    id: p.product_id,
+                    name: p.product_name,
+                    code: p.product_code || "",
+                    category: p.category || "General",
+                    price: Number(p.price || 0),
+                    matutinoQty: 0,
+                    vespertinoQty: 0,
+                    totalQty: 0,
+                    totalAmount: 0
+                });
+            }
+        });
+
+        // Sumar items de las ventas filtradas
+        filteredSales.forEach(sale => {
+            const shiftCat = getShiftCategory(sale);
+            if (Array.isArray(sale.items)) {
+                sale.items.forEach(it => {
+                    const pid = String(it.product_id || it.id);
+                    const qty = Number(it.quantity || it.qty || 1);
+                    const subtotal = Number(it.subtotal != null ? it.subtotal : (qty * Number(it.price || 0)));
+
+                    if (!productStats.has(pid)) {
+                        productStats.set(pid, {
+                            id: pid,
+                            name: it.product_name || it.name || "Producto",
+                            code: it.product_code || "",
+                            category: it.category || "General",
+                            price: Number(it.price || 0),
+                            matutinoQty: 0,
+                            vespertinoQty: 0,
+                            totalQty: 0,
+                            totalAmount: 0
+                        });
+                    }
+
+                    const st = productStats.get(pid);
+                    if (shiftCat === "vespertino") {
+                        st.vespertinoQty += qty;
+                    } else {
+                        st.matutinoQty += qty;
+                    }
+                    st.totalQty += qty;
+                    st.totalAmount += subtotal;
+                });
+            }
+        });
+
+        const list = Array.from(productStats.values()).sort((a,b) => b.totalQty - a.totalQty || a.name.localeCompare(b.name));
+
+        // KPIs
+        const totalItemsSold = list.reduce((sum, x) => sum + x.totalQty, 0);
+        const totalMoneySold = list.reduce((sum, x) => sum + x.totalAmount, 0);
+        const totalPaletas = list.filter(x => x.category === "paletas").reduce((sum, x) => sum + x.totalQty, 0);
+        const totalHelados = list.filter(x => x.category === "helados").reduce((sum, x) => sum + x.totalQty, 0);
+        const totalAguas = list.filter(x => x.category === "aguas").reduce((sum, x) => sum + x.totalQty, 0);
+        const totalPrep = list.filter(x => x.category === "preparados").reduce((sum, x) => sum + x.totalQty, 0);
+
+        const currentBranchName = S.isSU 
+            ? (selectedBranchFilter === "all" ? "Todas las Sucursales" : (S.branches.find(b => String(b.id) === String(selectedBranchFilter))?.name || selectedBranchFilter))
+            : S.branchName;
+
+        const branchSelectHtml = S.isSU ? `
+            <div>
+                <label style="font-size:11px;font-weight:800;color:var(--gold-300);display:block;margin-bottom:4px">📍 SUCURSAL:</label>
+                <select id="sc-branch-filter" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;color:var(--wine-900)">
+                    <option value="all"${selectedBranchFilter==='all'?' selected':''}>🌐 Todas las Sucursales</option>
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(selectedBranchFilter)?' selected':''}>📍 ${esc(b.name)}</option>`).join("")}
+                </select>
+            </div>` : '';
+
+        c.innerHTML = `
+        <!-- ENCABEZADO Y FILTROS -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px;background:linear-gradient(135deg,#230408,#450a12);padding:16px 20px;border-radius:16px;border:1.5px solid var(--gold-400);box-shadow:0 4px 15px rgba(0,0,0,0.2)">
+            <div>
+                <strong style="font-size:18px;color:#ffffff;font-weight:900;display:flex;align-items:center;gap:8px">
+                    <span>📊</span> Conteo Diario de Productos Vendidos — ${esc(currentBranchName)}
+                </strong>
+                <div style="font-size:12px;color:#fcebd2;margin-top:3px">
+                    Producción y consumo diario exacto: Matutino vs Vespertino • Total del Día
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                ${branchSelectHtml}
+                <div>
+                    <label style="font-size:11px;font-weight:800;color:var(--gold-300);display:block;margin-bottom:4px">⏰ TURNO:</label>
+                    <select id="sc-shift-filter" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;color:var(--wine-900)">
+                        <option value="all"${selectedShiftFilter==='all'?' selected':''}>☀️ Ambos Turnos</option>
+                        <option value="matutino"${selectedShiftFilter==='matutino'?' selected':''}>🌅 Solo Matutino</option>
+                        <option value="vespertino"${selectedShiftFilter==='vespertino'?' selected':''}>🌇 Solo Vespertino</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:800;color:var(--gold-300);display:block;margin-bottom:4px">📅 FECHA:</label>
+                    <select id="sc-date-filter" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;color:var(--wine-900)">
+                        <option value="${todayStr}"${selectedDate===todayStr?' selected':''}>🟢 Hoy (${todayStr})</option>
+                        ${availableDates.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?' selected':''}>📆 ${d}</option>`).join("")}
+                        <option value="all"${selectedDate==='all'?' selected':''}>🌐 Histórico Completo</option>
+                    </select>
+                </div>
+                <button type="button" id="btn-ref-sales-count"
+                    style="margin-top:18px;padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950)">
+                    🔄 Actualizar
+                </button>
+            </div>
+        </div>
+
+        <!-- TARJETAS RESUMEN KPIS -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px">
+            <div style="background:#fff;padding:14px;border-radius:14px;border:1.5px solid var(--gold-400);box-shadow:0 2px 8px rgba(0,0,0,0.05)">
+                <small style="font-size:10.5px;font-weight:800;color:var(--text-muted);display:block">TOTAL PIEZAS VENDIDAS</small>
+                <strong style="font-size:22px;color:var(--wine-900);font-weight:900">${totalItemsSold} pz</strong>
+                <div style="font-size:11px;color:#16a34a;font-weight:700;margin-top:2px">${money(totalMoneySold)} total</div>
+            </div>
+            <div style="background:#fff;padding:14px;border-radius:14px;border:1.5px solid #93c5fd;box-shadow:0 2px 8px rgba(0,0,0,0.05)">
+                <small style="font-size:10.5px;font-weight:800;color:#1e40af;display:block">💧 AGUAS VENDIDAS</small>
+                <strong style="font-size:22px;color:#1d4ed8;font-weight:900">${totalAguas} pz</strong>
+                <div style="font-size:10.5px;color:var(--text-muted)">Litros y medios litros</div>
+            </div>
+            <div style="background:#fff;padding:14px;border-radius:14px;border:1.5px solid #fbcfe8;box-shadow:0 2px 8px rgba(0,0,0,0.05)">
+                <small style="font-size:10.5px;font-weight:800;color:#9d174d;display:block">🍭 PALETAS VENDIDAS</small>
+                <strong style="font-size:22px;color:#be185d;font-weight:900">${totalPaletas} pz</strong>
+                <div style="font-size:10.5px;color:var(--text-muted)">Leche, agua y rellenas</div>
+            </div>
+            <div style="background:#fff;padding:14px;border-radius:14px;border:1.5px solid #fed7aa;box-shadow:0 2px 8px rgba(0,0,0,0.05)">
+                <small style="font-size:10.5px;font-weight:800;color:#9a3412;display:block">🍨 HELADOS & NIEVES</small>
+                <strong style="font-size:22px;color:#c2410c;font-weight:900">${totalHelados} pz</strong>
+                <div style="font-size:10.5px;color:var(--text-muted)">Conos, litros y vasos</div>
+            </div>
+            <div style="background:#fff;padding:14px;border-radius:14px;border:1.5px solid #bbf7d0;box-shadow:0 2px 8px rgba(0,0,0,0.05)">
+                <small style="font-size:10.5px;font-weight:800;color:#166534;display:block">🍧 PREPARADOS</small>
+                <strong style="font-size:22px;color:#15803d;font-weight:900">${totalPrep} pz</strong>
+                <div style="font-size:10.5px;color:var(--text-muted)">Especiales y botanas</div>
+            </div>
+        </div>
+
+        <!-- TABLA COMPLETA DE CONTEO -->
+        <div class="dashboard-card" style="padding:20px;border-radius:16px;background:#ffffff;box-shadow:var(--shadow-card);border:1.5px solid #e5e7eb">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+                <h3 style="color:var(--wine-900);margin:0;font-weight:900;font-size:16px">📋 Desglose Detallado por Producto (${list.length} artículos)</h3>
+                <span style="font-size:11.5px;color:var(--text-muted)">Ordenado por mayor cantidad vendida</span>
+            </div>
+
+            <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;text-align:left;font-size:13px">
+                    <thead>
+                        <tr style="background:#faf7f2;border-bottom:2px solid var(--gold-400)">
+                            <th style="padding:10px 12px;font-weight:900;color:var(--wine-900)">PRODUCTO</th>
+                            <th style="padding:10px 12px;font-weight:900;color:var(--wine-900)">CATEGORÍA</th>
+                            <th style="padding:10px 12px;font-weight:900;color:var(--wine-900);text-align:center">PRECIO</th>
+                            <th style="padding:10px 12px;font-weight:900;color:#9a3412;text-align:center">🌅 MAÑANA</th>
+                            <th style="padding:10px 12px;font-weight:900;color:#1e40af;text-align:center">🌇 TARDE</th>
+                            <th style="padding:10px 12px;font-weight:900;color:#15803d;text-align:center">📊 TOTAL DÍA</th>
+                            <th style="padding:10px 12px;font-weight:900;color:var(--wine-900);text-align:right">💰 TOTAL $</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${list.map(p => {
+                            const hasSales = p.totalQty > 0;
+                            return `
+                            <tr style="border-bottom:1px solid #f1f5f9;${hasSales?'background:#fff':'opacity:0.6'}">
+                                <td style="padding:10px 12px">
+                                    <strong style="color:var(--wine-950);display:block">${esc(p.name)}</strong>
+                                    <small style="color:var(--text-muted);font-size:10.5px">${esc(p.code || 'S/C')}</small>
+                                </td>
+                                <td style="padding:10px 12px">
+                                    <span style="font-size:11px;background:#f3f4f6;padding:2px 8px;border-radius:10px;font-weight:700;color:#374151">
+                                        ${esc(p.category)}
+                                    </span>
+                                </td>
+                                <td style="padding:10px 12px;text-align:center;font-weight:700;color:#4b5563">${money(p.price)}</td>
+                                <td style="padding:10px 12px;text-align:center;font-weight:900;color:${p.matutinoQty>0?'#c2410c':'#9ca3af'}">
+                                    ${p.matutinoQty} pz
+                                </td>
+                                <td style="padding:10px 12px;text-align:center;font-weight:900;color:${p.vespertinoQty>0?'#1d4ed8':'#9ca3af'}">
+                                    ${p.vespertinoQty} pz
+                                </td>
+                                <td style="padding:10px 12px;text-align:center">
+                                    <span style="font-size:13px;font-weight:900;padding:4px 10px;border-radius:12px;${hasSales?'background:#dcfce7;color:#15803d;border:1px solid #86efac':'background:#f3f4f6;color:#6b7280'}">
+                                        ${p.totalQty} pz
+                                    </span>
+                                </td>
+                                <td style="padding:10px 12px;text-align:right;font-weight:900;color:var(--wine-900)">
+                                    ${money(p.totalAmount)}
+                                </td>
+                            </tr>`;
+                        }).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        `;
+
+        // Event listeners
+        document.getElementById("sc-branch-filter")?.addEventListener("change", e => {
+            S.salesCountBranch = e.target.value;
+            loadSalesCount();
+        });
+
+        document.getElementById("sc-shift-filter")?.addEventListener("change", e => {
+            S.salesCountShift = e.target.value;
+            loadSalesCount();
+        });
+
+        document.getElementById("sc-date-filter")?.addEventListener("change", e => {
+            S.salesCountDate = e.target.value;
+            loadSalesCount();
+        });
+
+        document.getElementById("btn-ref-sales-count")?.addEventListener("click", () => {
+            loadSalesCount();
+            toast("Conteo de ventas actualizado.", "info");
+        });
+    }
+    
     function safeSilentRefresh(force = false) {
         if (!S.user) return;
         const active = document.activeElement;
@@ -5124,6 +5415,7 @@
         else if (S.view === "accounting" && S.isSU) loadAccounting(true);
         else if (S.view === "sales") loadSales(true);
         else if (S.view === "cuts") loadCuts(true);
+        else if (S.view === "sales-count") loadSalesCount(true);
     }
 
     async function triggerLiveNetworkSync() {
@@ -5479,7 +5771,8 @@
         state: S,
         changeBranch,
         loadBranches,
-        loadPrivateAccessData: loadPrivateAccess,
+        loadSalesCount: loadSalesCount,
+            loadPrivateAccessData: loadPrivateAccess,
         loadProducts,
         loadProductsAdmin,
         loadInventory,
