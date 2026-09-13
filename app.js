@@ -649,102 +649,12 @@
 
     /* ── INVENTARIO CON SOPORTE INDEPENDIENTE POR SUCURSAL EN TIEMPO REAL ── */
     const BRANCH_BASE_INVENTORY = {
-        "calzada": {
-            "adbc5511-68a8-4525-97a3-ac7972856e89": 140,
-            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 130,
-            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 125,
-            "sup_vaso_1lt": 200,
-            "sup_tapa_1lt": 400,
-            "sup_vaso_20": 350,
-            "sup_tapa_20": 400,
-            "sup_charola_banana": 120,
-            "sup_cucharas": 300,
-            "sup_servilletas": 500,
-            "sup_sabritas": 180,
-            "sup_tostitos": 25,
-            "sup_doritos": 40,
-            "sup_cheetos": 45
-        },
-        "rescate": {
-            "adbc5511-68a8-4525-97a3-ac7972856e89": 99,
-            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 95,
-            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 100,
-            "sup_vaso_1lt": 125,
-            "sup_tapa_1lt": 550,
-            "sup_vaso_20": 500,
-            "sup_tapa_20": 550,
-            "sup_charola_banana": 83,
-            "sup_cucharas": 250,
-            "sup_servilletas": 500,
-            "sup_sabritas": 159,
-            "sup_tostitos": 7,
-            "sup_doritos": 27,
-            "sup_cheetos": 35
-        },
-        "mollotes": {
-            "adbc5511-68a8-4525-97a3-ac7972856e89": 75,
-            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 80,
-            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 70,
-            "sup_vaso_1lt": 100,
-            "sup_tapa_1lt": 300,
-            "sup_vaso_20": 250,
-            "sup_tapa_20": 300,
-            "sup_charola_banana": 60,
-            "sup_cucharas": 200,
-            "sup_servilletas": 400,
-            "sup_sabritas": 90,
-            "sup_tostitos": 15,
-            "sup_doritos": 20,
-            "sup_cheetos": 25
-        },
-        "tagarete_1": {
-            "adbc5511-68a8-4525-97a3-ac7972856e89": 65,
-            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 60,
-            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 55,
-            "sup_vaso_1lt": 80,
-            "sup_tapa_1lt": 250,
-            "sup_vaso_20": 200,
-            "sup_tapa_20": 250,
-            "sup_charola_banana": 50,
-            "sup_cucharas": 180,
-            "sup_servilletas": 350,
-            "sup_sabritas": 80,
-            "sup_tostitos": 12,
-            "sup_doritos": 18,
-            "sup_cheetos": 20
-        },
-        "tagarete_2": {
-            "adbc5511-68a8-4525-97a3-ac7972856e89": 48,
-            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 42,
-            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 40,
-            "sup_vaso_1lt": 60,
-            "sup_tapa_1lt": 200,
-            "sup_vaso_20": 180,
-            "sup_tapa_20": 200,
-            "sup_charola_banana": 40,
-            "sup_cucharas": 150,
-            "sup_servilletas": 300,
-            "sup_sabritas": 65,
-            "sup_tostitos": 9,
-            "sup_doritos": 14,
-            "sup_cheetos": 16
-        },
-        "cnop": {
-            "adbc5511-68a8-4525-97a3-ac7972856e89": 35,
-            "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 30,
-            "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 32,
-            "sup_vaso_1lt": 50,
-            "sup_tapa_1lt": 180,
-            "sup_vaso_20": 150,
-            "sup_tapa_20": 180,
-            "sup_charola_banana": 30,
-            "sup_cucharas": 120,
-            "sup_servilletas": 250,
-            "sup_sabritas": 50,
-            "sup_tostitos": 8,
-            "sup_doritos": 12,
-            "sup_cheetos": 15
-        }
+        "calzada": {},
+        "rescate": {},
+        "mollotes": {},
+        "tagarete_1": {},
+        "tagarete_2": {},
+        "cnop": {}
     };
 
     function getBranchKeyName(bName) {
@@ -787,7 +697,24 @@
     function initInv() { 
         const branchKey = getBranchKeyName(S.branchName);
         
-        // 1. Intentar cargar stock guardado o ajustado explícitamente para esta sucursal
+        // Verificación de reseteo a 0
+        const ZERO_RESET_VERSION = "20260912_zero_inventory_v1";
+        try {
+            if (typeof localStorage !== "undefined" && localStorage.getItem("lf_inv_reset_version") !== ZERO_RESET_VERSION) {
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && (k.startsWith("lf_inv_") || k === "lf_inv")) {
+                        keysToRemove.push(k);
+                    }
+                }
+                keysToRemove.forEach(k => localStorage.removeItem(k));
+                localStorage.setItem("lf_inv_reset_version", ZERO_RESET_VERSION);
+                S.inv = {};
+            }
+        } catch(e) {}
+
+        // 1. Cargar stock guardado o ajustado explícitamente para esta sucursal
         let stored = null;
         try {
             const raw = localStorage.getItem("lf_inv_" + branchKey);
@@ -803,48 +730,17 @@
 
         if (stored && typeof stored === "object" && Object.keys(stored).length) {
             S.inv = { ...stored };
-        } else {
-            // 2. Cargar el inventario base exclusivo y diferenciado para esta sucursal
-            S.inv = {};
-            const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || BRANCH_BASE_INVENTORY["calzada"];
-
+            // Asegurar que cada producto tenga una entrada numérica válida (mínimo 0)
             S.products.forEach(p => {
-                const maxS = getMaxStock(p);
-                let baseStk = branchDefaults[p.product_id];
-                if (baseStk === undefined) {
-                    baseStk = (p.initial_stock !== undefined && p.initial_stock !== null) ? Number(p.initial_stock) : 50;
-                    if (branchKey === "tagarete_2") baseStk = Math.max(0, Math.floor(baseStk * 0.50));
-                    else if (branchKey === "cnop") baseStk = Math.max(0, Math.floor(baseStk * 0.35));
-                    else if (branchKey === "mollotes") baseStk = Math.max(0, Math.floor(baseStk * 0.70));
-                    else if (branchKey === "tagarete_1") baseStk = Math.max(0, Math.floor(baseStk * 0.60));
+                if (S.inv[p.product_id] === undefined || S.inv[p.product_id] === null || isNaN(S.inv[p.product_id])) {
+                    S.inv[p.product_id] = 0;
                 }
-                S.inv[p.product_id] = Math.min(maxS, Math.max(0, baseStk));
             });
-
-            // 3. Descontar las ventas reales que hayan realizado los usuarios/cajeras de ESTA sucursal
-            const allSales = gr("all_sales", []);
-            const branchSales = allSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }) && String(s.status || "").toUpperCase() !== "CANCELLED");
-            
-            branchSales.forEach(sale => {
-                if (Array.isArray(sale.items)) {
-                    sale.items.forEach(item => {
-                        const pid = String(item.product_id || item.id);
-                        const qty = Number(item.quantity || item.qty || 1);
-                        if (S.inv[pid] !== undefined) {
-                            S.inv[pid] = Math.max(0, S.inv[pid] - qty);
-                        }
-                        // Descontar componentes de compuestos
-                        const prod = S.products.find(p => String(p.product_id) === pid);
-                        if (prod && prod.is_composite && Array.isArray(prod.components)) {
-                            prod.components.forEach(comp => {
-                                if (comp.supply_id && S.inv[comp.supply_id] !== undefined) {
-                                    const cQty = (Number(comp.qty) || 1) * qty;
-                                    S.inv[comp.supply_id] = Math.max(0, S.inv[comp.supply_id] - cQty);
-                                }
-                            });
-                        }
-                    });
-                }
+        } else {
+            // 2. Cargar inventario base en CERO (0) para todos los productos
+            S.inv = {};
+            S.products.forEach(p => {
+                S.inv[p.product_id] = 0;
             });
 
             // Guardar para esta sucursal
@@ -859,12 +755,8 @@
     }
 
     function getStock(id) { 
-        if (S.inv[id] === undefined) {
-            const prod = S.products.find(p => String(p.product_id) === String(id));
-            const maxS = getMaxStock(prod);
-            const branchKey = getBranchKeyName(S.branchName);
-            const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
-            S.inv[id] = branchDefaults[id] !== undefined ? branchDefaults[id] : ((prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : Math.min(500, maxS)); 
+        if (S.inv[id] === undefined || S.inv[id] === null || isNaN(S.inv[id])) {
+            S.inv[id] = 0;
         }
         return S.inv[id]; 
     }
@@ -919,71 +811,71 @@
     /* ── CATÁLOGO OFICIAL LA FUENTE & INSUMOS/DESECHABLES DE BODEGA ── */
     const DEFAULT_PRODUCTS = [
         // ── HELADOS & NIEVES ──
-        { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25, branch_name: "General", initial_stock: 99, is_composite: true, components: [{supply_id: "sup_cono_sencillo", supply_name: "Cono Sencillo (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
-        { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_cono_dv", supply_name: "Cono Doble Vainilla (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
-        { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_cono_dch", supply_name: "Cono Doble Chocolate (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
-        { product_id: "p_nieve_vaso12", product_code: "NV-12", product_name: "Nieve Vaso #12", category: "helados", price: 45, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_vaso_12", supply_name: "Vaso #12", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
-        { product_id: "p_nieve_vaso14", product_code: "NV-14", product_name: "Nieve Vaso #14", category: "helados", price: 55, branch_name: "General", initial_stock: 80, is_composite: true, components: [{supply_id: "sup_vaso_14", supply_name: "Vaso #14", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
-        { product_id: "p_nieve_half", product_code: "NV-1/2L", product_name: "Nieve 1/2 Litro", category: "helados", price: 75, branch_name: "General", initial_stock: 60, is_composite: true, components: [{supply_id: "sup_vaso_half", supply_name: "Vaso 1/2 Lt", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 2}] },
-        { product_id: "p_nieve_1l", product_code: "NV-1L", product_name: "Nieve 1 Litro", category: "helados", price: 140, branch_name: "General", initial_stock: 50, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}, {supply_id: "sup_tapa_1lt", supply_name: "Tapas Vaso 1 Lt", qty: 1}] },
-        { product_id: "p_banana_split", product_code: "PREP-BS", product_name: "Banana Split", category: "helados", price: 65, branch_name: "General", initial_stock: 40, is_composite: true, components: [{supply_id: "sup_charola_banana", supply_name: "Charola para Banana Split", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_cono_sencillo", supply_name: "Cono Sencillo (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
+        { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_cono_dv", supply_name: "Cono Doble Vainilla (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
+        { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_cono_dch", supply_name: "Cono Doble Chocolate (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
+        { product_id: "p_nieve_vaso12", product_code: "NV-12", product_name: "Nieve Vaso #12", category: "helados", price: 45, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_12", supply_name: "Vaso #12", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_nieve_vaso14", product_code: "NV-14", product_name: "Nieve Vaso #14", category: "helados", price: 55, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_14", supply_name: "Vaso #14", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_nieve_half", product_code: "NV-1/2L", product_name: "Nieve 1/2 Litro", category: "helados", price: 75, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_half", supply_name: "Vaso 1/2 Lt", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 2}] },
+        { product_id: "p_nieve_1l", product_code: "NV-1L", product_name: "Nieve 1 Litro", category: "helados", price: 140, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}, {supply_id: "sup_tapa_1lt", supply_name: "Tapas Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_banana_split", product_code: "PREP-BS", product_name: "Banana Split", category: "helados", price: 65, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_charola_banana", supply_name: "Charola para Banana Split", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
 
         // ── PALETAS DE LECHE ──
-        { product_id: "p_paleta_leche", product_code: "PAL-LECHE", product_name: "Paleta de Leche", category: "paletas", price: 20, branch_name: "General", initial_stock: 120 },
-        { product_id: "p_pal_leche_vainilla", product_code: "PAL-VAIN", product_name: "Paleta de Vainilla", category: "paletas", price: 20, branch_name: "General", initial_stock: 90 },
-        { product_id: "p_pal_leche_choco", product_code: "PAL-CHOCO", product_name: "Paleta de Chocolate", category: "paletas", price: 20, branch_name: "General", initial_stock: 90 },
-        { product_id: "p_pal_leche_fresa", product_code: "PAL-FRESA-L", product_name: "Paleta de Fresa de Leche", category: "paletas", price: 20, branch_name: "General", initial_stock: 90 },
-        { product_id: "p_pal_leche_nuez", product_code: "PAL-NUEZ", product_name: "Paleta de Nuez", category: "paletas", price: 20, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_pal_leche_oreo", product_code: "PAL-OREO", product_name: "Paleta de Oreo", category: "paletas", price: 20, branch_name: "General", initial_stock: 85 },
-        { product_id: "p_pal_leche_zarza", product_code: "PAL-ZARZA", product_name: "Paleta de Zarzamora con Queso", category: "paletas", price: 20, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_pal_leche_pistache", product_code: "PAL-PISTACHE", product_name: "Paleta de Pistache", category: "paletas", price: 25, branch_name: "General", initial_stock: 60 },
-        { product_id: "p_pal_especial", product_code: "PAL-ESP", product_name: "Paleta Especial Rellena", category: "paletas", price: 30, branch_name: "General", initial_stock: 50 },
+        { product_id: "p_paleta_leche", product_code: "PAL-LECHE", product_name: "Paleta de Leche", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_leche_vainilla", product_code: "PAL-VAIN", product_name: "Paleta de Vainilla", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_leche_choco", product_code: "PAL-CHOCO", product_name: "Paleta de Chocolate", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_leche_fresa", product_code: "PAL-FRESA-L", product_name: "Paleta de Fresa de Leche", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_leche_nuez", product_code: "PAL-NUEZ", product_name: "Paleta de Nuez", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_leche_oreo", product_code: "PAL-OREO", product_name: "Paleta de Oreo", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_leche_zarza", product_code: "PAL-ZARZA", product_name: "Paleta de Zarzamora con Queso", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_leche_pistache", product_code: "PAL-PISTACHE", product_name: "Paleta de Pistache", category: "paletas", price: 25, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_especial", product_code: "PAL-ESP", product_name: "Paleta Especial Rellena", category: "paletas", price: 30, branch_name: "General", initial_stock: 0 },
 
         // ── PALETAS DE AGUA ──
-        { product_id: "p_paleta_agua", product_code: "PAL-AGUA", product_name: "Paleta de Agua", category: "paletas", price: 18, branch_name: "General", initial_stock: 150 },
-        { product_id: "p_pal_agua_limon", product_code: "PAL-LIMON", product_name: "Paleta de Limón", category: "paletas", price: 18, branch_name: "General", initial_stock: 100 },
-        { product_id: "p_pal_agua_mango", product_code: "PAL-MANGO", product_name: "Paleta de Mango", category: "paletas", price: 18, branch_name: "General", initial_stock: 100 },
-        { product_id: "p_pal_agua_tamarindo", product_code: "PAL-TAM", product_name: "Paleta de Tamarindo", category: "paletas", price: 18, branch_name: "General", initial_stock: 90 },
-        { product_id: "p_pal_agua_fresa", product_code: "PAL-FRESA-A", product_name: "Paleta de Fresa de Agua", category: "paletas", price: 18, branch_name: "General", initial_stock: 95 },
-        { product_id: "p_pal_agua_pina", product_code: "PAL-PINA", product_name: "Paleta de Piña", category: "paletas", price: 18, branch_name: "General", initial_stock: 90 },
-        { product_id: "p_pal_agua_sandia", product_code: "PAL-SANDIA", product_name: "Paleta de Sandía", category: "paletas", price: 18, branch_name: "General", initial_stock: 85 },
-        { product_id: "p_pal_agua_maracuya", product_code: "PAL-MARACUYA", product_name: "Paleta de Maracuyá", category: "paletas", price: 18, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_paleta_agua", product_code: "PAL-AGUA", product_name: "Paleta de Agua", category: "paletas", price: 18, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_agua_limon", product_code: "PAL-LIMON", product_name: "Paleta de Limón", category: "paletas", price: 18, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_agua_mango", product_code: "PAL-MANGO", product_name: "Paleta de Mango", category: "paletas", price: 18, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_agua_tamarindo", product_code: "PAL-TAM", product_name: "Paleta de Tamarindo", category: "paletas", price: 18, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_agua_fresa", product_code: "PAL-FRESA-A", product_name: "Paleta de Fresa de Agua", category: "paletas", price: 18, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_agua_pina", product_code: "PAL-PINA", product_name: "Paleta de Piña", category: "paletas", price: 18, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_agua_sandia", product_code: "PAL-SANDIA", product_name: "Paleta de Sandía", category: "paletas", price: 18, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_pal_agua_maracuya", product_code: "PAL-MARACUYA", product_name: "Paleta de Maracuyá", category: "paletas", price: 18, branch_name: "General", initial_stock: 0 },
 
         // ── AGUAS FRESCAS ──
-        { product_id: "sup_agua_1l", product_code: "AG-1L", product_name: "Agua 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 120, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt (Transparente)", qty: 1}, {supply_id: "sup_tapa_1lt", supply_name: "Tapas Vaso 1 Lt", qty: 1}] },
-        { product_id: "p_agua_half", product_code: "AG-1/2L", product_name: "Agua 1/2 Lt", category: "aguas", price: 25, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_vaso_half", supply_name: "Vaso 1/2 Lt", qty: 1}] },
-        { product_id: "p_agua_horchata", product_code: "AG-HORCH", product_name: "Agua de Horchata 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 80, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
-        { product_id: "p_agua_jamaica", product_code: "AG-JAM", product_name: "Agua de Jamaica 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 80, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
-        { product_id: "p_agua_cebada", product_code: "AG-CEB", product_name: "Agua de Cebada 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 75, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
-        { product_id: "p_agua_frutas", product_code: "AG-FRUT", product_name: "Agua de Frutas 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 75, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
+        { product_id: "sup_agua_1l", product_code: "AG-1L", product_name: "Agua 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt (Transparente)", qty: 1}, {supply_id: "sup_tapa_1lt", supply_name: "Tapas Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_agua_half", product_code: "AG-1/2L", product_name: "Agua 1/2 Lt", category: "aguas", price: 25, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_half", supply_name: "Vaso 1/2 Lt", qty: 1}] },
+        { product_id: "p_agua_horchata", product_code: "AG-HORCH", product_name: "Agua de Horchata 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_agua_jamaica", product_code: "AG-JAM", product_name: "Agua de Jamaica 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_agua_cebada", product_code: "AG-CEB", product_name: "Agua de Cebada 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_agua_frutas", product_code: "AG-FRUT", product_name: "Agua de Frutas 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
 
         // ── PREPARADOS & DULCES ──
-        { product_id: "p_fresas_crema", product_code: "PREP-FRESA", product_name: "Fresas con Crema", category: "preparados", price: 50, branch_name: "General", initial_stock: 50, is_composite: true, components: [{supply_id: "sup_tapa_fresas", supply_name: "Tapas para Fresas", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
-        { product_id: "p_esquites", product_code: "PREP-ESQ", product_name: "Esquites Preparados", category: "preparados", price: 40, branch_name: "General", initial_stock: 45, is_composite: true, components: [{supply_id: "sup_vaso_12", supply_name: "Vaso #12", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
-        { product_id: "p_nachos", product_code: "PREP-NACHO", product_name: "Nachos con Queso", category: "preparados", price: 45, branch_name: "General", initial_stock: 40, is_composite: true, components: [{supply_id: "sup_charola_banana", supply_name: "Charola para Banana Split", qty: 1}] },
-        { product_id: "p_tostilocos", product_code: "PREP-TOSTI", product_name: "Tostilocos Preparados", category: "preparados", price: 45, branch_name: "General", initial_stock: 40, is_composite: true, components: [{supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
-        { product_id: "p_chicle", product_code: "CHIC", product_name: "Chicles & Dulces", category: "dulces", price: 10, branch_name: "General", initial_stock: 200 },
+        { product_id: "p_fresas_crema", product_code: "PREP-FRESA", product_name: "Fresas con Crema", category: "preparados", price: 50, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_tapa_fresas", supply_name: "Tapas para Fresas", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_esquites", product_code: "PREP-ESQ", product_name: "Esquites Preparados", category: "preparados", price: 40, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_vaso_12", supply_name: "Vaso #12", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_nachos", product_code: "PREP-NACHO", product_name: "Nachos con Queso", category: "preparados", price: 45, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_charola_banana", supply_name: "Charola para Banana Split", qty: 1}] },
+        { product_id: "p_tostilocos", product_code: "PREP-TOSTI", product_name: "Tostilocos Preparados", category: "preparados", price: 45, branch_name: "General", initial_stock: 0, is_composite: true, components: [{supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_chicle", product_code: "CHIC", product_name: "Chicles & Dulces", category: "dulces", price: 10, branch_name: "General", initial_stock: 0 },
 
         // ── INSUMOS Y DESECHABLES DE BODEGA ──
-        { product_id: "sup_cono_sencillo", product_code: "INS-CS", product_name: "Cono Sencillo (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
-        { product_id: "sup_cono_dv", product_code: "INS-CDV", product_name: "Cono Doble Vainilla (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
-        { product_id: "sup_cono_dch", product_code: "INS-CDCH", product_name: "Cono Doble Chocolate (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
-        { product_id: "sup_cucharas", product_code: "CUCHARA", product_name: "Cucharas para Nieve", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 250, branch_name: "General" },
-        { product_id: "sup_servilletas", product_code: "SERV-PAQ", product_name: "Servilletas", category: "desechables", price: 0, is_supply: true, units_per_package: 250, initial_stock: 2500, branch_name: "General" },
-        { product_id: "sup_vaso_1lt", product_code: "VASO-1L", product_name: "Vaso 1 Lt (Transparente)", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 125, branch_name: "General" },
-        { product_id: "sup_tapa_1lt", product_code: "TAPA-1L", product_name: "Tapas Vaso 1 Lt", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 550, branch_name: "General" },
-        { product_id: "sup_vaso_20", product_code: "VASO-20", product_name: "Vasos #20", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
-        { product_id: "sup_tapa_20", product_code: "TAPA-20", product_name: "Tapas Vaso #20", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 550, branch_name: "General" },
-        { product_id: "sup_vaso_half", product_code: "VASO-1/2L", product_name: "Vaso 1/2 Lt", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 100, branch_name: "General" },
-        { product_id: "sup_tapa_fresas", product_code: "TAPA-FRESA", product_name: "Tapas para Fresas", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 100, branch_name: "General" },
-        { product_id: "sup_vaso_6oz", product_code: "VASO-6OZ", product_name: "Vaso #6 oz", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 50, branch_name: "General" },
-        { product_id: "sup_vaso_1lt_unicel", product_code: "VASO-1L-UNI", product_name: "Vaso 1 Lt Unicel", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 50, branch_name: "General" },
-        { product_id: "sup_vaso_14", product_code: "VASO-14", product_name: "Vaso #14", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 100, branch_name: "General" },
-        { product_id: "sup_vaso_12", product_code: "VASO-12", product_name: "Vaso #12", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 150, branch_name: "General" },
-        { product_id: "sup_vaso_4", product_code: "VASO-4", product_name: "Vaso #4", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 25, branch_name: "General" },
-        { product_id: "sup_charola_banana", product_code: "CHAR-BANANA", product_name: "Charola para Banana Split", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 83, branch_name: "General" },
-        { product_id: "sup_tapa_unicel", product_code: "TAPA-UNI", product_name: "Tapas Vaso Unicel", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 700, branch_name: "General" },
-        { product_id: "sup_tenedores", product_code: "TENEDOR", product_name: "Tenedores Desechables", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 200, branch_name: "General" }
+        { product_id: "sup_cono_sencillo", product_code: "INS-CS", product_name: "Cono Sencillo (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_cono_dv", product_code: "INS-CDV", product_name: "Cono Doble Vainilla (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_cono_dch", product_code: "INS-CDCH", product_name: "Cono Doble Chocolate (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_cucharas", product_code: "CUCHARA", product_name: "Cucharas para Nieve", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_servilletas", product_code: "SERV-PAQ", product_name: "Servilletas", category: "desechables", price: 0, is_supply: true, units_per_package: 250, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_vaso_1lt", product_code: "VASO-1L", product_name: "Vaso 1 Lt (Transparente)", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_tapa_1lt", product_code: "TAPA-1L", product_name: "Tapas Vaso 1 Lt", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_vaso_20", product_code: "VASO-20", product_name: "Vasos #20", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_tapa_20", product_code: "TAPA-20", product_name: "Tapas Vaso #20", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_vaso_half", product_code: "VASO-1/2L", product_name: "Vaso 1/2 Lt", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_tapa_fresas", product_code: "TAPA-FRESA", product_name: "Tapas para Fresas", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_vaso_6oz", product_code: "VASO-6OZ", product_name: "Vaso #6 oz", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_vaso_1lt_unicel", product_code: "VASO-1L-UNI", product_name: "Vaso 1 Lt Unicel", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_vaso_14", product_code: "VASO-14", product_name: "Vaso #14", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_vaso_12", product_code: "VASO-12", product_name: "Vaso #12", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_vaso_4", product_code: "VASO-4", product_name: "Vaso #4", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_charola_banana", product_code: "CHAR-BANANA", product_name: "Charola para Banana Split", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_tapa_unicel", product_code: "TAPA-UNI", product_name: "Tapas Vaso Unicel", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 0, branch_name: "General" },
+        { product_id: "sup_tenedores", product_code: "TENEDOR", product_name: "Tenedores Desechables", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 0, branch_name: "General" }
     ];
 
     /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
