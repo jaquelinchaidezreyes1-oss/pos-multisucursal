@@ -227,6 +227,48 @@
         return false;
     }
 
+    
+    function isProductAllowedInBranch(product, bName) {
+        if (!product) return false;
+        const b = normalizeBranchName(bName || S.branchName || "calzada").toLowerCase();
+        const isRescate = b.includes("rescate");
+        const isCalzada = b.includes("calzada");
+
+        const pid = String(product.product_id || product.id || "").toLowerCase();
+        const pName = String(product.product_name || product.name || "").toLowerCase();
+
+        // 1. Exclusivos de El Rescate (Frappé, Sodas Italianas, Waffles)
+        const isRescateExclusive = pid.includes("frappe") || pName.includes("frappé") || pName.includes("frappe") ||
+                                   pid.includes("sodas_italianas") || pName.includes("soda italiana") || pName.includes("sodas italianas") ||
+                                   pid.includes("waffle") || pName.includes("waffle");
+        if (isRescateExclusive) {
+            return isRescate; // Solo disponible en El Rescate
+        }
+
+        // 2. Chechis (Bolsa y Vaso) -> En Rescate, Mollotes, Tagarete 1, Tagarete 2, CNOP. (NUNCA en La Fuente Calzada)
+        const isChechis = pid.includes("chechis") || pName.includes("chechis");
+        if (isChechis) {
+            if (isCalzada) return false; // Prohibido en La Fuente Calzada
+            return true; // Permitido en las demás 5 sucursales
+        }
+
+        // 3. Reglas explícitas por sucursal personalizada
+        if (product.branch_name && product.branch_name !== "General" && product.branch_name !== "all") {
+            if (!matchesBranch({ branch_name: product.branch_name, branch_id: product.branch_id }, { name: bName || S.branchName, id: S.branchId })) {
+                return false;
+            }
+        }
+
+        if (Array.isArray(product.excluded_branches) && product.excluded_branches.length) {
+            for (const ex of product.excluded_branches) {
+                if (b.includes(normalizeBranchName(ex).toLowerCase())) return false;
+            }
+        }
+
+        return true;
+    }
+
+
     /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE ── */
     let _isSyncingSales = false;
     async function syncPendingSalesToSupabase() {
@@ -1173,14 +1215,8 @@
             p = p.filter(x => !x.is_supply || x.price > 0);
         }
 
-        // Mostrar productos generales en todas las sucursales o productos exclusivos por sucursal
-        if (S.branchId || S.branchName) {
-            p = p.filter(x => {
-                const isGen = !x.branch_name || x.branch_name === "General" || x.branch_id === "all" || !x.branch_id || x.branch_name === "La Fuente Calzada" || x.branch_name === "La Fuente";
-                if (isGen) return true;
-                return matchesBranch({ branch_id: x.branch_id, branch_name: x.branch_name }, { id: S.branchId, name: S.branchName });
-            });
-        }
+        // Aplicar reglas estrictas de disponibilidad por sucursal
+        p = p.filter(x => isProductAllowedInBranch(x, S.branchName));
 
         if (S.cat !== "all") {
             p = p.filter(x => String(x.category || "").toLowerCase() === S.cat);
@@ -2361,9 +2397,7 @@
             if (activeAdminFilter === "all") return true;
             const targetBranch = S.branches.find(b => String(b.id) === String(activeAdminFilter));
             if (!targetBranch) return true;
-            const isGen = !p.branch_name || p.branch_name === "General" || p.branch_id === "all";
-            if (isGen) return true;
-            return matchesBranch({ branch_id: p.branch_id, branch_name: p.branch_name }, targetBranch);
+            return isProductAllowedInBranch(p, targetBranch.name);
         });
 
         const activeBranchName = S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name || S.branchName;
@@ -2869,18 +2903,19 @@
                 </select>
             </div>` : '';
 
-        const saleProds = S.products.filter(p => !p.is_supply && p.category !== "desechables");
-        const supplyProds = S.products.filter(p => p.is_supply || p.category === "desechables");
+        const branchAllowedProducts = S.products.filter(p => isProductAllowedInBranch(p, S.branchName));
+        const saleProds = branchAllowedProducts.filter(p => !p.is_supply && p.category !== "desechables");
+        const supplyProds = branchAllowedProducts.filter(p => p.is_supply || p.category === "desechables");
 
         // Resumen preciso por categorías para esta sucursal
         const totalSaleUnits = saleProds.reduce((sum, p) => sum + getStock(p.product_id), 0);
         const totalSupplyUnits = supplyProds.reduce((sum, p) => sum + getStock(p.product_id), 0);
-        const totalPaletas = S.products.filter(p => p.category === "paletas").reduce((sum, p) => sum + getStock(p.product_id), 0);
-        const totalHelados = S.products.filter(p => p.category === "helados").reduce((sum, p) => sum + getStock(p.product_id), 0);
-        const totalAguas = S.products.filter(p => p.category === "aguas").reduce((sum, p) => sum + getStock(p.product_id), 0);
-        const totalPreparados = S.products.filter(p => p.category === "preparados").reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalPaletas = branchAllowedProducts.filter(p => p.category === "paletas").reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalHelados = branchAllowedProducts.filter(p => p.category === "helados").reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalAguas = branchAllowedProducts.filter(p => p.category === "aguas").reduce((sum, p) => sum + getStock(p.product_id), 0);
+        const totalPreparados = branchAllowedProducts.filter(p => p.category === "preparados").reduce((sum, p) => sum + getStock(p.product_id), 0);
 
-        let displayedList = S.products;
+        let displayedList = branchAllowedProducts;
         if (S.invTab === "sales") displayedList = saleProds;
         else if (S.invTab === "supplies") displayedList = supplyProds;
 
@@ -4601,7 +4636,7 @@
     function _renderDamageTabContent(reports, notices) {
         // PESTAÑA 1: FORMULARIO SÚPER RÁPIDO DE MERMAS
         if (_activeDamageTab === "report_damage") {
-            const sortedProds = [...S.products].sort((a,b) => (a.product_name||"").localeCompare(b.product_name||""));
+            const sortedProds = S.products.filter(p => isProductAllowedInBranch(p, S.branchName)).sort((a,b) => (a.product_name||"").localeCompare(b.product_name||""));
             return `
             <div style="background:#ffffff;border:2px solid var(--gold-400);border-radius:18px;padding:24px;box-shadow:0 4px 18px rgba(0,0,0,0.15)">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;border-bottom:2px solid #f1f5f9;padding-bottom:12px">
