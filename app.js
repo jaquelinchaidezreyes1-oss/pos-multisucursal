@@ -3652,9 +3652,16 @@
         const currentCardSales = currentTurnSales.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0), 0);
         const currentTotalSold = currentCashSales + currentCardSales;
 
-        // Obtener el fondo inicial exacto validado del turno activo
+        // Obtener el fondo inicial exacto validado del turno activo ligado al cambio de turno de la sucursal
+        const allShifts = gr("all_shifts", []);
+        const activeBranchKey = { id: S.branchId, name: S.branchName };
+        const branchShift = allShifts.find(sh => matchesBranch(sh, activeBranchKey));
         const activeLocalShift = lr("current_shift", null);
-        const initialFund = Number(activeLocalShift?.opening_amount != null ? activeLocalShift.opening_amount : (S.currentShift?.opening_amount != null ? S.currentShift.opening_amount : 500));
+        const initialFund = (branchShift && branchShift.opening_amount != null)
+            ? Number(branchShift.opening_amount)
+            : (activeLocalShift && activeLocalShift.opening_amount != null
+                ? Number(activeLocalShift.opening_amount)
+                : (S.currentShift && S.currentShift.opening_amount != null ? Number(S.currentShift.opening_amount) : 500));
         const expectedCashInDrawer = initialFund + currentCashSales;
 
         const currentBranchDisplayName = S.branches.find(b => String(b.id) === String(activeFilter))?.name || S.branchName;
