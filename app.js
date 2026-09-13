@@ -4717,69 +4717,69 @@
         </div>
 
         <!-- ══ SECCIÓN: RESUMEN DIARIO DE PRODUCTOS VENDIDOS & PRODUCCIÓN ══ -->
-        <div class="card" style="margin-bottom:24px;border:1.5px solid var(--gold-400);border-radius:16px;box-shadow:0 4px 15px rgba(0,0,0,0.05);overflow:hidden">
-            <div style="background:linear-gradient(135deg,var(--wine-900),var(--wine-700));color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-                <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-size:22px">🍨</span>
+        <div style="margin-bottom:24px;border:2px solid var(--gold-400);border-radius:18px;background:#ffffff;box-shadow:0 4px 18px rgba(0,0,0,0.18);overflow:hidden">
+            <div style="background:linear-gradient(135deg,#5c0c16,#2b0408);color:#ffffff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                <div style="display:flex;align-items:center;gap:12px">
+                    <span style="font-size:26px">🍨</span>
                     <div>
-                        <h3 style="margin:0;font-size:16px;font-weight:900;color:#fff">Resumen Diario de Productos Vendidos (Producción & Auditoría)</h3>
-                        <p style="margin:2px 0 0;font-size:11px;color:#fef08a">Desglose de unidades vendidas por turno (Matutino vs Vespertino) e inventario restante</p>
+                        <h3 style="margin:0;font-size:17px;font-weight:900;color:#ffffff;letter-spacing:0.3px">Resumen Diario de Productos Vendidos (Producción & Auditoría)</h3>
+                        <p style="margin:3px 0 0;font-size:12px;color:#fef08a;font-weight:700">Desglose de unidades vendidas por turno (Matutino vs Vespertino) e inventario restante</p>
                     </div>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px">
-                    <label style="font-size:11px;font-weight:800;color:#fff">Ver Sucursal:</label>
-                    <select id="sel-summary-branch" style="background:#fff;color:var(--wine-900);font-weight:800;font-size:12px;border-radius:8px;padding:6px 12px;border:none;cursor:pointer">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label style="font-size:12px;font-weight:900;color:#ffffff">📍 Ver Sucursal:</label>
+                    <select id="sel-summary-branch" style="background:#ffffff;color:#1a0205;font-weight:900;font-size:12.5px;border-radius:10px;padding:7px 14px;border:2px solid var(--gold-400);cursor:pointer;outline:none;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
                         <option value="all" ${(!S.prodSummaryBranch || S.prodSummaryBranch === "all") ? "selected" : ""}>🌐 Todas las Sucursales</option>
                         ${S.branches.map(b => `<option value="${b.id}" ${S.prodSummaryBranch === b.id ? "selected" : ""}>📍 ${esc(b.name)}</option>`).join("")}
                     </select>
                 </div>
             </div>
-            <div id="product-summary-table-container" style="padding:16px;overflow-x:auto">
+            <div id="product-summary-table-container" style="padding:18px;background:#ffffff;overflow-x:auto">
                 <!-- Se llena dinámicamente con renderProductSummaryTable -->
             </div>
         </div>
 
-        <h3 style="font-size:18px;font-weight:900;color:var(--wine-900);margin-bottom:16px;display:flex;align-items:center;gap:8px">
-            <span>📍</span> Monitor de Red en Vivo (6 Sucursales)
+        <h3 style="font-size:20px;font-weight:900;color:#ffffff;margin-bottom:18px;display:flex;align-items:center;gap:10px;text-shadow:0 2px 4px rgba(0,0,0,0.4)">
+            <span style="font-size:22px">📍</span> Monitor de Red en Vivo (6 Sucursales)
         </h3>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:28px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-bottom:30px">
             ${summary.map(b => `
-                <div class="dashboard-card" style="border-radius:16px;border:1.5px solid #e5e7eb;padding:18px;position:relative">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                        <h4 style="margin:0;font-size:16px;font-weight:900;color:var(--wine-900);display:flex;align-items:center;gap:6px">
-                            <span>🍦</span> ${esc(b.name)}
+                <div class="dashboard-card" style="border-radius:18px;border:1.5px solid var(--gold-400);padding:20px;position:relative;background:linear-gradient(145deg,#2d060d,#1a0205);box-shadow:0 6px 18px rgba(0,0,0,0.25)">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                        <h4 style="margin:0;font-size:17px;font-weight:900;color:#ffffff;display:flex;align-items:center;gap:8px">
+                            <span style="font-size:20px">🍦</span> ${esc(b.name)}
                         </h4>
-                        <span style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:20px;${b.sales > 0 ? 'background:#dcfce7;color:#15803d' : 'background:#fef3c7;color:#92400e'}">
+                        <span style="font-size:11px;font-weight:900;padding:4px 10px;border-radius:20px;${b.sales > 0 ? 'background:#dcfce7;color:#15803d;border:1px solid #86efac' : 'background:#fef3c7;color:#92400e;border:1px solid #fcd34d'}">
                             ${b.sales > 0 ? '🟢 EN VIVO' : '🟡 LISTO'}</span>
                     </div>
-                    <div style="background:#fffcf0;border:1px solid #f2e6b5;border-radius:10px;padding:12px;margin-bottom:12px">
-                        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-                            <span style="font-size:12px;color:var(--text-muted);font-weight:700">Ventas Hoy:</span>
-                            <strong style="font-size:17px;color:var(--wine-700)">${money(b.sales)}</strong>
+                    <div style="background:#ffffff;border:1.5px solid #e2e8f0;border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                            <span style="font-size:12.5px;color:#64748b;font-weight:800">Ventas Hoy:</span>
+                            <strong style="font-size:19px;color:#15803d;font-weight:900">${money(b.sales)}</strong>
                         </div>
-                        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-                            <span style="font-size:11px;color:var(--text-muted)">Tickets:</span>
-                            <span style="font-weight:700;color:var(--wine-900);font-size:12px">${b.orders}</span>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                            <span style="font-size:12px;color:#64748b;font-weight:700">Tickets Cobrados:</span>
+                            <span style="font-weight:900;color:#0f172a;font-size:13.5px">${b.orders}</span>
                         </div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:6px;border-top:1px dashed #e5e7eb;font-size:11px">
-                            <div>💵 Efectivo: <strong style="color:#15803d">${money(b.cashTotal)}</strong></div>
-                            <div>💳 Tarjeta: <strong style="color:#1d4ed8">${money(b.cardTotal)}</strong></div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:8px;border-top:1.5px dashed #cbd5e1;font-size:11.5px">
+                            <div>💵 Efectivo: <strong style="color:#166534;font-weight:900">${money(b.cashTotal)}</strong></div>
+                            <div>💳 Tarjeta: <strong style="color:#1d4ed8;font-weight:900">${money(b.cardTotal)}</strong></div>
                         </div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:6px;border-top:1px dashed #e5e7eb;font-size:11px">
-                            <div>🌅 Matutino: <strong style="color:var(--wine-800)">${money(b.matTotal)}</strong></div>
-                            <div>🌇 Vespertino: <strong style="color:var(--wine-800)">${money(b.vesTotal)}</strong></div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:8px;border-top:1.5px dashed #cbd5e1;font-size:11.5px">
+                            <div>🌅 Matutino: <strong style="color:#9a3412;font-weight:900">${money(b.matTotal)}</strong></div>
+                            <div>🌇 Vespertino: <strong style="color:#1e40af;font-weight:900">${money(b.vesTotal)}</strong></div>
                         </div>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-                        <button class="btn btn-sm btn-outline btn-view-branch-sales" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11px;font-weight:800;padding:8px">
+                        <button class="btn btn-sm btn-outline btn-view-branch-sales" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11.5px;font-weight:900;padding:9px;background:#ffffff;color:#1e293b;border:1.5px solid #cbd5e1;border-radius:10px;cursor:pointer">
                             📋 Ver Ventas
                         </button>
-                        <button class="btn btn-sm btn-outline btn-view-branch-cuts" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11px;font-weight:800;padding:8px;background:#fdf2f2;border-color:#fca5a5;color:#991b1b">
+                        <button class="btn btn-sm btn-outline btn-view-branch-cuts" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11.5px;font-weight:900;padding:9px;background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;border-radius:10px;cursor:pointer">
                             ✂ Ver Cortes
                         </button>
                     </div>
-                    <button class="btn btn-sm btn-primary btn-operate-branch" data-bid="${b.id}" data-bname="${esc(b.name)}" style="width:100%;font-size:11px;font-weight:900;padding:8px">
+                    <button class="btn btn-sm btn-primary btn-operate-branch" data-bid="${b.id}" data-bname="${esc(b.name)}" style="width:100%;font-size:12px;font-weight:900;padding:10px;background:linear-gradient(135deg,var(--gold-400),var(--gold-600));color:#1a0205;border:none;border-radius:10px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25)">
                         Operar esta Sucursal →
                     </button>
                 </div>
@@ -4952,9 +4952,9 @@
         const prodList = Array.from(productMap.values()).sort((a,b) => b.totalQty - a.totalQty);
 
         if (!prodList.length) {
-            c.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-muted)">
-                <div style="font-size:32px">📦</div>
-                <p style="margin-top:6px;font-size:13px">Aún no se registran productos vendidos en los turnos seleccionados.</p>
+            c.innerHTML = `<div style="text-align:center;padding:32px;background:#f8fafc;border-radius:12px;border:1.5px dashed #cbd5e1">
+                <div style="font-size:36px">📦</div>
+                <p style="margin-top:8px;font-size:14px;color:#475569;font-weight:700">Aún no se registran productos vendidos en la sucursal y fecha seleccionadas.</p>
             </div>`;
             return;
         }
@@ -4965,65 +4965,70 @@
         const totalVes = prodList.reduce((acc, p) => acc + p.vesQty, 0);
 
         c.innerHTML = `
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
-            <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:10px 14px">
-                <span style="font-size:10px;font-weight:900;color:#9d174d">🍨 TOTAL UNIDADES VENDIDAS</span>
-                <div style="font-size:22px;font-weight:900;color:#831843">${totalPieces} <small style="font-size:12px">piezas</small></div>
+        <!-- STATS RESUMEN SUPERIOR -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px">
+            <div style="background:#fdf2f8;border:1.5px solid #fbcfe8;border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(157,23,77,0.06)">
+                <span style="font-size:11px;font-weight:900;color:#9d174d;letter-spacing:0.5px">🍨 TOTAL UNIDADES VENDIDAS</span>
+                <div style="font-size:24px;font-weight:900;color:#831843;margin-top:2px">${totalPieces} <small style="font-size:13px;font-weight:700">piezas</small></div>
             </div>
-            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px">
-                <span style="font-size:10px;font-weight:900;color:#92400e">🌅 TURNO MATUTINO</span>
-                <div style="font-size:22px;font-weight:900;color:#78350f">${totalMat} <small style="font-size:12px">piezas</small></div>
+            <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(146,64,14,0.06)">
+                <span style="font-size:11px;font-weight:900;color:#92400e;letter-spacing:0.5px">🌅 TURNO MATUTINO</span>
+                <div style="font-size:24px;font-weight:900;color:#78350f;margin-top:2px">${totalMat} <small style="font-size:13px;font-weight:700">piezas</small></div>
             </div>
-            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px">
-                <span style="font-size:10px;font-weight:900;color:#1e40af">🌇 TURNO VESPERTINO</span>
-                <div style="font-size:22px;font-weight:900;color:#1e3a8a">${totalVes} <small style="font-size:12px">piezas</small></div>
+            <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(30,64,175,0.06)">
+                <span style="font-size:11px;font-weight:900;color:#1e40af;letter-spacing:0.5px">🌇 TURNO VESPERTINO</span>
+                <div style="font-size:24px;font-weight:900;color:#1e3a8a;margin-top:2px">${totalVes} <small style="font-size:13px;font-weight:700">piezas</small></div>
             </div>
-            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px">
-                <span style="font-size:10px;font-weight:900;color:#166534">💰 IMPORTE TOTAL GENERADO</span>
-                <div style="font-size:22px;font-weight:900;color:#14532d">${money(totalMoney)}</div>
+            <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(22,101,52,0.06)">
+                <span style="font-size:11px;font-weight:900;color:#166534;letter-spacing:0.5px">💰 IMPORTE TOTAL GENERADO</span>
+                <div style="font-size:24px;font-weight:900;color:#14532d;margin-top:2px">${money(totalMoney)}</div>
             </div>
         </div>
 
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-            <thead>
-                <tr style="background:var(--wine-50);border-bottom:2px solid var(--wine-200);text-align:left;color:var(--wine-900)">
-                    <th style="padding:10px 12px;font-weight:900">PRODUCTO / CONCEPTO</th>
-                    <th style="padding:10px 12px;font-weight:900">CATEGORÍA</th>
-                    <th style="padding:10px 12px;font-weight:900;text-align:center">🌅 MATUTINO</th>
-                    <th style="padding:10px 12px;font-weight:900;text-align:center">🌇 VESPERTINO</th>
-                    <th style="padding:10px 12px;font-weight:900;text-align:center;background:#fef3c7;color:#92400e">🍨 TOTAL DÍA</th>
-                    <th style="padding:10px 12px;font-weight:900;text-align:right">IMPORTE</th>
-                    <th style="padding:10px 12px;font-weight:900;text-align:center">STOCK RESTANTE</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${prodList.map(p => {
-                    const curStock = getStock(p.id);
-                    const isLow = curStock <= STOCK_LOW;
-                    return `
-                    <tr style="border-bottom:1px solid #f3f4f6">
-                        <td style="padding:10px 12px;font-weight:800;color:var(--wine-900)">
-                            ${esc(p.name)}
-                            ${p.code ? `<br><small style="color:var(--text-muted);font-weight:600">${esc(p.code)}</small>` : ''}
-                        </td>
-                        <td style="padding:10px 12px">
-                            <span style="background:#f3f4f6;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:800;color:var(--wine-800);text-transform:uppercase">
-                                ${esc(p.category)}
-                            </span>
-                        </td>
-                        <td style="padding:10px 12px;text-align:center;font-weight:700;color:#92400e">${p.matQty} pz</td>
-                        <td style="padding:10px 12px;text-align:center;font-weight:700;color:#1e40af">${p.vesQty} pz</td>
-                        <td style="padding:10px 12px;text-align:center;font-weight:900;font-size:13px;background:#fffbeb;color:#78350f">${p.totalQty} pz</td>
-                        <td style="padding:10px 12px;text-align:right;font-weight:800;color:#15803d">${money(p.totalMoney)}</td>
-                        <td style="padding:10px 12px;text-align:center">
-                            <span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:900;${isLow ? 'background:#fee2e2;color:#991b1b' : 'background:#dcfce7;color:#166534'}">
-                                ${curStock} uds. ${isLow ? '⚠ Resurtir' : '✓'}
-                            </span>
-                        </td>
-                    </tr>`;
-                }).join("")}
-            </tbody>
-        </table>`;
+        <!-- TABLA DE ALTO CONTRASTE Y LEGIBILIDAD -->
+        <div style="background:#ffffff;border:1.5px solid #cbd5e1;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.06)">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;background:#ffffff;color:#0f172a">
+                <thead>
+                    <tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;text-align:left">
+                        <th style="padding:12px 16px;font-weight:900;color:#0f172a;font-size:12px;letter-spacing:0.5px">🍨 PRODUCTO / CONCEPTO</th>
+                        <th style="padding:12px 16px;font-weight:900;color:#0f172a;font-size:12px;letter-spacing:0.5px">🏷️ CATEGORÍA</th>
+                        <th style="padding:12px 16px;font-weight:900;text-align:center;color:#9a3412;font-size:12px;letter-spacing:0.5px">🌅 MATUTINO</th>
+                        <th style="padding:12px 16px;font-weight:900;text-align:center;color:#1e40af;font-size:12px;letter-spacing:0.5px">🌇 VESPERTINO</th>
+                        <th style="padding:12px 16px;font-weight:900;text-align:center;background:#fef3c7;color:#78350f;font-size:12.5px;letter-spacing:0.5px">🍨 TOTAL DÍA</th>
+                        <th style="padding:12px 16px;font-weight:900;text-align:right;color:#166534;font-size:12px;letter-spacing:0.5px">💰 IMPORTE</th>
+                        <th style="padding:12px 16px;font-weight:900;text-align:center;color:#0f172a;font-size:12px;letter-spacing:0.5px">📦 STOCK RESTANTE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${prodList.map((p, idx) => {
+                        const curStock = getStock(p.id);
+                        const isLow = curStock <= STOCK_LOW;
+                        const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+                        return `
+                        <tr style="border-bottom:1px solid #e2e8f0;background:${rowBg}">
+                            <td style="padding:12px 16px;font-weight:900;color:#0f172a;font-size:13.5px">
+                                ${esc(p.name)}
+                                ${p.code ? `<br><small style="color:#64748b;font-weight:700;font-size:11px">Clave: ${esc(p.code)}</small>` : ''}
+                            </td>
+                            <td style="padding:12px 16px">
+                                <span style="background:#e2e8f0;border:1px solid #cbd5e1;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:900;color:#1e293b;text-transform:uppercase;letter-spacing:0.5px">
+                                    ${esc(p.category)}
+                                </span>
+                            </td>
+                            <td style="padding:12px 16px;text-align:center;font-weight:900;color:#9a3412;font-size:13.5px">${p.matQty} pz</td>
+                            <td style="padding:12px 16px;text-align:center;font-weight:900;color:#1e40af;font-size:13.5px">${p.vesQty} pz</td>
+                            <td style="padding:12px 16px;text-align:center;font-weight:900;font-size:14.5px;background:#fef3c7;color:#78350f">${p.totalQty} pz</td>
+                            <td style="padding:12px 16px;text-align:right;font-weight:900;color:#15803d;font-size:14px">${money(p.totalMoney)}</td>
+                            <td style="padding:12px 16px;text-align:center">
+                                <span style="padding:5px 12px;border-radius:8px;font-size:12px;font-weight:900;${isLow ? 'background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5' : 'background:#dcfce7;color:#166534;border:1.5px solid #86efac'}">
+                                    ${curStock} uds. ${isLow ? '⚠ Resurtir' : '✓'}
+                                </span>
+                            </td>
+                        </tr>`;
+                    }).join("")}
+                </tbody>
+            </table>
+        </div>`;
     }
 
     async function loadAccounting(silent = false) {
