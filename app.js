@@ -4039,7 +4039,34 @@
             }
         });
 
-        // 3. Consultar Supabase si existen turnos o cortes registrados
+        // 3. Consultar Supabase turnos y aperturas registradas
+        if (db) {
+            try {
+                const {data: shiftSales} = await safeQuery(db.from("sales").select("*").eq("status", "SHIFT_RECORD").order("created_at", {ascending:false}), null, 3000);
+                if (shiftSales && shiftSales.length) {
+                    shiftSales.forEach(s => {
+                        let obs = {};
+                        try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
+                        if (obs.is_shift_record) {
+                            const sid = "cloud_shift_" + (obs.shift_id || s.id);
+                            if (!shiftsMap.has(sid)) {
+                                shiftsMap.set(sid, {
+                                    id: obs.shift_id || sid,
+                                    branch_id: s.branch_id,
+                                    branch_name: obs.branch_name || "Sucursal",
+                                    shift_name: obs.shift_name || "Mañana",
+                                    cashier_name: obs.cashier_name || "Encargada",
+                                    opening_amount: Number(obs.opening_amount || 0),
+                                    opened_at: obs.opened_at || s.created_at
+                                });
+                            }
+                        }
+                    });
+                }
+            } catch(e) {}
+        }
+
+        // 4. Consultar Supabase si existen cortes registrados
         if (db) {
             try {
                 const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 4000);
@@ -4233,6 +4260,35 @@
                         payload: { shift: shiftObj }
                     });
                 } catch(e) {}
+            }
+
+            // Persistir apertura de turno en Supabase para que llegue a cualquier dispositivo
+            if (db) {
+                try {
+                    await db.from("sales").insert({
+                        branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
+                        company_id: "51bc275d-4e19-4115-be3f-42c0ce3dae5a",
+                        shift_id: "1dabe6df-2ce6-4e3a-97df-b81e179898ab",
+                        user_id: "4710b330-566c-45c7-a92e-b7b6a62355af",
+                        sale_number: "SHIFT-" + Date.now(),
+                        subtotal: 0,
+                        discount: 0,
+                        tax: 0,
+                        total: 0,
+                        status: "SHIFT_RECORD",
+                        observations: JSON.stringify({
+                            is_shift_record: true,
+                            shift_id: shiftObj.id,
+                            branch_name: shiftObj.branch_name,
+                            shift_name: shiftObj.shift_name,
+                            cashier_name: shiftObj.cashier_name,
+                            opening_amount: shiftObj.opening_amount,
+                            opened_at: shiftObj.opened_at
+                        })
+                    });
+                } catch(e) {
+                    console.warn("Error saving shift to cloud DB:", e);
+                }
             }
 
             updateUI();
@@ -5625,6 +5681,8 @@
                     const myCuts = lr("cuts", []);
                     const allGSales = gr("all_sales", []);
                     const allGCuts = gr("all_cuts", []);
+                    const allGShifts = gr("all_shifts", []);
+                    const myShifts = lr("shifts", []);
                     const salesToSend = (mySales.length ? mySales : allGSales);
                     const cutsToSend = (myCuts.length ? myCuts : allGCuts);
 
@@ -5639,6 +5697,7 @@
                                     shift_name: S.shift,
                                     sales: salesToSend,
                                     cuts: cutsToSend,
+                                    shifts: (myShifts && myShifts.length) ? myShifts : allGShifts,
                                     inv: S.inv
                                 }
                             });
@@ -5664,6 +5723,19 @@
                         });
                         const merged = Array.from(map.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
                         gw("all_sales", merged);
+                    }
+                    if (payload.shifts && payload.shifts.length) {
+                        let allShifts = gr("all_shifts", []);
+                        const mapS = new Map();
+                        allShifts.forEach(sh => mapS.set(String(sh.id || sh.opened_at), sh));
+                        payload.shifts.forEach(sh => {
+                            const sid = String(sh.id || sh.opened_at);
+                            if (!mapS.has(sid)) {
+                                mapS.set(sid, sh);
+                                hasNew = true;
+                            }
+                        });
+                        gw("all_shifts", Array.from(mapS.values()));
                     }
                     if (payload.cuts && payload.cuts.length) {
                         let allCuts = gr("all_cuts", []);
