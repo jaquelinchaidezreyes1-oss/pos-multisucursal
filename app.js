@@ -985,6 +985,24 @@
         { product_id: "p_vaso_cualquier_medida", product_code: "VasoCualquierMedida", product_name: "Cualquier Vaso de Cualquier Medida", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 }
     ];
 
+    
+    function broadcastCatalogChanges() {
+        if (realtimeChannel) {
+            try {
+                realtimeChannel.send({
+                    type: "broadcast",
+                    event: "catalog_updated",
+                    payload: {
+                        custom_products: gr("custom_products", []),
+                        deleted_product_ids: gr("deleted_product_ids", []),
+                        branch_name: S.branchName,
+                        user: S.profile?.full_name || S.user?.email || "Encargada"
+                    }
+                });
+            } catch(e) {}
+        }
+    }
+
     /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
     async function loadProducts() {
         let remoteProducts = [];
@@ -2586,7 +2604,7 @@
                 customList.push(sup);
             }
             gw("custom_products", customList);
-
+            broadcastCatalogChanges();
             toast("✓ Insumo actualizado.", "success");
             await loadProducts();
             await loadProductsAdmin();
@@ -2709,6 +2727,7 @@
                 alertInv();
 
                 gw("custom_products", customList);
+                broadcastCatalogChanges();
                 editingProductId = null;
                 toast("✓ Cambios guardados en '" + name + "' (Stock: " + stockInp + " uds).", "success", 4000);
             } else {
@@ -2737,7 +2756,7 @@
                 const customList = gr("custom_products", []);
                 customList.push(newProd);
                 gw("custom_products", customList);
-
+                broadcastCatalogChanges();
                 if (db) {
                     try {
                         await db.from("products").insert({
