@@ -986,25 +986,85 @@
     ];
 
     
-    function broadcastCatalogChanges() {
+    function broadcastCatalogChanges(actionDescription = "Modificación de catálogo") {
+        const customList = gr("custom_products", []);
+        const deletedList = gr("deleted_product_ids", []);
+        
+        // 1. Difusión en tiempo real por canal Mesh a todos los navegadores abiertos
         if (realtimeChannel) {
             try {
                 realtimeChannel.send({
                     type: "broadcast",
                     event: "catalog_updated",
                     payload: {
-                        custom_products: gr("custom_products", []),
-                        deleted_product_ids: gr("deleted_product_ids", []),
+                        custom_products: customList,
+                        deleted_product_ids: deletedList,
                         branch_name: S.branchName,
-                        user: S.profile?.full_name || S.user?.email || "Encargada"
+                        action: actionDescription,
+                        user: S.profile?.full_name || S.user?.email || "Encargada",
+                        updated_at: now()
                     }
                 });
+            } catch(e) {}
+        }
+
+        // 2. Persistir en la nube de Supabase para que cualquier dispositivo / Superusuario lo reciba aunque abra después
+        if (db) {
+            try {
+                safeQuery(db.from("sales").insert({
+                    branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
+                    company_id: "51bc275d-4e19-4115-be3f-42c0ce3dae5a",
+                    shift_id: "1dabe6df-2ce6-4e3a-97df-b81e179898ab",
+                    user_id: "4710b330-566c-45c7-a92e-b7b6a62355af",
+                    sale_number: "CATALOG-" + Date.now(),
+                    subtotal: 0,
+                    discount: 0,
+                    tax: 0,
+                    total: 0,
+                    status: "CATALOG_RECORD",
+                    observations: JSON.stringify({
+                        is_catalog_record: true,
+                        custom_products: customList,
+                        deleted_product_ids: deletedList,
+                        updated_at: now(),
+                        updated_by: S.profile?.full_name || S.user?.email || "Encargada",
+                        branch_name: S.branchName,
+                        action: actionDescription
+                    })
+                }), null, 2500).catch(e => console.warn("Cloud catalog persist:", e));
             } catch(e) {}
         }
     }
 
     /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
     async function loadProducts() {
+        // Cargar registros de personalizaciones y cambios de catálogo desde la nube
+        if (db) {
+            try {
+                const {data: catalogRecords} = await safeQuery(db.from("sales").select("*").eq("status", "CATALOG_RECORD").order("created_at", {ascending: false}).limit(5), null, 2000);
+                if (catalogRecords && catalogRecords.length) {
+                    const localCustom = gr("custom_products", []);
+                    const mapCust = new Map();
+                    localCustom.forEach(p => mapCust.set(String(p.product_id), p));
+                    const delSet = new Set(gr("deleted_product_ids", []));
+
+                    catalogRecords.reverse().forEach(cr => {
+                        let obs = {};
+                        try { obs = typeof cr.observations === "string" ? JSON.parse(cr.observations) : (cr.observations || {}); } catch(e) {}
+                        if (obs.custom_products && Array.isArray(obs.custom_products)) {
+                            obs.custom_products.forEach(p => mapCust.set(String(p.product_id), p));
+                        }
+                        if (obs.deleted_product_ids && Array.isArray(obs.deleted_product_ids)) {
+                            obs.deleted_product_ids.forEach(id => delSet.add(String(id)));
+                        }
+                    });
+
+                    gw("custom_products", Array.from(mapCust.values()));
+                    gw("deleted_product_ids", Array.from(delSet));
+                }
+            } catch(e) {}
+        }
+
         let remoteProducts = [];
         if (db) {
             try {
@@ -2572,6 +2632,7 @@
             customList.push(newSupplyObj);
             gw("custom_products", customList);
 
+            broadcastCatalogChanges("Insumo '" + name.trim() + "' agregado (" + packUnits + " pz/paq)");
             toast("✓ Insumo '" + name.trim() + "' registrado correctamente con " + packUnits + " pz/paq.", "success", 4000);
             await loadProducts();
             await loadProductsAdmin();
@@ -2621,6 +2682,7 @@
             deletedIds.push(String(supId));
             gw("deleted_product_ids", deletedIds);
 
+            broadcastCatalogChanges("Insumo '" + supName + "' eliminado");
             toast("✓ Insumo '" + supName + "' eliminado.", "info");
             await loadProducts();
             await loadProductsAdmin();
@@ -2727,7 +2789,7 @@
                 alertInv();
 
                 gw("custom_products", customList);
-                broadcastCatalogChanges();
+                broadcastCatalogChanges("Producto '" + name + "' editado");
                 editingProductId = null;
                 toast("✓ Cambios guardados en '" + name + "' (Stock: " + stockInp + " uds).", "success", 4000);
             } else {
@@ -2756,7 +2818,7 @@
                 const customList = gr("custom_products", []);
                 customList.push(newProd);
                 gw("custom_products", customList);
-                broadcastCatalogChanges();
+                broadcastCatalogChanges("Nuevo producto '" + name + "' registrado");
                 if (db) {
                     try {
                         await db.from("products").insert({
@@ -2784,6 +2846,7 @@
             deletedIds.push(String(btn.dataset.id));
             gw("deleted_product_ids", deletedIds);
 
+            broadcastCatalogChanges("Producto '" + btn.dataset.name + "' eliminado");
             toast("✓ Producto '" + btn.dataset.name + "' eliminado del catálogo.", "info", 4000);
             await loadProducts();
             await loadProductsAdmin();
@@ -2924,7 +2987,7 @@
                 </div>
 
                 <!-- BOTONES DE ACCIÓN -->
-                <div style="display:grid;grid-template-columns:${isSupply ? '1fr 1fr 1fr' : '1fr 1fr'};gap:6px">
+                <div style="display:grid;grid-template-columns:${isSupply ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr'};gap:5px">
                     ${isSupply ? `
                     <button type="button" class="btn-add-pack" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}" data-pack="${unitsPack}"
                         style="padding:8px 4px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:8px;font-weight:900;font-size:10.5px;cursor:pointer">
@@ -2935,8 +2998,12 @@
                         ${isSupply ? '🔢 + Piezas' : '+ Agregar'}
                     </button>
                     <button type="button" class="btn-set-stk" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}"
-                        style="padding:8px 4px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:8px;font-weight:800;font-size:10.5px;cursor:pointer">
+                        style="padding:8px 3px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:8px;font-weight:800;font-size:10px;cursor:pointer">
                         ✎ Ajustar
+                    </button>
+                    <button type="button" class="btn-withdraw-stk" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}"
+                        style="padding:8px 3px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-weight:900;font-size:10px;cursor:pointer" title="Retirar producto por merma o traslado">
+                        ➖ Retirar
                     </button>
                 </div>
             </article>`;
@@ -3009,6 +3076,46 @@
             saveBranchInv();
             alertInv();
             toast(`✓ Stock de '${name}' en ${S.branchName} ajustado a ${n} unidades.`, "success");
+            loadInventory();
+        }));
+
+        c.querySelectorAll(".btn-withdraw-stk").forEach(btn => btn.addEventListener("click", async () => {
+            const pid = btn.dataset.id;
+            const name = btn.dataset.name;
+            const cur = getStock(pid);
+            const val = await toastPrompt(`➖ Retirar Producto / Merma: '${name}'\n\nStock actual en ${S.branchName}: ${cur} uds.\n¿Cuántas unidades deseas retirar/dar de baja por merma o traslado?:`, "1");
+            if (val === null) return;
+            const qty = parseInt(val, 10);
+            if (isNaN(qty) || qty <= 0) return toast("Ingresa una cantidad válida a retirar.", "warn");
+            if (qty > cur) return toast(`No puedes retirar más del stock actual (${cur} uds).`, "error");
+
+            const reason = await toastPrompt(`Motivo del retiro de ${qty} uds de '${name}' (opcional, ej: Merma, Caducidad, Traslado a otra sucursal):`, "Merma / Traslado");
+
+            const n = Math.max(0, cur - qty);
+            S.inv[pid] = n;
+            saveBranchInv();
+            alertInv();
+
+            // Notificar retiro
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "inventory_withdrawn",
+                        payload: {
+                            product_id: pid,
+                            product_name: name,
+                            qty_withdrawn: qty,
+                            remaining_stock: n,
+                            reason: reason || "Retiro de producto",
+                            branch_name: S.branchName,
+                            user: S.profile?.full_name || S.user?.email || "Encargada"
+                        }
+                    });
+                } catch(e) {}
+            }
+
+            toast(`✓ Retiradas ${qty} unidades de '${name}'. Stock restante: ${n} uds.`, "warn", 5000);
             loadInventory();
         }));
     }
@@ -5580,6 +5687,38 @@
 
         try {
             realtimeChannel = db.channel("lafuente-pos-mesh", { config: { broadcast: { self: false } } })
+                // RECEPCIÓN DE MODIFICACIONES Y RETIROS DE PRODUCTOS / CATÁLOGO
+                .on("broadcast", { event: "catalog_updated" }, async ({ payload }) => {
+                    if (!payload) return;
+                    let modified = false;
+                    if (payload.custom_products && Array.isArray(payload.custom_products)) {
+                        const localCustom = gr("custom_products", []);
+                        const map = new Map();
+                        localCustom.forEach(p => map.set(String(p.product_id), p));
+                        payload.custom_products.forEach(p => {
+                            map.set(String(p.product_id), p);
+                            modified = true;
+                        });
+                        gw("custom_products", Array.from(map.values()));
+                    }
+                    if (payload.deleted_product_ids && Array.isArray(payload.deleted_product_ids)) {
+                        const localDel = new Set(gr("deleted_product_ids", []));
+                        payload.deleted_product_ids.forEach(id => {
+                            localDel.add(String(id));
+                            modified = true;
+                        });
+                        gw("deleted_product_ids", Array.from(localDel));
+                    }
+                    await loadProducts();
+                    if (S.isSU) {
+                        const who = payload.user || payload.branch_name || "Sucursal";
+                        const act = payload.action || "Modificación de productos";
+                        toast(`📦 ${act} en ${who}`, "info", 4500);
+                    }
+                    if (S.view === "products") await loadProductsAdmin();
+                    else if (S.view === "pos") renderPOS(filtered());
+                    else if (S.view === "inventory") await loadInventory();
+                })
                 // 1. RECEPCIÓN DIRECTA DE VENTAS EN TIEMPO REAL (MESH BROADCAST)
                 .on("broadcast", { event: "sale_cancelled" }, async ({ payload }) => {
                     if (!payload || (!payload.id && !payload.sale_number)) return;
@@ -5658,6 +5797,13 @@
                     safeSilentRefresh();
                 })
                 // 2.1 RECEPCIÓN DIRECTA DE INVENTARIOS EN TIEMPO REAL (MESH BROADCAST)
+                .on("broadcast", { event: "inventory_withdrawn" }, async ({ payload }) => {
+                    if (!payload) return;
+                    if (S.isSU) {
+                        toast(`📦 Retiro en ${payload.branch_name || 'Sucursal'}: ${payload.qty_withdrawn}x '${payload.product_name}' (${payload.reason || 'Merma'}) por ${payload.user || 'Encargada'}`, "warn", 6000);
+                    }
+                    if (S.view === "inventory") await loadInventory();
+                })
                 .on("broadcast", { event: "inventory_updated" }, async ({ payload }) => {
                     if (!payload || !payload.inv) return;
                     if (payload.branch_id) {
@@ -5698,7 +5844,9 @@
                                     sales: salesToSend,
                                     cuts: cutsToSend,
                                     shifts: (myShifts && myShifts.length) ? myShifts : allGShifts,
-                                    inv: S.inv
+                                    inv: S.inv,
+                                    custom_products: gr("custom_products", []),
+                                    deleted_product_ids: gr("deleted_product_ids", [])
                                 }
                             });
                         } catch(e) {}
@@ -5752,6 +5900,18 @@
                     }
                     if (payload.inv && payload.branch_id) {
                         gw("inv_" + payload.branch_id, payload.inv);
+                    }
+                    if (payload.custom_products && Array.isArray(payload.custom_products)) {
+                        const localCustom = gr("custom_products", []);
+                        const map = new Map();
+                        localCustom.forEach(p => map.set(String(p.product_id), p));
+                        payload.custom_products.forEach(p => map.set(String(p.product_id), p));
+                        gw("custom_products", Array.from(map.values()));
+                    }
+                    if (payload.deleted_product_ids && Array.isArray(payload.deleted_product_ids)) {
+                        const localDel = new Set(gr("deleted_product_ids", []));
+                        payload.deleted_product_ids.forEach(id => localDel.add(String(id)));
+                        gw("deleted_product_ids", Array.from(localDel));
                     }
                     _cachedConsolidatedSales = null;
                     await getConsolidatedSalesForChain(true);
