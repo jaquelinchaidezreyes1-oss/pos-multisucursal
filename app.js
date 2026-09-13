@@ -2905,7 +2905,8 @@
         }));
 
         document.getElementById("inv-branch-filter")?.addEventListener("change", async e => {
-            await changeBranch(e.target.value);
+            const targetId = e.target.value;
+            await changeBranch(targetId);
             await loadInventory();
         });
 
@@ -4476,22 +4477,7 @@
         </div>
 
         
-        <!-- ACUMULADO HISTÓRICO GLOBAL (ACTUALIZADO DÍA CON DÍA) -->
-        <div class="dashboard-card" style="background:linear-gradient(135deg,#160205,#38070d);color:#fff;border:2px solid var(--gold-400);padding:20px 24px;border-radius:18px;margin-bottom:20px;box-shadow:0 6px 20px rgba(0,0,0,0.25)">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                <div>
-                    <span style="color:#fef08a;font-size:11px;font-weight:900;letter-spacing:1.5px">👑 CONTROL GENERAL DIRECTIVO</span>
-                    <h2 style="margin:4px 0 0;font-size:22px;color:#fff;font-weight:900">Acumulado Histórico de la Cadena (Actualizado Día con Día)</h2>
-                    <small style="color:#fde68a">Historial consolidado permanente de todas las sucursales desde el primer día</small>
-                </div>
-                <div style="text-align:right">
-                    <span style="font-size:11px;color:#fde68a;font-weight:800">TOTAL HISTÓRICO ACUMULADO</span>
-                    <div style="font-size:32px;font-weight:900;color:#ffffff">${money(consolidatedSales.filter(s=>String(s.status||"").toUpperCase()!=="CANCELLED").reduce((a,s)=>a+Number(s.total||0),0))}</div>
-                    <small style="color:#86efac;font-weight:800">${consolidatedSales.filter(s=>String(s.status||"").toUpperCase()!=="CANCELLED").length} tickets registrados en la red</small>
-                </div>
-            </div>
-        </div>
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
             <div class="dashboard-card" style="background:linear-gradient(135deg,#230408,#5c121b);color:#fff;border-color:var(--gold-400);padding:22px;border-radius:18px">
                 <span style="color:#fef08a;font-size:10px;font-weight:900;letter-spacing:1px">VENTA TOTAL CONSOLIDADA HOY</span>
                 <div style="font-size:30px;font-weight:900;margin:6px 0;color:#ffffff">${money(chainTotal)}</div>
