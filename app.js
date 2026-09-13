@@ -4451,125 +4451,416 @@
         return S.currentShift;
     }
 
-    /* ── DAÑOS & MERMAS ── */
+    /* ── DAÑOS & AVISOS (CENTRO DE MERMAS Y COMUNICACIÓN ENTRE SUCURSALES Y SUPERUSUARIOS) ── */
+    let _activeDamageTab = "report_damage"; // "report_damage", "post_notice", "history_damages", "history_notices"
+
     async function loadDamageReports(silent = false) {
         const c = $("#damage-reports-container");
         if (!c) return;
         if (!silent && !c.children.length) {
-            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando reportes de merma…</p></div>`;
+            c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando centro de daños y avisos…</p></div>`;
+        }
+
+        // 1. Cargar mermas y avisos desde la nube (Supabase)
+        if (db) {
+            try {
+                const {data: cloudRecords} = await safeQuery(db.from("sales").select("*").in("status", ["DAMAGE_RECORD", "NOTICE_RECORD"]).order("created_at", {ascending: false}).limit(100), null, 2500);
+                if (cloudRecords && cloudRecords.length) {
+                    const localReps = gr("all_damage_reports", []);
+                    const repMap = new Map();
+                    localReps.forEach(r => repMap.set(String(r.id), r));
+
+                    const localNotices = gr("all_notices", []);
+                    const noticeMap = new Map();
+                    localNotices.forEach(n => noticeMap.set(String(n.id), n));
+
+                    cloudRecords.forEach(rec => {
+                        let obs = {};
+                        try { obs = typeof rec.observations === "string" ? JSON.parse(rec.observations) : (rec.observations || {}); } catch(e) {}
+                        if (rec.status === "DAMAGE_RECORD" && obs.report) {
+                            repMap.set(String(obs.report.id), obs.report);
+                        } else if (rec.status === "NOTICE_RECORD" && obs.notice) {
+                            noticeMap.set(String(obs.notice.id), obs.notice);
+                        }
+                    });
+
+                    gw("all_damage_reports", Array.from(repMap.values()).sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0)));
+                    gw("all_notices", Array.from(noticeMap.values()).sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0)));
+                }
+            } catch(e) {}
         }
 
         const allReports = gr("all_damage_reports", []);
-        const branchReports = S.isSU ? allReports : allReports.filter(r => matchesBranch(r, { id: S.branchId, name: S.branchName }));
+        const allNotices = gr("all_notices", []);
+
+        const activeFilterBranch = S.damageBranchFilter || (S.isSU ? "all" : S.branchId);
+
+        const displayedReports = (activeFilterBranch === "all")
+            ? allReports
+            : allReports.filter(r => matchesBranch(r, { id: activeFilterBranch, name: S.branches.find(b=>String(b.id)===String(activeFilterBranch))?.name || S.branchName }));
+
+        const displayedNotices = (activeFilterBranch === "all")
+            ? allNotices
+            : allNotices.filter(n => n.target_branch === "all" || matchesBranch(n, { id: activeFilterBranch, name: S.branches.find(b=>String(b.id)===String(activeFilterBranch))?.name || S.branchName }));
+
+        const totalLostMoney = displayedReports.reduce((acc, r) => acc + (Number(r.price || 0) * Number(r.quantity || 1)), 0);
+        const totalDamagePieces = displayedReports.reduce((acc, r) => acc + Number(r.quantity || 1), 0);
+
+        const branchSelectHtml = S.isSU ? `
+            <div style="display:flex;align-items:center;gap:8px">
+                <label style="font-size:12px;font-weight:900;color:#fcebd2">📍 VER SUCURSAL:</label>
+                <select id="sel-damage-branch-filter" style="padding:7px 12px;border-radius:10px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;outline:none;color:#1a0205">
+                    <option value="all"${activeFilterBranch==='all'?' selected':''}>🌐 Todas las Sucursales (${allReports.length} mermas / ${allNotices.length} avisos)</option>
+                    ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(activeFilterBranch)?' selected':''}>📍 ${esc(b.name)}</option>`).join("")}
+                </select>
+            </div>` : '';
 
         c.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <!-- ENCABEZADO PRINCIPAL -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px">
             <div>
-                <strong style="font-size:17px;color:#ffffff;font-weight:900">Reportes de Merma & Producto Dañado — ${esc(S.branchName)}</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Registro y ajuste automático de inventario por producto derretido o defectuoso</div>
+                <strong style="font-size:19px;color:#ffffff;font-weight:900;display:flex;align-items:center;gap:8px">
+                    <span>📢</span> Centro de Daños, Mermas & Avisos en Vivo
+                </strong>
+                <div style="font-size:12.5px;color:#fcebd2;margin-top:3px;font-weight:700">
+                    ${S.isSU ? '👑 Monitoreo directivo de mermas y comunicación instantánea' : ('📍 Sucursal: ' + esc(S.branchName) + ' • Turno ' + esc(S.shift))}
+                </div>
             </div>
-            <button type="button" id="btn-ref-damages"
-                style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
-                🔄 Actualizar Reportes</button>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                ${branchSelectHtml}
+                <button type="button" id="btn-ref-damages-all"
+                    style="padding:8px 16px;background:linear-gradient(135deg,#ffffff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:#1a0205;box-shadow:0 2px 8px rgba(0,0,0,0.2)">
+                    🔄 Sincronizar
+                </button>
+            </div>
         </div>
 
-        <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
-            <h3 style="color:var(--wine-900);margin:0 0 14px;font-weight:900">⚠️ Registrar Nueva Merma o Daño</h3>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px">
-                <div>
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">PRODUCTO AFECTADO *</label>
-                    <select id="damage-product-select" style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:800;background:#fff;box-sizing:border-box">
-                        <option value="">-- Selecciona producto --</option>
-                        ${S.products.map(p => `<option value="${esc(p.id)}">${esc(p.name)} (${money(p.price)})</option>`).join("")}
-                    </select>
-                </div>
-                <div>
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">CANTIDAD DAÑADA *</label>
-                    <input id="damage-quantity" type="number" min="1" max="100" value="1"
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:900;box-sizing:border-box">
-                </div>
-                <div style="grid-column:1/-1">
-                    <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">MOTIVO DEL DAÑO / MERMA *</label>
-                    <input id="damage-reason" type="text" placeholder="Ej: Se cayó de la vitrina, descongelamiento, empaque roto..."
-                        style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:700;box-sizing:border-box">
-                </div>
+        <!-- TARJETAS DE RESUMEN -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px">
+            <div style="background:#ffffff;border:1.5px solid #fca5a5;border-left:5px solid #dc2626;border-radius:14px;padding:14px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
+                <span style="font-size:11px;font-weight:900;color:#991b1b;letter-spacing:0.5px">⚠️ MERMAS REGISTRADAS</span>
+                <div style="font-size:24px;font-weight:900;color:#7f1d1d;margin-top:3px">${totalDamagePieces} <small style="font-size:13px;font-weight:700">piezas</small></div>
+                <small style="color:#991b1b;font-weight:800">${displayedReports.length} reportes archivados</small>
             </div>
-            <button type="button" id="btn-submit-damage"
-                style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer">
-                ✓ Registrar Merma y Descontar Inventario
+            <div style="background:#ffffff;border:1.5px solid #fcd34d;border-left:5px solid #d97706;border-radius:14px;padding:14px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
+                <span style="font-size:11px;font-weight:900;color:#92400e;letter-spacing:0.5px">💸 COSTO ESTIMADO MERMA</span>
+                <div style="font-size:24px;font-weight:900;color:#78350f;margin-top:3px">${money(totalLostMoney)}</div>
+                <small style="color:#92400e;font-weight:800">Descontado de existencias</small>
+            </div>
+            <div style="background:#ffffff;border:1.5px solid #93c5fd;border-left:5px solid #2563eb;border-radius:14px;padding:14px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
+                <span style="font-size:11px;font-weight:900;color:#1e40af;letter-spacing:0.5px">📢 AVISOS & COMUNICADOS</span>
+                <div style="font-size:24px;font-weight:900;color:#1e3a8a;margin-top:3px">${displayedNotices.length} <small style="font-size:13px;font-weight:700">activos</small></div>
+                <small style="color:#1e40af;font-weight:800">Mensajes de red y turnos</small>
+            </div>
+        </div>
+
+        <!-- PESTAÑAS PRÁCTICAS DE NAVEGACIÓN -->
+        <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+            <button type="button" class="damage-tab-btn${_activeDamageTab==='report_damage'?' active-damage-tab':''}" data-tab="report_damage"
+                style="padding:10px 18px;border-radius:12px;font-weight:900;font-size:13px;cursor:pointer;${_activeDamageTab==='report_damage'?'background:linear-gradient(135deg,var(--gold-400),var(--gold-600));color:#1a0205;border:2px solid var(--gold-500);box-shadow:0 3px 10px rgba(0,0,0,0.2)':'background:rgba(255,255,255,0.12);color:#ffffff;border:1.5px solid rgba(255,255,255,0.2)'}">
+                🚨 1. Registrar Merma / Daño
+            </button>
+            <button type="button" class="damage-tab-btn${_activeDamageTab==='post_notice'?' active-damage-tab':''}" data-tab="post_notice"
+                style="padding:10px 18px;border-radius:12px;font-weight:900;font-size:13px;cursor:pointer;${_activeDamageTab==='post_notice'?'background:linear-gradient(135deg,var(--gold-400),var(--gold-600));color:#1a0205;border:2px solid var(--gold-500);box-shadow:0 3px 10px rgba(0,0,0,0.2)':'background:rgba(255,255,255,0.12);color:#ffffff;border:1.5px solid rgba(255,255,255,0.2)'}">
+                📢 2. Publicar Aviso / Nota
+            </button>
+            <button type="button" class="damage-tab-btn${_activeDamageTab==='history_damages'?' active-damage-tab':''}" data-tab="history_damages"
+                style="padding:10px 18px;border-radius:12px;font-weight:900;font-size:13px;cursor:pointer;${_activeDamageTab==='history_damages'?'background:linear-gradient(135deg,var(--gold-400),var(--gold-600));color:#1a0205;border:2px solid var(--gold-500);box-shadow:0 3px 10px rgba(0,0,0,0.2)':'background:rgba(255,255,255,0.12);color:#ffffff;border:1.5px solid rgba(255,255,255,0.2)'}">
+                📜 3. Historial de Mermas (${displayedReports.length})
+            </button>
+            <button type="button" class="damage-tab-btn${_activeDamageTab==='history_notices'?' active-damage-tab':''}" data-tab="history_notices"
+                style="padding:10px 18px;border-radius:12px;font-weight:900;font-size:13px;cursor:pointer;${_activeDamageTab==='history_notices'?'background:linear-gradient(135deg,var(--gold-400),var(--gold-600));color:#1a0205;border:2px solid var(--gold-500);box-shadow:0 3px 10px rgba(0,0,0,0.2)':'background:rgba(255,255,255,0.12);color:#ffffff;border:1.5px solid rgba(255,255,255,0.2)'}">
+                💬 4. Muro de Avisos (${displayedNotices.length})
             </button>
         </div>
 
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Mermas (${branchReports.length} registros)</h3>
-        </div>
-        ${branchReports.length ? `
-        <div style="display:flex;flex-direction:column;gap:12px">
-            ${branchReports.map(rep => `
-            <article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-                <div>
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                        <strong style="font-size:15px;color:var(--wine-900)">⚠️ ${rep.quantity}x ${esc(rep.product_name)} — 📍 ${esc(rep.branch_name || S.branchName)}</strong>
-                        <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;background:#fee2e2;color:#991b1b">
-                            Merma
-                        </span>
-                    </div>
-                    <div style="font-size:11.5px;color:var(--text-muted)">
-                        Fecha: <strong>${fdt(rep.created_at)}</strong> • Encargada: <strong>${esc(rep.reported_by)}</strong>
-                    </div>
-                    <div style="font-size:11.5px;color:#4b5563;margin-top:4px">
-                        Motivo: <em>${esc(rep.reason)}</em>
-                    </div>
-                </div>
-            </article>`).join("")}
-        </div>` : `
-        <div class="empty-state" style="padding:34px;text-align:center">
-            <p style="color:var(--text-muted)">No hay mermas o daños registrados.</p>
-        </div>`}
-        `;
+        <!-- CONTENIDO DE LA PESTAÑA SELECCIONADA -->
+        <div id="damage-tab-content">
+            ${_renderDamageTabContent(displayedReports, displayedNotices)}
+        </div>`;
 
-        document.getElementById("btn-ref-damages")?.addEventListener("click", async () => {
-            await loadDamageReports();
-            toast("Reportes actualizados.", "info");
+        // Listeners de pestañas
+        c.querySelectorAll(".damage-tab-btn").forEach(b => b.addEventListener("click", () => {
+            _activeDamageTab = b.dataset.tab;
+            loadDamageReports(true);
+        }));
+
+        document.getElementById("sel-damage-branch-filter")?.addEventListener("change", (e) => {
+            S.damageBranchFilter = e.target.value;
+            loadDamageReports();
         });
 
-        document.getElementById("btn-submit-damage")?.addEventListener("click", async () => {
-            const pid = document.getElementById("damage-product-select")?.value;
-            const qty = Number(document.getElementById("damage-quantity")?.value || 1);
-            const reason = document.getElementById("damage-reason")?.value?.trim();
+        document.getElementById("btn-ref-damages-all")?.addEventListener("click", async () => {
+            await loadDamageReports();
+            toast("✓ Daños y avisos sincronizados con la nube.", "info", 3000);
+        });
+
+        _attachDamageFormListeners(c);
+    }
+
+    function _renderDamageTabContent(reports, notices) {
+        // PESTAÑA 1: FORMULARIO SÚPER RÁPIDO DE MERMAS
+        if (_activeDamageTab === "report_damage") {
+            const sortedProds = [...S.products].sort((a,b) => (a.product_name||"").localeCompare(b.product_name||""));
+            return `
+            <div style="background:#ffffff;border:2px solid var(--gold-400);border-radius:18px;padding:24px;box-shadow:0 4px 18px rgba(0,0,0,0.15)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;border-bottom:2px solid #f1f5f9;padding-bottom:12px">
+                    <div>
+                        <h3 style="margin:0;font-size:18px;font-weight:900;color:#0f172a">⚠️ Registro Express de Merma o Producto Dañado</h3>
+                        <small style="color:#64748b;font-weight:700">Se descuenta en tiempo real del inventario de ${esc(S.branchName)} y notifica a Dirección</small>
+                    </div>
+                    <span style="font-size:11px;font-weight:900;background:#fee2e2;color:#991b1b;padding:4px 10px;border-radius:8px;border:1px solid #fca5a5">
+                        📍 ${esc(S.branchName)} (${esc(S.shift)})
+                    </span>
+                </div>
+
+                <!-- SELECTOR DE PRODUCTO -->
+                <div style="margin-bottom:16px">
+                    <label style="font-size:12px;font-weight:900;color:#1e293b;display:block;margin-bottom:6px">1. SELECCIONA EL PRODUCTO O INSUMO AFECTADO *</label>
+                    <select id="quick-damage-pid" style="width:100%;padding:12px 14px;border:2px solid #cbd5e1;border-radius:10px;font-size:14px;font-weight:800;color:#0f172a;background:#f8fafc;outline:none">
+                        <option value="">-- Toca aquí para elegir producto --</option>
+                        ${sortedProds.map(p => {
+                            const curStk = getStock(p.product_id);
+                            return `<option value="${esc(p.product_id)}" data-name="${esc(p.product_name)}" data-price="${p.price||0}">${esc(p.product_name)} (${p.price>0?money(p.price):'Insumo'}) • Stock actual: ${curStk} uds</option>`;
+                        }).join("")}
+                    </select>
+                </div>
+
+                <!-- CANTIDAD CON BOTONES RÁPIDOS -->
+                <div style="margin-bottom:16px">
+                    <label style="font-size:12px;font-weight:900;color:#1e293b;display:block;margin-bottom:6px">2. CANTIDAD DAÑADA *</label>
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <input id="quick-damage-qty" type="number" min="1" max="500" value="1"
+                            style="width:90px;padding:12px;border:2px solid #cbd5e1;border-radius:10px;font-size:16px;font-weight:900;text-align:center;color:#0f172a">
+                        <button type="button" class="btn-quick-qty" data-q="1" style="padding:10px 14px;background:#f1f5f9;border:1.5px solid #cbd5e1;border-radius:8px;font-weight:900;font-size:12px;cursor:pointer">+1</button>
+                        <button type="button" class="btn-quick-qty" data-q="2" style="padding:10px 14px;background:#f1f5f9;border:1.5px solid #cbd5e1;border-radius:8px;font-weight:900;font-size:12px;cursor:pointer">+2</button>
+                        <button type="button" class="btn-quick-qty" data-q="5" style="padding:10px 14px;background:#f1f5f9;border:1.5px solid #cbd5e1;border-radius:8px;font-weight:900;font-size:12px;cursor:pointer">+5</button>
+                        <button type="button" class="btn-quick-qty" data-q="10" style="padding:10px 14px;background:#f1f5f9;border:1.5px solid #cbd5e1;border-radius:8px;font-weight:900;font-size:12px;cursor:pointer">+10</button>
+                    </div>
+                </div>
+
+                <!-- BOTONES DE MOTIVO RÁPIDO CON 1 CLIC -->
+                <div style="margin-bottom:18px">
+                    <label style="font-size:12px;font-weight:900;color:#1e293b;display:block;margin-bottom:8px">3. MOTIVO DEL DAÑO (Toca una opción rápida o escribe abajo) *</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                        <button type="button" class="btn-quick-reason" data-r="Se cayó al suelo / Se rompió" style="padding:8px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5;border-radius:8px;font-weight:800;font-size:11.5px;cursor:pointer">🍦 Se cayó / Se rompió</button>
+                        <button type="button" class="btn-quick-reason" data-r="Descongelado / Falla de vitrina" style="padding:8px 12px;background:#fef3c7;color:#92400e;border:1.5px solid #fcd34d;border-radius:8px;font-weight:800;font-size:11.5px;cursor:pointer">❄️ Descongelado / Temperatura</button>
+                        <button type="button" class="btn-quick-reason" data-r="Empaque abierto / Dañado" style="padding:8px 12px;background:#eff6ff;color:#1e40af;border:1.5px solid #bfdbfe;border-radius:8px;font-weight:800;font-size:11.5px;cursor:pointer">📦 Empaque roto / golpeado</button>
+                        <button type="button" class="btn-quick-reason" data-r="Caducado / Producto no apto" style="padding:8px 12px;background:#f3e8ff;color:#6b21a8;border:1.5px solid #d8b4fe;border-radius:8px;font-weight:800;font-size:11.5px;cursor:pointer">⏰ Caducidad / Mal estado</button>
+                        <button type="button" class="btn-quick-reason" data-r="Muestra a cliente / Degustación" style="padding:8px 12px;background:#dcfce7;color:#15803d;border:1.5px solid #86efac;border-radius:8px;font-weight:800;font-size:11.5px;cursor:pointer">🥄 Degustación / Muestra</button>
+                    </div>
+                    <input id="quick-damage-reason" type="text" placeholder="Escribe o selecciona el motivo..."
+                        style="width:100%;padding:12px 14px;border:2px solid #cbd5e1;border-radius:10px;font-size:13.5px;font-weight:700;color:#0f172a;box-sizing:border-box">
+                </div>
+
+                <button type="button" id="btn-save-quick-damage"
+                    style="width:100%;padding:14px;background:linear-gradient(135deg,#dc2626,#991b1b);color:#ffffff;border:none;border-radius:12px;font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 4px 14px rgba(220,38,38,0.3);letter-spacing:0.5px">
+                    ✓ Confirmar Merma & Descontar de Inventario
+                </button>
+            </div>`;
+        }
+
+        // PESTAÑA 2: PUBLICAR AVISO / NOTA
+        if (_activeDamageTab === "post_notice") {
+            return `
+            <div style="background:#ffffff;border:2px solid var(--gold-400);border-radius:18px;padding:24px;box-shadow:0 4px 18px rgba(0,0,0,0.15)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;border-bottom:2px solid #f1f5f9;padding-bottom:12px">
+                    <div>
+                        <h3 style="margin:0;font-size:18px;font-weight:900;color:#0f172a">📢 Publicar Nuevo Aviso o Comunicado</h3>
+                        <small style="color:#64748b;font-weight:700">Envía recados a Superusuarios, al siguiente turno o a toda la cadena</small>
+                    </div>
+                    <span style="font-size:11px;font-weight:900;background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:8px;border:1px solid #93c5fd">
+                        Por: ${esc(S.profile?.full_name || S.user?.email || "Encargada")}
+                    </span>
+                </div>
+
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px">
+                    <div>
+                        <label style="font-size:12px;font-weight:900;color:#1e293b;display:block;margin-bottom:6px">TIPO DE AVISO</label>
+                        <select id="notice-type" style="width:100%;padding:11px;border:2px solid #cbd5e1;border-radius:10px;font-size:13.5px;font-weight:800;color:#0f172a;background:#f8fafc">
+                            <option value="important">🚨 Urgente / Importante</option>
+                            <option value="supply">📦 Petición de Insumos / Cambio</option>
+                            <option value="maintenance">🛠️ Falla de Equipo / Mantenimiento</option>
+                            <option value="general" selected>ℹ️ Informativo General</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:12px;font-weight:900;color:#1e293b;display:block;margin-bottom:6px">DIRIGIDO A:</label>
+                        <select id="notice-target" style="width:100%;padding:11px;border:2px solid #cbd5e1;border-radius:10px;font-size:13.5px;font-weight:800;color:#0f172a;background:#f8fafc">
+                            <option value="su">👑 Superusuarios (Jaquelin e Ignacio)</option>
+                            <option value="next_shift">🔄 Siguiente Turno (${esc(S.branchName)})</option>
+                            <option value="all">🌐 Todas las Sucursales de la Cadena</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- MENSAJES RÁPIDOS CON 1 CLIC -->
+                <div style="margin-bottom:16px">
+                    <label style="font-size:12px;font-weight:900;color:#1e293b;display:block;margin-bottom:8px">PLANTILLAS RÁPIDAS (Toca una opción para autocompletar):</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                        <button type="button" class="btn-quick-notice" data-txt="Se ocupan monedas y cambio de $5, $10 y $20 para la caja." style="padding:7px 12px;background:#fef3c7;color:#92400e;border:1.5px solid #fcd34d;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">💵 Falta cambio/monedas</button>
+                        <button type="button" class="btn-quick-notice" data-txt="Revisar nivel de congelación en el congelador principal, parece que subió la temperatura." style="padding:7px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">❄️ Revisar congelador</button>
+                        <button type="button" class="btn-quick-notice" data-txt="Quedan pocos vasos, servilletas y cucharas para el siguiente turno." style="padding:7px 12px;background:#eff6ff;color:#1e40af;border:1.5px solid #bfdbfe;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">🧤 Faltan desechables</button>
+                        <button type="button" class="btn-quick-notice" data-txt="Limpieza general, vitrinas y piso sanitizado al cerrar turno." style="padding:7px 12px;background:#dcfce7;color:#15803d;border:1.5px solid #86efac;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">🧹 Limpieza completada</button>
+                    </div>
+                    <textarea id="notice-message" rows="4" placeholder="Escribe el mensaje o aviso detallado aquí..."
+                        style="width:100%;padding:12px 14px;border:2px solid #cbd5e1;border-radius:10px;font-size:13.5px;font-weight:700;color:#0f172a;box-sizing:border-box;font-family:inherit"></textarea>
+                </div>
+
+                <button type="button" id="btn-save-quick-notice"
+                    style="width:100%;padding:14px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#ffffff;border:none;border-radius:12px;font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,0.3);letter-spacing:0.5px">
+                    📢 Publicar Aviso en Tiempo Real
+                </button>
+            </div>`;
+        }
+
+        // PESTAÑA 3: HISTORIAL DE MERMAS
+        if (_activeDamageTab === "history_damages") {
+            if (!reports.length) {
+                return `<div style="text-align:center;padding:40px;background:#ffffff;border-radius:16px;border:1.5px dashed #cbd5e1">
+                    <div style="font-size:40px">📦</div>
+                    <h4 style="margin:10px 0 4px;color:#0f172a;font-size:16px;font-weight:900">No hay mermas registradas</h4>
+                    <p style="color:#64748b;font-size:13px;margin:0">El inventario se encuentra al 100% sin reportes de producto dañado.</p>
+                </div>`;
+            }
+
+            return `
+            <div style="background:#ffffff;border:2px solid var(--gold-400);border-radius:18px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,0.15)">
+                <div style="padding:16px 20px;background:#f8fafc;border-bottom:2px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center">
+                    <strong style="color:#0f172a;font-size:15px;font-weight:900">Historial Detallado de Mermas (${reports.length} reportes)</strong>
+                    <span style="font-size:12px;font-weight:900;color:#991b1b">Pérdida total estimada: ${money(totalLostMoney)}</span>
+                </div>
+                <div style="display:flex;flex-direction:column;divide-y:1px solid #e2e8f0">
+                    ${reports.map(rep => {
+                        const repTotal = (Number(rep.price||0) * Number(rep.quantity||1));
+                        return `
+                        <div style="padding:16px 20px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                            <div>
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                                    <strong style="font-size:15px;color:#0f172a;font-weight:900">⚠️ ${rep.quantity}x ${esc(rep.product_name)}</strong>
+                                    <span style="font-size:10.5px;padding:3px 8px;border-radius:6px;font-weight:900;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5">
+                                        📍 ${esc(rep.branch_name || S.branchName)}
+                                    </span>
+                                    ${repTotal > 0 ? `<span style="font-size:11px;font-weight:900;color:#b45309">-${money(repTotal)}</span>` : ''}
+                                </div>
+                                <div style="font-size:12px;color:#64748b;font-weight:700">
+                                    Motivo: <strong style="color:#1e293b">${esc(rep.reason)}</strong>
+                                </div>
+                                <div style="font-size:11px;color:#94a3b8;margin-top:3px">
+                                    Registrado por: <strong>${esc(rep.reported_by)}</strong> • Fecha: <strong>${fdt(rep.created_at)}</strong>
+                                </div>
+                            </div>
+                            <div style="text-align:right">
+                                <span style="padding:5px 10px;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:8px;font-size:11px;font-weight:900">
+                                    ✓ Descontado de Stock
+                                </span>
+                            </div>
+                        </div>`;
+                    }).join("")}
+                </div>
+            </div>`;
+        }
+
+        // PESTAÑA 4: MURO DE AVISOS
+        if (_activeDamageTab === "history_notices") {
+            if (!notices.length) {
+                return `<div style="text-align:center;padding:40px;background:#ffffff;border-radius:16px;border:1.5px dashed #cbd5e1">
+                    <div style="font-size:40px">💬</div>
+                    <h4 style="margin:10px 0 4px;color:#0f172a;font-size:16px;font-weight:900">No hay avisos publicados</h4>
+                    <p style="color:#64748b;font-size:13px;margin:0">Los comunicados o peticiones aparecerán aquí en tiempo real.</p>
+                </div>`;
+            }
+
+            return `
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+                ${notices.map(n => {
+                    const typeBg = n.type === 'important' ? '#fef2f2' : (n.type === 'supply' ? '#eff6ff' : (n.type === 'maintenance' ? '#fefce8' : '#f8fafc'));
+                    const typeBorder = n.type === 'important' ? '#fca5a5' : (n.type === 'supply' ? '#bfdbfe' : (n.type === 'maintenance' ? '#fde047' : '#e2e8f0'));
+                    const typeBadge = n.type === 'important' ? '🚨 URGENTE' : (n.type === 'supply' ? '📦 INSUMOS' : (n.type === 'maintenance' ? '🛠️ FALLA' : 'ℹ️ AVISO'));
+                    const typeBadgeColor = n.type === 'important' ? '#991b1b' : (n.type === 'supply' ? '#1e40af' : (n.type === 'maintenance' ? '#854d0e' : '#334155'));
+
+                    return `
+                    <div style="background:${typeBg};border:2px solid ${typeBorder};border-radius:16px;padding:18px;box-shadow:0 3px 10px rgba(0,0,0,0.06);display:flex;flex-direction:column;justify-content:space-between">
+                        <div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                                <span style="font-size:10.5px;font-weight:900;padding:3px 8px;border-radius:6px;background:#fff;border:1px solid ${typeBorder};color:${typeBadgeColor}">
+                                    ${typeBadge}
+                                </span>
+                                <small style="font-size:11px;color:#64748b;font-weight:700">${fdt(n.created_at)}</small>
+                            </div>
+                            <div style="font-size:14.5px;font-weight:800;color:#0f172a;line-height:1.4;margin-bottom:12px">
+                                "${esc(n.message)}"
+                            </div>
+                        </div>
+                        <div style="border-top:1px dashed #cbd5e1;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#64748b">
+                            <span>📍 <strong>${esc(n.branch_name || 'Sucursal')}</strong> (${esc(n.author || 'Encargada')})</span>
+                            <span style="font-weight:800;color:#1e293b">Para: ${n.target === 'su' ? '👑 Superusuarios' : (n.target === 'next_shift' ? '🔄 Siguiente Turno' : '🌐 Toda la Cadena')}</span>
+                        </div>
+                    </div>`;
+                }).join("")}
+            </div>`;
+        }
+
+        return '';
+    }
+
+    function _attachDamageFormListeners(c) {
+        // Formulario de merma
+        c.querySelectorAll(".btn-quick-qty").forEach(b => b.addEventListener("click", () => {
+            const inp = document.getElementById("quick-damage-qty");
+            if (inp) inp.value = parseInt(b.dataset.q, 10) || 1;
+        }));
+
+        c.querySelectorAll(".btn-quick-reason").forEach(b => b.addEventListener("click", () => {
+            const inp = document.getElementById("quick-damage-reason");
+            if (inp) inp.value = b.dataset.r;
+        }));
+
+        document.getElementById("btn-save-quick-damage")?.addEventListener("click", async () => {
+            const selEl = document.getElementById("quick-damage-pid");
+            const qtyEl = document.getElementById("quick-damage-qty");
+            const reasonEl = document.getElementById("quick-damage-reason");
+
+            const pid = selEl?.value;
+            const opt = selEl?.options[selEl.selectedIndex];
+            const pName = opt?.dataset?.name || "Producto";
+            const price = Number(opt?.dataset?.price || 0);
+            const qty = Math.max(1, parseInt(qtyEl?.value, 10) || 1);
+            const reason = reasonEl?.value?.trim() || "Merma / Daño";
 
             if (!pid) return toast("Selecciona el producto afectado.", "warn");
-            if (!qty || qty < 1) return toast("Ingresa una cantidad válida.", "warn");
-            if (!reason) return toast("Ingresa el motivo del daño o merma.", "warn");
 
-            const prod = S.products.find(p => String(p.id) === String(pid));
-            const prodName = prod ? prod.name : "Producto";
+            const curStk = getStock(pid);
+            if (qty > curStk && curStk > 0) {
+                const ok = await toastConfirm(`⚠️ La cantidad (${qty} uds) supera el stock actual (${curStk} uds).\n¿Deseas registrar la merma de todas formas?`);
+                if (!ok) return;
+            }
 
-            const ok = await toastConfirm(`¿Confirmar registro de merma de ${qty}x ${prodName}?\nSe descontará del inventario de ${S.branchName}.`);
-            if (!ok) return;
+            // 1. Descontar stock local y de sucursal
+            S.inv[pid] = Math.max(0, getStock(pid) - qty);
+            saveBranchInv();
+            alertInv();
 
             const repObj = {
                 id: "damage_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
                 branch_id: S.branchId,
                 branch_name: S.branchName,
+                shift_name: S.shift,
                 product_id: pid,
-                product_name: prodName,
+                product_name: pName,
+                price: price,
                 quantity: qty,
                 reason: reason,
                 reported_by: S.profile?.full_name || S.user?.email || "Encargada",
                 created_at: now(),
-                status: "pending"
+                status: "approved"
             };
 
             const allReps = gr("all_damage_reports", []);
             allReps.unshift(repObj);
             gw("all_damage_reports", allReps);
 
-            // Descontar inventario local
-            const inv = getBranchInventoryMap(S.branchId || S.branchName);
-            inv[pid] = Math.max(0, (inv[pid] || 0) - qty);
-            saveBranchInventoryMap(S.branchId || S.branchName, inv);
-
+            // 2. Transmitir en tiempo real
             if (realtimeChannel) {
                 try {
                     realtimeChannel.send({
@@ -4580,7 +4871,97 @@
                 } catch(e) {}
             }
 
-            toast(`✓ Merma registrada: ${qty}x ${prodName} descontados del inventario.`, "success", 4000);
+            // 3. Persistir en Supabase
+            if (db) {
+                try {
+                    safeQuery(db.from("sales").insert({
+                        branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
+                        company_id: "51bc275d-4e19-4115-be3f-42c0ce3dae5a",
+                        shift_id: "1dabe6df-2ce6-4e3a-97df-b81e179898ab",
+                        user_id: "4710b330-566c-45c7-a92e-b7b6a62355af",
+                        sale_number: "DAMAGE-" + Date.now(),
+                        subtotal: 0,
+                        discount: 0,
+                        tax: 0,
+                        total: 0,
+                        status: "DAMAGE_RECORD",
+                        observations: JSON.stringify({
+                            is_damage_record: true,
+                            report: repObj
+                        })
+                    }), null, 2500).catch(e => console.warn("Cloud damage persist:", e));
+                } catch(e) {}
+            }
+
+            toast(`✓ Merma registrada: ${qty}x '${pName}' descontados del inventario.`, "success", 4500);
+            _activeDamageTab = "history_damages";
+            await loadDamageReports();
+        });
+
+        // Formulario de avisos
+        c.querySelectorAll(".btn-quick-notice").forEach(b => b.addEventListener("click", () => {
+            const txt = document.getElementById("notice-message");
+            if (txt) txt.value = b.dataset.txt;
+        }));
+
+        document.getElementById("btn-save-quick-notice")?.addEventListener("click", async () => {
+            const type = document.getElementById("notice-type")?.value || "general";
+            const target = document.getElementById("notice-target")?.value || "all";
+            const msg = document.getElementById("notice-message")?.value?.trim();
+
+            if (!msg) return toast("Escribe el mensaje del aviso.", "warn");
+
+            const noticeObj = {
+                id: "notice_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
+                branch_id: S.branchId,
+                branch_name: S.branchName,
+                shift_name: S.shift,
+                type: type,
+                target: target,
+                message: msg,
+                author: S.profile?.full_name || S.user?.email || "Encargada",
+                created_at: now()
+            };
+
+            const allNotices = gr("all_notices", []);
+            allNotices.unshift(noticeObj);
+            gw("all_notices", allNotices);
+
+            // 1. Transmitir en tiempo real
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "notice_posted",
+                        payload: { notice: noticeObj }
+                    });
+                } catch(e) {}
+            }
+
+            // 2. Persistir en Supabase
+            if (db) {
+                try {
+                    safeQuery(db.from("sales").insert({
+                        branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
+                        company_id: "51bc275d-4e19-4115-be3f-42c0ce3dae5a",
+                        shift_id: "1dabe6df-2ce6-4e3a-97df-b81e179898ab",
+                        user_id: "4710b330-566c-45c7-a92e-b7b6a62355af",
+                        sale_number: "NOTICE-" + Date.now(),
+                        subtotal: 0,
+                        discount: 0,
+                        tax: 0,
+                        total: 0,
+                        status: "NOTICE_RECORD",
+                        observations: JSON.stringify({
+                            is_notice_record: true,
+                            notice: noticeObj
+                        })
+                    }), null, 2500).catch(e => console.warn("Cloud notice persist:", e));
+                } catch(e) {}
+            }
+
+            toast("✓ Aviso publicado y transmitido a toda la red en tiempo real.", "success", 4000);
+            _activeDamageTab = "history_notices";
             await loadDamageReports();
         });
     }
@@ -5714,6 +6095,20 @@
                         });
                         gw("deleted_product_ids", Array.from(localDel));
                     }
+                    if (payload.damage_reports && Array.isArray(payload.damage_reports)) {
+                        const localReps = gr("all_damage_reports", []);
+                        const repMap = new Map();
+                        localReps.forEach(r => repMap.set(String(r.id), r));
+                        payload.damage_reports.forEach(r => repMap.set(String(r.id), r));
+                        gw("all_damage_reports", Array.from(repMap.values()));
+                    }
+                    if (payload.notices && Array.isArray(payload.notices)) {
+                        const localNotices = gr("all_notices", []);
+                        const notMap = new Map();
+                        localNotices.forEach(n => notMap.set(String(n.id), n));
+                        payload.notices.forEach(n => notMap.set(String(n.id), n));
+                        gw("all_notices", Array.from(notMap.values()));
+                    }
                     await loadProducts();
                     if (S.isSU) {
                         const who = payload.user || payload.branch_name || "Sucursal";
@@ -5802,6 +6197,30 @@
                     safeSilentRefresh();
                 })
                 // 2.1 RECEPCIÓN DIRECTA DE INVENTARIOS EN TIEMPO REAL (MESH BROADCAST)
+                .on("broadcast", { event: "damage_reported" }, async ({ payload }) => {
+                    if (!payload || !payload.report) return;
+                    const rep = payload.report;
+                    const allReps = gr("all_damage_reports", []);
+                    if (!allReps.some(r => String(r.id) === String(rep.id))) {
+                        allReps.unshift(rep);
+                        gw("all_damage_reports", allReps);
+                    }
+                    if (S.isSU) {
+                        toast(`⚠️ Merma en ${rep.branch_name || 'Sucursal'}: ${rep.quantity}x '${rep.product_name}' (${rep.reason || 'Daño'}) por ${rep.reported_by || 'Encargada'}`, "warn", 6000);
+                    }
+                    if (S.view === "damage-reports") await loadDamageReports(true);
+                })
+                .on("broadcast", { event: "notice_posted" }, async ({ payload }) => {
+                    if (!payload || !payload.notice) return;
+                    const not = payload.notice;
+                    const allNotices = gr("all_notices", []);
+                    if (!allNotices.some(n => String(n.id) === String(not.id))) {
+                        allNotices.unshift(not);
+                        gw("all_notices", allNotices);
+                    }
+                    toast(`📢 Aviso de ${not.branch_name || 'Sucursal'} (${not.author || 'Encargada'}): "${not.message}"`, "info", 6500);
+                    if (S.view === "damage-reports") await loadDamageReports(true);
+                })
                 .on("broadcast", { event: "inventory_withdrawn" }, async ({ payload }) => {
                     if (!payload) return;
                     if (S.isSU) {
@@ -5851,7 +6270,9 @@
                                     shifts: (myShifts && myShifts.length) ? myShifts : allGShifts,
                                     inv: S.inv,
                                     custom_products: gr("custom_products", []),
-                                    deleted_product_ids: gr("deleted_product_ids", [])
+                                    deleted_product_ids: gr("deleted_product_ids", []),
+                                    damage_reports: gr("all_damage_reports", []),
+                                    notices: gr("all_notices", [])
                                 }
                             });
                         } catch(e) {}
