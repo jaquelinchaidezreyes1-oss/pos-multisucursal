@@ -122,6 +122,30 @@
         const day = String(d.getDate()).padStart(2, "0");
         return `${y}-${m}-${day}`;
     };
+    /* ── ALMACENAMIENTO LOCAL & GLOBAL ── */
+    const lr = (k, fallback = null) => {
+        try {
+            const item = localStorage.getItem("lf_" + k);
+            return item ? JSON.parse(item) : fallback;
+        } catch(e) { return fallback; }
+    };
+    const lw = (k, v) => {
+        try {
+            localStorage.setItem("lf_" + k, JSON.stringify(v));
+        } catch(e) {}
+    };
+    const gr = (k, fallback = null) => {
+        try {
+            const item = localStorage.getItem("lf_" + k);
+            return item ? JSON.parse(item) : fallback;
+        } catch(e) { return fallback; }
+    };
+    const gw = (k, v) => {
+        try {
+            localStorage.setItem("lf_" + k, JSON.stringify(v));
+        } catch(e) {}
+    };
+
 
     /* ── CLASIFICADOR OFICIAL DE TURNOS (ENCARGADOS 1,3,5,7,9,11 = MATUTINO / 2,4,6,8,10,12 = VESPERTINO) ── */
     function getShiftCategory(s) {
@@ -894,12 +918,58 @@
 
     /* ── CATÁLOGO OFICIAL LA FUENTE & INSUMOS/DESECHABLES DE BODEGA ── */
     const DEFAULT_PRODUCTS = [
-        // Productos terminados de venta
+        // ── HELADOS & NIEVES ──
         { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25, branch_name: "General", initial_stock: 99, is_composite: true, components: [{supply_id: "sup_cono_sencillo", supply_name: "Cono Sencillo (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
         { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_cono_dv", supply_name: "Cono Doble Vainilla (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
         { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_cono_dch", supply_name: "Cono Doble Chocolate (Galleta)", qty: 1}, {supply_id: "sup_servilletas", supply_name: "Servilletas", qty: 1}] },
+        { product_id: "p_nieve_vaso12", product_code: "NV-12", product_name: "Nieve Vaso #12", category: "helados", price: 45, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_vaso_12", supply_name: "Vaso #12", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_nieve_vaso14", product_code: "NV-14", product_name: "Nieve Vaso #14", category: "helados", price: 55, branch_name: "General", initial_stock: 80, is_composite: true, components: [{supply_id: "sup_vaso_14", supply_name: "Vaso #14", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_nieve_half", product_code: "NV-1/2L", product_name: "Nieve 1/2 Litro", category: "helados", price: 75, branch_name: "General", initial_stock: 60, is_composite: true, components: [{supply_id: "sup_vaso_half", supply_name: "Vaso 1/2 Lt", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 2}] },
+        { product_id: "p_nieve_1l", product_code: "NV-1L", product_name: "Nieve 1 Litro", category: "helados", price: 140, branch_name: "General", initial_stock: 50, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}, {supply_id: "sup_tapa_1lt", supply_name: "Tapas Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_banana_split", product_code: "PREP-BS", product_name: "Banana Split", category: "helados", price: 65, branch_name: "General", initial_stock: 40, is_composite: true, components: [{supply_id: "sup_charola_banana", supply_name: "Charola para Banana Split", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
 
-        // Insumos y Desechables de Bodega (Paquetes / Bolsas y Unidades de referencia)
+        // ── PALETAS DE LECHE ──
+        { product_id: "p_paleta_leche", product_code: "PAL-LECHE", product_name: "Paleta de Leche", category: "paletas", price: 20, branch_name: "General", initial_stock: 120 },
+        { product_id: "p_pal_leche_vainilla", product_code: "PAL-VAIN", product_name: "Paleta de Vainilla", category: "paletas", price: 20, branch_name: "General", initial_stock: 90 },
+        { product_id: "p_pal_leche_choco", product_code: "PAL-CHOCO", product_name: "Paleta de Chocolate", category: "paletas", price: 20, branch_name: "General", initial_stock: 90 },
+        { product_id: "p_pal_leche_fresa", product_code: "PAL-FRESA-L", product_name: "Paleta de Fresa de Leche", category: "paletas", price: 20, branch_name: "General", initial_stock: 90 },
+        { product_id: "p_pal_leche_nuez", product_code: "PAL-NUEZ", product_name: "Paleta de Nuez", category: "paletas", price: 20, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_pal_leche_oreo", product_code: "PAL-OREO", product_name: "Paleta de Oreo", category: "paletas", price: 20, branch_name: "General", initial_stock: 85 },
+        { product_id: "p_pal_leche_zarza", product_code: "PAL-ZARZA", product_name: "Paleta de Zarzamora con Queso", category: "paletas", price: 20, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_pal_leche_pistache", product_code: "PAL-PISTACHE", product_name: "Paleta de Pistache", category: "paletas", price: 25, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_pal_especial", product_code: "PAL-ESP", product_name: "Paleta Especial Rellena", category: "paletas", price: 30, branch_name: "General", initial_stock: 50 },
+
+        // ── PALETAS DE AGUA ──
+        { product_id: "p_paleta_agua", product_code: "PAL-AGUA", product_name: "Paleta de Agua", category: "paletas", price: 18, branch_name: "General", initial_stock: 150 },
+        { product_id: "p_pal_agua_limon", product_code: "PAL-LIMON", product_name: "Paleta de Limón", category: "paletas", price: 18, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_pal_agua_mango", product_code: "PAL-MANGO", product_name: "Paleta de Mango", category: "paletas", price: 18, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_pal_agua_tamarindo", product_code: "PAL-TAM", product_name: "Paleta de Tamarindo", category: "paletas", price: 18, branch_name: "General", initial_stock: 90 },
+        { product_id: "p_pal_agua_fresa", product_code: "PAL-FRESA-A", product_name: "Paleta de Fresa de Agua", category: "paletas", price: 18, branch_name: "General", initial_stock: 95 },
+        { product_id: "p_pal_agua_pina", product_code: "PAL-PINA", product_name: "Paleta de Piña", category: "paletas", price: 18, branch_name: "General", initial_stock: 90 },
+        { product_id: "p_pal_agua_sandia", product_code: "PAL-SANDIA", product_name: "Paleta de Sandía", category: "paletas", price: 18, branch_name: "General", initial_stock: 85 },
+        { product_id: "p_pal_agua_maracuya", product_code: "PAL-MARACUYA", product_name: "Paleta de Maracuyá", category: "paletas", price: 18, branch_name: "General", initial_stock: 80 },
+
+        // ── AGUAS FRESCAS ──
+        { product_id: "sup_agua_1l", product_code: "AG-1L", product_name: "Agua 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 120, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt (Transparente)", qty: 1}, {supply_id: "sup_tapa_1lt", supply_name: "Tapas Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_agua_half", product_code: "AG-1/2L", product_name: "Agua 1/2 Lt", category: "aguas", price: 25, branch_name: "General", initial_stock: 100, is_composite: true, components: [{supply_id: "sup_vaso_half", supply_name: "Vaso 1/2 Lt", qty: 1}] },
+        { product_id: "p_agua_horchata", product_code: "AG-HORCH", product_name: "Agua de Horchata 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 80, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_agua_jamaica", product_code: "AG-JAM", product_name: "Agua de Jamaica 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 80, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_agua_cebada", product_code: "AG-CEB", product_name: "Agua de Cebada 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 75, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
+        { product_id: "p_agua_frutas", product_code: "AG-FRUT", product_name: "Agua de Frutas 1 Lt", category: "aguas", price: 35, branch_name: "General", initial_stock: 75, is_composite: true, components: [{supply_id: "sup_vaso_1lt", supply_name: "Vaso 1 Lt", qty: 1}] },
+
+        // ── PREPARADOS & DULCES ──
+        { product_id: "p_fresas_crema", product_code: "PREP-FRESA", product_name: "Fresas con Crema", category: "preparados", price: 50, branch_name: "General", initial_stock: 50, is_composite: true, components: [{supply_id: "sup_tapa_fresas", supply_name: "Tapas para Fresas", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_esquites", product_code: "PREP-ESQ", product_name: "Esquites Preparados", category: "preparados", price: 40, branch_name: "General", initial_stock: 45, is_composite: true, components: [{supply_id: "sup_vaso_12", supply_name: "Vaso #12", qty: 1}, {supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_nachos", product_code: "PREP-NACHO", product_name: "Nachos con Queso", category: "preparados", price: 45, branch_name: "General", initial_stock: 40, is_composite: true, components: [{supply_id: "sup_charola_banana", supply_name: "Charola para Banana Split", qty: 1}] },
+        { product_id: "p_tostilocos", product_code: "PREP-TOSTI", product_name: "Tostilocos Preparados", category: "preparados", price: 45, branch_name: "General", initial_stock: 40, is_composite: true, components: [{supply_id: "sup_cucharas", supply_name: "Cucharas para Nieve", qty: 1}] },
+        { product_id: "p_chicle", product_code: "CHIC", product_name: "Chicles & Dulces", category: "dulces", price: 10, branch_name: "General", initial_stock: 200 },
+
+        // ── INSUMOS Y DESECHABLES DE BODEGA ──
+        { product_id: "sup_cono_sencillo", product_code: "INS-CS", product_name: "Cono Sencillo (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
+        { product_id: "sup_cono_dv", product_code: "INS-CDV", product_name: "Cono Doble Vainilla (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
+        { product_id: "sup_cono_dch", product_code: "INS-CDCH", product_name: "Cono Doble Chocolate (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
+        { product_id: "sup_cucharas", product_code: "CUCHARA", product_name: "Cucharas para Nieve", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 250, branch_name: "General" },
+        { product_id: "sup_servilletas", product_code: "SERV-PAQ", product_name: "Servilletas", category: "desechables", price: 0, is_supply: true, units_per_package: 250, initial_stock: 2500, branch_name: "General" },
         { product_id: "sup_vaso_1lt", product_code: "VASO-1L", product_name: "Vaso 1 Lt (Transparente)", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 125, branch_name: "General" },
         { product_id: "sup_tapa_1lt", product_code: "TAPA-1L", product_name: "Tapas Vaso 1 Lt", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 550, branch_name: "General" },
         { product_id: "sup_vaso_20", product_code: "VASO-20", product_name: "Vasos #20", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 500, branch_name: "General" },
@@ -913,17 +983,7 @@
         { product_id: "sup_vaso_4", product_code: "VASO-4", product_name: "Vaso #4", category: "desechables", price: 0, is_supply: true, units_per_package: 25, initial_stock: 25, branch_name: "General" },
         { product_id: "sup_charola_banana", product_code: "CHAR-BANANA", product_name: "Charola para Banana Split", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 83, branch_name: "General" },
         { product_id: "sup_tapa_unicel", product_code: "TAPA-UNI", product_name: "Tapas Vaso Unicel", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 700, branch_name: "General" },
-        { product_id: "sup_cucharas", product_code: "CUCHARA", product_name: "Cucharas para Nieve", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 250, branch_name: "General" },
-        { product_id: "sup_tenedores", product_code: "TENEDOR", product_name: "Tenedores Desechables", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 200, branch_name: "General" },
-        { product_id: "sup_servilletas", product_code: "SERVILLETAS", product_name: "Servilletas", category: "desechables", price: 0, is_supply: true, units_per_package: 100, initial_stock: 500, branch_name: "General" },
-        { product_id: "sup_sabritas", product_code: "BOT-SAB", product_name: "Sabritas / Barcel (Botana)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 159, branch_name: "General" },
-        { product_id: "sup_tostitos", product_code: "TOST-VERDE", product_name: "Tostitos Verdes", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 7, branch_name: "General" },
-        { product_id: "sup_doritos", product_code: "BOT-DOR", product_name: "Doritos", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 27, branch_name: "General" },
-        { product_id: "sup_cheetos", product_code: "BOT-CHE", product_name: "Cheetos", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 35, branch_name: "General" },
-        { product_id: "sup_cono_sencillo", product_code: "CONO-SENC", product_name: "Cono Sencillo (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 99, branch_name: "General" },
-        { product_id: "sup_cono_dv", product_code: "CONO-DV", product_name: "Cono Doble Vainilla (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 70, branch_name: "General" },
-        { product_id: "sup_cono_dch", product_code: "CONO-DCH", product_name: "Cono Doble Chocolate (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 23, branch_name: "General" },
-        { product_id: "sup_cono_trip", product_code: "CONO-TRIP", product_name: "Cono Triple (Galleta)", category: "desechables", price: 0, is_supply: true, units_per_package: 1, initial_stock: 63, branch_name: "General" }
+        { product_id: "sup_tenedores", product_code: "TENEDOR", product_name: "Tenedores Desechables", category: "desechables", price: 0, is_supply: true, units_per_package: 50, initial_stock: 200, branch_name: "General" }
     ];
 
     /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
@@ -5276,26 +5336,6 @@
             if (window.changeView) window.changeView("pos");
             return;
         }
-        if (!silent && !c.children.length) {
-            c.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;background:var(--wine-50);border:1.5px solid var(--wine-200);padding:14px 20px;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
-            <div style="display:flex;align-items:center;gap:12px">
-                <span style="font-size:24px">📅</span>
-                <div>
-                    <strong style="color:var(--wine-900);font-size:15px;display:block">AUDITORÍA Y VENTAS EN TIEMPO REAL DIRECTIVAS</strong>
-                    <small style="color:var(--wine-700)">Mostrando sucursales para: <strong style="color:var(--wine-900)">${selectedDate === todayStr ? '🟢 HOY (' + selectedDate + ')' : (selectedDate === 'all' ? '🌐 TODAS LAS FECHAS' : '📆 ' + selectedDate)}</strong></small>
-                </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-                <label style="font-size:12px;font-weight:700;color:var(--wine-800)">Filtrar Fecha:</label>
-                <select id="sel-private-access-date" style="padding:8px 14px;border:1.5px solid var(--wine-400);border-radius:8px;font-weight:700;color:var(--wine-900);background:#fff;cursor:pointer">
-                    <option value="${todayStr}" ${selectedDate === todayStr ? 'selected' : ''}>🟢 Hoy (${todayStr})</option>
-                    ${Array.from(datesMap.keys()).filter(d => d !== todayStr).sort().reverse().map(d => `<option value="${d}" ${selectedDate === d ? 'selected' : ''}>📆 ${d}</option>`).join('')}
-                    <option value="all" ${selectedDate === 'all' ? 'selected' : ''}>🌐 Todas las fechas</option>
-                </select>
-            </div>
-        </div><div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Sincronizando las 6 sucursales en tiempo real con Contabilidad…</p></div>`;
-        }
 
         const consolidatedSales = await getConsolidatedSalesForChain();
         const todayStr = toDateKey();
@@ -5365,46 +5405,85 @@
         const liveRecentSales = (todaySales.length ? todaySales : consolidatedSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED")).slice(0, 20);
 
         c.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;background:var(--wine-50);border:1.5px solid var(--wine-200);padding:14px 20px;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+            <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:24px">📅</span>
+                <div>
+                    <strong style="color:var(--wine-900);font-size:15px;display:block">AUDITORÍA Y VENTAS EN TIEMPO REAL DIRECTIVAS</strong>
+                    <small style="color:var(--wine-700)">Mostrando sucursales para: <strong style="color:var(--wine-900)">${selectedDate === todayStr ? '🟢 HOY (' + selectedDate + ')' : (selectedDate === 'all' ? '🌐 TODAS LAS FECHAS' : '📆 ' + selectedDate)}</strong></small>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+                <label style="font-size:12px;font-weight:700;color:var(--wine-800)">Filtrar Fecha:</label>
+                <select id="sel-private-access-date" style="padding:8px 14px;border:1.5px solid var(--wine-400);border-radius:8px;font-weight:700;color:var(--wine-900);background:#fff;cursor:pointer">
+                    <option value="${todayStr}" ${selectedDate === todayStr ? 'selected' : ''}>🟢 Hoy (${todayStr})</option>
+                    ${Array.from(datesMap.keys()).filter(d => d !== todayStr).sort().reverse().map(d => `<option value="${d}" ${selectedDate === d ? 'selected' : ''}>📆 ${d}</option>`).join('')}
+                    <option value="all" ${selectedDate === 'all' ? 'selected' : ''}>🌐 Todas las fechas</option>
+                </select>
+            </div>
+        </div>
+
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
             <div class="dashboard-card" style="background:linear-gradient(135deg,#230408,#5c121b);color:#fff;border-color:var(--gold-400);padding:22px;border-radius:18px">
                 <span style="color:#fef08a;font-size:10px;font-weight:900;letter-spacing:1px">VENTA TOTAL CONSOLIDADA HOY</span>
                 <div style="font-size:30px;font-weight:900;margin:6px 0;color:#ffffff">${money(chainTotal)}</div>
-                <small style="color:#fde68a">6 Sucursales en Vivo • Conectado a Contabilidad</small>
+                <small style="color:#fde68a">6 Sucursales en Vivo • ${todaySales.length} Tickets</small>
             </div>
-            <div class="dashboard-card" style="padding:22px;border-radius:18px">
-                <span class="section-kicker">TICKETS COBRADOS HOY</span>
-                <div style="font-size:30px;font-weight:900;color:#ffffff;margin:6px 0">${todaySales.length}</div>
-                <small style="color:#fcebd2">💵 Efectivo: ${money(chainCashTotal)} • 💳 Tarjeta: ${money(chainCardTotal)}</small>
+            <div class="dashboard-card" style="padding:22px;border-radius:18px;border-left:5px solid #16a34a">
+                <span style="color:var(--text-muted);font-size:10px;font-weight:900">💵 TOTAL EFECTIVO RED</span>
+                <div style="font-size:26px;font-weight:900;color:#15803d;margin:6px 0">${money(chainCashTotal)}</div>
+                <small style="color:var(--text-muted)">Dinero líquido en cajas</small>
             </div>
-            <div class="dashboard-card" style="padding:22px;border-radius:18px">
-                <span class="section-kicker">TURNOS HOY (RED COMPLETA)</span>
-                <div style="font-size:18px;font-weight:900;color:#ffffff;margin:6px 0">
-                    🌅 ${money(chainMatTotal)} <span style="font-size:12px;font-weight:normal;color:#fcebd2">(Matutino)</span>
+            <div class="dashboard-card" style="padding:22px;border-radius:18px;border-left:5px solid #2563eb">
+                <span style="color:var(--text-muted);font-size:10px;font-weight:900">💳 TOTAL TARJETA RED</span>
+                <div style="font-size:26px;font-weight:900;color:#1d4ed8;margin:6px 0">${money(chainCardTotal)}</div>
+                <small style="color:var(--text-muted)">Terminales bancarias</small>
+            </div>
+            <div class="dashboard-card" style="padding:22px;border-radius:18px;border-left:5px solid #d97706">
+                <span style="color:var(--text-muted);font-size:10px;font-weight:900">🌅 MATUTINO / 🌇 VESPERTINO</span>
+                <div style="font-size:15px;font-weight:800;color:var(--wine-900);margin:6px 0">
+                    🌅 ${money(chainMatTotal)} <span style="color:var(--text-muted);font-size:12px">|</span> 🌇 ${money(chainVesTotal)}
                 </div>
-                <div style="font-size:18px;font-weight:900;color:#ffffff">
-                    🌇 ${money(chainVesTotal)} <span style="font-size:12px;font-weight:normal;color:#fcebd2">(Vespertino)</span>
-                </div>
+                <small style="color:var(--text-muted)">Desglose por turnos de red</small>
             </div>
         </div>
 
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-            <h3 style="margin:0;color:#ffffff;font-weight:900">📍 Monitor de Red en Vivo (6 Sucursales)</h3>
-            <div style="display:flex;gap:8px">
-                <button type="button" id="btn-close-day" style="padding:9px 18px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:10px;font-weight:900;cursor:pointer">
-                    🌙 Finalizar Día & Archivar en Contabilidad</button>
-                <button type="button" id="btn-ref-priv" style="padding:9px 18px;background:#fff;border:1.5px solid var(--gold-500);border-radius:10px;font-weight:800;cursor:pointer">
-                    🔄 Actualizar</button>
+        <!-- ══ SECCIÓN: RESUMEN DIARIO DE PRODUCTOS VENDIDOS & PRODUCCIÓN ══ -->
+        <div class="card" style="margin-bottom:24px;border:1.5px solid var(--gold-400);border-radius:16px;box-shadow:0 4px 15px rgba(0,0,0,0.05);overflow:hidden">
+            <div style="background:linear-gradient(135deg,var(--wine-900),var(--wine-700));color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span style="font-size:22px">🍨</span>
+                    <div>
+                        <h3 style="margin:0;font-size:16px;font-weight:900;color:#fff">Resumen Diario de Productos Vendidos (Producción & Auditoría)</h3>
+                        <p style="margin:2px 0 0;font-size:11px;color:#fef08a">Desglose de unidades vendidas por turno (Matutino vs Vespertino) e inventario restante</p>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <label style="font-size:11px;font-weight:800;color:#fff">Ver Sucursal:</label>
+                    <select id="sel-summary-branch" style="background:#fff;color:var(--wine-900);font-weight:800;font-size:12px;border-radius:8px;padding:6px 12px;border:none;cursor:pointer">
+                        <option value="all" ${(!S.prodSummaryBranch || S.prodSummaryBranch === "all") ? "selected" : ""}>🌐 Todas las Sucursales</option>
+                        ${S.branches.map(b => `<option value="${b.id}" ${S.prodSummaryBranch === b.id ? "selected" : ""}>📍 ${esc(b.name)}</option>`).join("")}
+                    </select>
+                </div>
+            </div>
+            <div id="product-summary-table-container" style="padding:16px;overflow-x:auto">
+                <!-- Se llena dinámicamente con renderProductSummaryTable -->
             </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:18px;margin-bottom:28px">
-        ${summary.map(b => `
-            <div style="background:linear-gradient(145deg,#fffef9,#fceecc);border:1.5px solid rgba(188,132,10,.38);border-radius:18px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.15)">
-                <div>
+        <h3 style="font-size:18px;font-weight:900;color:var(--wine-900);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+            <span>📍</span> Monitor de Red en Vivo (6 Sucursales)
+        </h3>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:28px">
+            ${summary.map(b => `
+                <div class="dashboard-card" style="border-radius:16px;border:1.5px solid #e5e7eb;padding:18px;position:relative">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                        <strong style="font-size:16px;color:var(--wine-900)">🍦 ${esc(b.name)}</strong>
-                        <span style="font-size:10px;padding:4px 10px;border-radius:20px;font-weight:bold;background:#dcfce7;color:#15803d">
-                            🟢 EN VIVO</span>
+                        <h4 style="margin:0;font-size:16px;font-weight:900;color:var(--wine-900);display:flex;align-items:center;gap:6px">
+                            <span>🍦</span> ${esc(b.name)}
+                        </h4>
+                        <span style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:20px;${b.sales > 0 ? 'background:#dcfce7;color:#15803d' : 'background:#fef3c7;color:#92400e'}">
+                            ${b.sales > 0 ? '🟢 EN VIVO' : '🟡 LISTO'}</span>
                     </div>
                     <div style="background:#fffcf0;border:1px solid #f2e6b5;border-radius:10px;padding:12px;margin-bottom:12px">
                         <div style="display:flex;justify-content:space-between;margin-bottom:6px">
@@ -5419,140 +5498,37 @@
                             <div>💵 Efectivo: <strong style="color:#15803d">${money(b.cashTotal)}</strong></div>
                             <div>💳 Tarjeta: <strong style="color:#1d4ed8">${money(b.cardTotal)}</strong></div>
                         </div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:4px;font-size:10px;color:var(--text-muted)">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:6px;border-top:1px dashed #e5e7eb;font-size:11px">
                             <div>🌅 Matutino: <strong style="color:var(--wine-800)">${money(b.matTotal)}</strong></div>
                             <div>🌇 Vespertino: <strong style="color:var(--wine-800)">${money(b.vesTotal)}</strong></div>
                         </div>
                     </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+                        <button class="btn btn-sm btn-outline btn-view-branch-sales" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11px;font-weight:800;padding:8px">
+                            📋 Ver Ventas
+                        </button>
+                        <button class="btn btn-sm btn-outline btn-view-branch-cuts" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11px;font-weight:800;padding:8px;background:#fdf2f2;border-color:#fca5a5;color:#991b1b">
+                            ✂ Ver Cortes
+                        </button>
+                    </div>
+                    <button class="btn btn-sm btn-primary btn-operate-branch" data-bid="${b.id}" data-bname="${esc(b.name)}" style="width:100%;font-size:11px;font-weight:900;padding:8px">
+                        Operar esta Sucursal →
+                    </button>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                    <button type="button" class="btn-pv-sales" data-branch="${esc(b.id)}"
-                        style="padding:9px;background:#fff3c4;color:#713f12;border:1px solid var(--gold-600);border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">
-                        🪙 Ver Ventas</button>
-                    <button type="button" class="btn-pv-cuts" data-branch="${esc(b.id)}"
-                        style="padding:9px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">
-                        ✂️ Ver Cortes</button>
-                    <button type="button" class="btn-pv-pos" data-branch="${esc(b.id)}"
-                        style="grid-column:1/-1;padding:10px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer">
-                        Operar esta Sucursal →</button>
-                </div>
-            </div>`).join("")}
-        </div>
-
-        <!-- MONITOR DE TRANSACCIONES EN VIVO (ÚLTIMAS VENTAS REGISTRADAS) -->
-        <div class="dashboard-card" style="padding:22px;border-radius:18px;background:#fff;border:1.5px solid rgba(188,132,10,.35);box-shadow:0 4px 14px rgba(0,0,0,0.15)">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-                <div>
-                    <h3 style="margin:0;color:var(--wine-900);font-weight:900;display:flex;align-items:center;gap:8px">
-                        <span>⚡</span> Flujo de Ventas en Vivo (Toda la Cadena)
-                    </h3>
-                    <small style="color:var(--text-muted);font-weight:600">Transacciones registradas en tiempo real en las 6 sucursales</small>
-                </div>
-                <span style="font-size:11px;font-weight:800;color:var(--emerald);background:#dcfce7;padding:4px 12px;border-radius:12px">
-                    ● Conexión Automática Activa
-                </span>
-            </div>
-            ${liveRecentSales.length ? `
-            <div style="overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;font-size:12px">
-                    <thead>
-                        <tr style="background:#fffdf2;border-bottom:2px solid #e5e7eb;text-align:left;color:var(--wine-900)">
-                            <th style="padding:10px 8px;font-weight:900">Hora</th>
-                            <th style="padding:10px 8px;font-weight:900">Sucursal</th>
-                            <th style="padding:10px 8px;font-weight:900">Encargada / Turno</th>
-                            <th style="padding:10px 8px;font-weight:900">Pago</th>
-                            <th style="padding:10px 8px;font-weight:900">Ticket</th>
-                            <th style="padding:10px 8px;font-weight:900;text-align:right">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${liveRecentSales.map(s => {
-                            const isCard = (s.payment_method === "card");
-                            const timeStr = s.created_at ? new Date(s.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '--:--';
-                            return `<tr style="border-bottom:1px solid #f3f4f6">
-                                <td style="padding:9px 8px;color:var(--text-muted);font-weight:700">${timeStr}</td>
-                                <td style="padding:9px 8px;font-weight:800;color:var(--wine-900)">📍 ${esc(s.branch_name || "Sucursal")}</td>
-                                <td style="padding:9px 8px;color:#4b5563">${esc(s.cashier_name || "Encargada")} <small style="color:var(--text-muted)">(${esc(s.shift_name || "Turno")})</small></td>
-                                <td style="padding:9px 8px">${isCard ? '<span style="color:#1d4ed8;font-weight:800;background:#eff6ff;padding:2px 6px;border-radius:4px">💳 Tarjeta</span>' : '<span style="color:#15803d;font-weight:800;background:#f0fdf4;padding:2px 6px;border-radius:4px">💵 Efectivo</span>'}</td>
-                                <td style="padding:9px 8px;font-weight:700;color:var(--text-muted)">#${esc(s.sale_number || s.id)}</td>
-                                <td style="padding:9px 8px;font-weight:900;color:var(--wine-700);text-align:right;font-size:13px">${money(s.total)}</td>
-                            </tr>`;
-                        }).join("")}
-                    </tbody>
-                </table>
-            </div>` : `
-            <div style="padding:24px;text-align:center;color:var(--text-muted)">
-                <p style="margin:0">Aún no hay ventas registradas el día de hoy.</p>
-            </div>`}
+            `).join("")}
         </div>`;
 
-        document.getElementById("btn-ref-priv")?.addEventListener("click", async () => {
-            await loadPrivateAccess();
-            toast("Monitor en vivo y sincronización con contabilidad actualizados.", "info");
-        });
+        // Renderizar tabla de resumen de productos
+        renderProductSummaryTable(todaySales);
 
-        document.getElementById("btn-close-day")?.addEventListener("click", async () => {
-            const ok = await toastConfirm("¿Deseas finalizar el día de hoy?\nSe generará el cierre contable oficial por sucursal y turnos (Matutino y Vespertino) y se archivará en la sección de Contabilidad.");
-            if (!ok) return;
-
-            const dateKey = todayStr;
-            const history = gr("accounting_history", []);
-
-            const dailyArchive = {
-                date: dateKey,
-                created_at: now(),
-                total_chain: chainTotal,
-                total_tickets: todaySales.length,
-                branches: summary.map(b => {
-                    const bSales = todaySales.filter(s => matchesBranch(s, b));
-                    const matSales = bSales.filter(s => getShiftCategory(s) === "matutino");
-                    const vesSales = bSales.filter(s => getShiftCategory(s) === "vespertino");
-                    return {
-                        branch_name: b.name,
-                        total_day: b.sales,
-                        matutino_total: matSales.reduce((a,s)=>a+Number(s.total||0), 0),
-                        matutino_tickets: matSales.length,
-                        vespertino_total: vesSales.reduce((a,s)=>a+Number(s.total||0), 0),
-                        vespertino_tickets: vesSales.length
-                    };
-                })
-            };
-
-            // Evitar duplicados del mismo día reemplazando si ya existe
-            const existingIdx = history.findIndex(h => h.date === dateKey);
-            if (existingIdx >= 0) {
-                history[existingIdx] = dailyArchive;
-            } else {
-                history.unshift(dailyArchive);
-            }
-            gw("accounting_history", history);
-
-            // Guardar registro de cierre de jornada para contabilidad
-            const closedDates = gr("closed_business_days", []);
-            if (!closedDates.includes(dateKey)) {
-                closedDates.push(dateKey);
-                gw("closed_business_days", closedDates);
-            }
-
-            toast("✓ Día finalizado con éxito y archivado en Contabilidad.", "success", 5000);
-            window.changeView("accounting");
-        });
-
-        c.querySelectorAll(".btn-pv-sales").forEach(btn => btn.addEventListener("click", async () => { 
-            S.salesFilterBranchId = btn.dataset.branch;
-            await changeBranch(btn.dataset.branch); 
-            window.changeView("sales"); 
-        }));
-        c.querySelectorAll(".btn-pv-cuts").forEach(btn =>  btn.addEventListener("click", async () => { 
-            S.cutsFilterBranchId = btn.dataset.branch;
-            await changeBranch(btn.dataset.branch); 
-            window.changeView("cuts"); 
-        }));
-        c.querySelectorAll(".btn-pv-pos").forEach(btn =>   btn.addEventListener("click", async () => { 
-            await changeBranch(btn.dataset.branch); 
-            window.changeView("pos"); 
-        }));
-    
+        // Listeners
+        const selBranch = $("#sel-summary-branch");
+        if (selBranch) {
+            selBranch.addEventListener("change", (e) => {
+                S.prodSummaryBranch = e.target.value;
+                renderProductSummaryTable(todaySales);
+            });
+        }
 
         const selDate = $("#sel-private-access-date");
         if (selDate) {
@@ -5561,6 +5537,164 @@
                 loadPrivateAccess();
             });
         }
+
+        c.querySelectorAll(".btn-operate-branch").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const bId = btn.dataset.bid;
+                const bName = btn.dataset.bname;
+                if (bId && bName) {
+                    S.branchId = bId;
+                    S.branchName = bName;
+                    renderSel();
+                    if (window.changeView) window.changeView("pos");
+                }
+            });
+        });
+
+        c.querySelectorAll(".btn-view-branch-sales").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const bId = btn.dataset.bid;
+                const bName = btn.dataset.bname;
+                if (bId && bName) {
+                    S.branchId = bId;
+                    S.branchName = bName;
+                    S.salesFilterBranchId = bId;
+                    renderSel();
+                    if (window.changeView) window.changeView("sales");
+                }
+            });
+        });
+
+        c.querySelectorAll(".btn-view-branch-cuts").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const bId = btn.dataset.bid;
+                const bName = btn.dataset.bname;
+                if (bId && bName) {
+                    S.branchId = bId;
+                    S.branchName = bName;
+                    S.cutBranchFilter = bId;
+                    renderSel();
+                    if (window.changeView) window.changeView("cuts");
+                }
+            });
+        });
+    }
+
+    // Función auxiliar para renderizar tabla de resumen diario de productos vendidos
+    function renderProductSummaryTable(todaySales) {
+        const c = $("#product-summary-table-container");
+        if (!c) return;
+
+        const targetBranchId = S.prodSummaryBranch || "all";
+        const branchSales = (targetBranchId === "all")
+            ? todaySales
+            : todaySales.filter(s => matchesBranch(s, { id: targetBranchId, name: S.branches.find(b=>String(b.id)===String(targetBranchId))?.name || "" }));
+
+        const productMap = new Map();
+
+        branchSales.forEach(s => {
+            const shiftCat = getShiftCategory(s); // 'matutino' o 'vespertino'
+            const items = s.items || [];
+            items.forEach(item => {
+                const pid = String(item.product_id || item.product_name);
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        id: pid,
+                        name: item.product_name || "Producto",
+                        code: item.product_code || "",
+                        category: item.category || "General",
+                        price: Number(item.price || 0),
+                        matQty: 0,
+                        vesQty: 0,
+                        totalQty: 0,
+                        totalMoney: 0
+                    });
+                }
+                const pObj = productMap.get(pid);
+                const q = Number(item.quantity || 1);
+                const sub = Number(item.subtotal != null ? item.subtotal : (item.price * q));
+                if (shiftCat === "matutino") pObj.matQty += q;
+                else pObj.vesQty += q;
+                pObj.totalQty += q;
+                pObj.totalMoney += sub;
+            });
+        });
+
+        const prodList = Array.from(productMap.values()).sort((a,b) => b.totalQty - a.totalQty);
+
+        if (!prodList.length) {
+            c.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-muted)">
+                <div style="font-size:32px">📦</div>
+                <p style="margin-top:6px;font-size:13px">Aún no se registran productos vendidos en los turnos seleccionados.</p>
+            </div>`;
+            return;
+        }
+
+        const totalPieces = prodList.reduce((acc, p) => acc + p.totalQty, 0);
+        const totalMoney = prodList.reduce((acc, p) => acc + p.totalMoney, 0);
+        const totalMat = prodList.reduce((acc, p) => acc + p.matQty, 0);
+        const totalVes = prodList.reduce((acc, p) => acc + p.vesQty, 0);
+
+        c.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+            <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:10px 14px">
+                <span style="font-size:10px;font-weight:900;color:#9d174d">🍨 TOTAL UNIDADES VENDIDAS</span>
+                <div style="font-size:22px;font-weight:900;color:#831843">${totalPieces} <small style="font-size:12px">piezas</small></div>
+            </div>
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px">
+                <span style="font-size:10px;font-weight:900;color:#92400e">🌅 TURNO MATUTINO</span>
+                <div style="font-size:22px;font-weight:900;color:#78350f">${totalMat} <small style="font-size:12px">piezas</small></div>
+            </div>
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px">
+                <span style="font-size:10px;font-weight:900;color:#1e40af">🌇 TURNO VESPERTINO</span>
+                <div style="font-size:22px;font-weight:900;color:#1e3a8a">${totalVes} <small style="font-size:12px">piezas</small></div>
+            </div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px">
+                <span style="font-size:10px;font-weight:900;color:#166534">💰 IMPORTE TOTAL GENERADO</span>
+                <div style="font-size:22px;font-weight:900;color:#14532d">${money(totalMoney)}</div>
+            </div>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+                <tr style="background:var(--wine-50);border-bottom:2px solid var(--wine-200);text-align:left;color:var(--wine-900)">
+                    <th style="padding:10px 12px;font-weight:900">PRODUCTO / CONCEPTO</th>
+                    <th style="padding:10px 12px;font-weight:900">CATEGORÍA</th>
+                    <th style="padding:10px 12px;font-weight:900;text-align:center">🌅 MATUTINO</th>
+                    <th style="padding:10px 12px;font-weight:900;text-align:center">🌇 VESPERTINO</th>
+                    <th style="padding:10px 12px;font-weight:900;text-align:center;background:#fef3c7;color:#92400e">🍨 TOTAL DÍA</th>
+                    <th style="padding:10px 12px;font-weight:900;text-align:right">IMPORTE</th>
+                    <th style="padding:10px 12px;font-weight:900;text-align:center">STOCK RESTANTE</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${prodList.map(p => {
+                    const curStock = getStock(p.id);
+                    const isLow = curStock <= STOCK_LOW;
+                    return `
+                    <tr style="border-bottom:1px solid #f3f4f6">
+                        <td style="padding:10px 12px;font-weight:800;color:var(--wine-900)">
+                            ${esc(p.name)}
+                            ${p.code ? `<br><small style="color:var(--text-muted);font-weight:600">${esc(p.code)}</small>` : ''}
+                        </td>
+                        <td style="padding:10px 12px">
+                            <span style="background:#f3f4f6;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:800;color:var(--wine-800);text-transform:uppercase">
+                                ${esc(p.category)}
+                            </span>
+                        </td>
+                        <td style="padding:10px 12px;text-align:center;font-weight:700;color:#92400e">${p.matQty} pz</td>
+                        <td style="padding:10px 12px;text-align:center;font-weight:700;color:#1e40af">${p.vesQty} pz</td>
+                        <td style="padding:10px 12px;text-align:center;font-weight:900;font-size:13px;background:#fffbeb;color:#78350f">${p.totalQty} pz</td>
+                        <td style="padding:10px 12px;text-align:right;font-weight:800;color:#15803d">${money(p.totalMoney)}</td>
+                        <td style="padding:10px 12px;text-align:center">
+                            <span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:900;${isLow ? 'background:#fee2e2;color:#991b1b' : 'background:#dcfce7;color:#166534'}">
+                                ${curStock} uds. ${isLow ? '⚠ Resurtir' : '✓'}
+                            </span>
+                        </td>
+                    </tr>`;
+                }).join("")}
+            </tbody>
+        </table>`;
     }
 
     async function loadAccounting(silent = false) {
