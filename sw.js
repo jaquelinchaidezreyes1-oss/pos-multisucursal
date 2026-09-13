@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lafuente-pos-v19';
+const CACHE_NAME = 'lafuente-pos-v20';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
