@@ -362,10 +362,10 @@
             overlay.innerHTML = `
                 <div style="background:#fffef5;border:2px solid rgba(188,132,10,.4);border-radius:20px;padding:26px 22px;max-width:400px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
                     <div style="font-size:36px;text-align:center;margin-bottom:10px">❓</div>
-                    <p style="font-size:14px;color:#3b0a10;font-weight:700;text-align:center;margin:0 0 18px;white-space:pre-line;">${esc(msg)}</p>
+                    <p style="font-size:14px;color:#520712;font-weight:700;text-align:center;margin:0 0 18px;white-space:pre-line;">${esc(msg)}</p>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                        <button id="tc-no"  style="padding:11px;border-radius:10px;border:1.5px solid rgba(188,132,10,.5);background:#fff;font-weight:800;cursor:pointer;font-size:13px;color:#3b0a10">Cancelar</button>
-                        <button id="tc-yes" style="padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#541118,#701721);color:#fff;font-weight:800;cursor:pointer;font-size:13px">Confirmar</button>
+                        <button id="tc-no"  style="padding:11px;border-radius:10px;border:1.5px solid rgba(188,132,10,.5);background:#fff;font-weight:800;cursor:pointer;font-size:13px;color:#520712">Cancelar</button>
+                        <button id="tc-yes" style="padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#541118,#991024);color:#fff;font-weight:800;cursor:pointer;font-size:13px">Confirmar</button>
                     </div>
                 </div>`;
             document.body.appendChild(overlay);
@@ -415,12 +415,12 @@
             overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999998;display:flex;align-items:center;justify-content:center;padding:16px;";
             overlay.innerHTML = `
                 <div style="background:#fffef5;border:2px solid rgba(188,132,10,.4);border-radius:20px;padding:26px 22px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-                    <p style="font-size:14px;color:#3b0a10;font-weight:700;margin:0 0 12px">${esc(msg)}</p>
+                    <p style="font-size:14px;color:#520712;font-weight:700;margin:0 0 12px">${esc(msg)}</p>
                     <textarea id="tp-inp" rows="3" placeholder="${esc(placeholder)}"
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:10px;font-size:13px;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
                         <button id="tp-no"  style="padding:11px;border-radius:10px;border:1.5px solid rgba(188,132,10,.5);background:#fff;font-weight:800;cursor:pointer;font-size:13px">Cancelar</button>
-                        <button id="tp-yes" style="padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#541118,#701721);color:#fff;font-weight:800;cursor:pointer;font-size:13px">Aceptar</button>
+                        <button id="tp-yes" style="padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#541118,#991024);color:#fff;font-weight:800;cursor:pointer;font-size:13px">Aceptar</button>
                     </div>
                 </div>`;
             document.body.appendChild(overlay);
@@ -2453,7 +2453,7 @@
         </div>
 
         <!-- SECCIÓN: ADMINISTRACIÓN & EDICIÓN RÁPIDA DE INSUMOS Y DESECHABLES -->
-        <div class="dashboard-card" style="padding:18px 22px;border-radius:16px;margin-bottom:24px;background:linear-gradient(145deg,#2a060c,#1b0205);border:1.5px solid var(--gold-400);box-shadow:var(--shadow-card)">
+        <div class="dashboard-card" style="padding:18px 22px;border-radius:16px;margin-bottom:24px;background:linear-gradient(145deg,#44060e,#2a0409);border:1.5px solid var(--gold-400);box-shadow:var(--shadow-card)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
                 <div>
                     <h3 style="color:#ffffff;margin:0;font-weight:900;font-size:16px">🧤 Catálogo de Insumos, Desechables & Complementos (${availableSupplies.length})</h3>
@@ -2489,7 +2489,7 @@
             <h3 style="color:#ffffff;margin:0;font-weight:900">Catálogo de Productos — ${esc(activeBranchName)} (${displayedProducts.length} productos)</h3>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${adminBranchSelectHtml}
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
                 <button type="button" id="btn-reload-admin-prods" style="padding:8px 16px;background:#fff;border:1.5px solid var(--gold-500);border-radius:8px;cursor:pointer;font-weight:bold">🔄 Actualizar</button>
             </div>
         </div>
@@ -2892,7 +2892,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
                 <button type="button" id="btn-ref-inv"
                     style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
                     🔄 Actualizar Inventario</button>
@@ -2953,7 +2953,7 @@
             const isLow = stock > 0 && stock <= STOCK_LOW;
             const col = isOut ? "#ff6b6b" : isLow ? "#fbbf24" : "#4ade80";
 
-            return `<article class="dashboard-card" style="padding:18px;border-radius:14px;border:1.5px solid var(--border-subtle);background:linear-gradient(180deg,#2e060c 0%,#1f0306 100%);display:flex;flex-direction:column;justify-content:space-between">
+            return `<article class="dashboard-card" style="padding:18px;border-radius:14px;border:1.5px solid var(--border-subtle);background:linear-gradient(180deg,#44060e 0%,#2a0409 100%);display:flex;flex-direction:column;justify-content:space-between">
                 <div>
                     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
                         <div style="font-size:28px">${isSupply ? '🧤' : '🍦'}</div>
@@ -3345,7 +3345,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
                 <button type="button" id="btn-ref-sales"
                     style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
                     🔄 Actualizar Ventas</button>
@@ -3435,7 +3435,7 @@
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                         <strong style="font-size:20px;color:${isCan?'#991b1b':'var(--wine-700)'};font-weight:900">${money(s.total)}</strong>
                         <button type="button" class="btn-reprint-sale" data-id="${esc(s.id)}"
-                            style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
+                            style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
                             🖨️ Reimprimir
                         </button>
                         ${!isCan ? `
@@ -3790,7 +3790,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
                 <button type="button" id="btn-ref-cuts"
                     style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
                     🔄 Actualizar Cortes</button>
@@ -3868,7 +3868,7 @@
 
                         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                             <button type="button" class="btn-reprint-cut" data-id="${esc(ct.id)}"
-                                style="padding:8px 16px;background:linear-gradient(135deg,#701721,#3b0a10);color:#ffffff;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
+                                style="padding:8px 16px;background:linear-gradient(135deg,#991024,#520712);color:#ffffff;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
                                 <span style="color:#fcd34d">🖨️</span><span style="color:#ffffff">Reimprimir Ticket</span>
                             </button>
                             ${S.isSU ? `
@@ -3909,7 +3909,7 @@
                             <small style="font-size:10px;color:${isOk?'#166534':'#991b1b'};font-weight:800;display:block">DIFERENCIA</small>
                             <strong style="font-size:14px;color:${isOk?'#15803d':'#dc2626'}">${diff>=0?'+':''}${money(diff)}</strong>
                         </div>
-                        <div style="background:linear-gradient(135deg,#701721,#3b0a10);padding:8px 12px;border-radius:8px;color:#fff;display:flex;flex-direction:column;justify-content:center">
+                        <div style="background:linear-gradient(135deg,#991024,#520712);padding:8px 12px;border-radius:8px;color:#fff;display:flex;flex-direction:column;justify-content:center">
                             <small style="font-size:10px;color:var(--gold-300);font-weight:800;display:block">CORTE NETO EFECTIVO</small>
                             <strong style="font-size:15px;color:#fff;font-weight:900">${money(netAmount)}</strong>
                         </div>
@@ -4233,7 +4233,7 @@
                 <div style="font-size:12px;color:#fcebd2;margin-top:2px">Apertura de turno, asignación de fondo inicial de caja y traspaso de turno</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)">
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)">
                     <span>🖨️</span><span>Impresora</span>
                 </button>
             </div>
@@ -5065,7 +5065,7 @@
                 </select>
             
             <div style="display:flex;align-items:center;gap:8px;margin-top:10px;width:100%;justify-content:flex-end">
-                <button type="button" id="btn-close-business-day" style="padding:10px 18px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);display:flex;align-items:center;gap:6px">
+                <button type="button" id="btn-close-business-day" style="padding:10px 18px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);display:flex;align-items:center;gap:6px">
                     <span>🔒</span><span>Realizar Corte General & Cerrar Día Oficial</span>
                 </button>
             </div></div>
@@ -5073,7 +5073,7 @@
 
         
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
-            <div class="dashboard-card" style="background:linear-gradient(135deg,#230408,#5c121b);color:#fff;border-color:var(--gold-400);padding:22px;border-radius:18px">
+            <div class="dashboard-card" style="background:linear-gradient(135deg,#44060e,#7a0c1c);color:#fff;border-color:var(--gold-400);padding:22px;border-radius:18px">
                 <span style="color:#fef08a;font-size:10px;font-weight:900;letter-spacing:1px">VENTA TOTAL CONSOLIDADA HOY</span>
                 <div style="font-size:30px;font-weight:900;margin:6px 0;color:#ffffff">${money(chainTotal)}</div>
                 <small style="color:#fde68a">6 Sucursales en Vivo • ${todaySales.length} Tickets</small>
@@ -5099,7 +5099,7 @@
 
         <!-- ══ SECCIÓN: RESUMEN DIARIO DE PRODUCTOS VENDIDOS & PRODUCCIÓN ══ -->
         <div style="margin-bottom:24px;border:2px solid var(--gold-400);border-radius:18px;background:#ffffff;box-shadow:0 4px 18px rgba(0,0,0,0.18);overflow:hidden">
-            <div style="background:linear-gradient(135deg,#5c0c16,#2b0408);color:#ffffff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+            <div style="background:linear-gradient(135deg,#7a0c1c,#44060e);color:#ffffff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
                 <div style="display:flex;align-items:center;gap:12px">
                     <span style="font-size:26px">🍨</span>
                     <div>
@@ -5126,7 +5126,7 @@
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-bottom:30px">
             ${summary.map(b => `
-                <div class="dashboard-card" style="border-radius:18px;border:1.5px solid var(--gold-400);padding:20px;position:relative;background:linear-gradient(145deg,#2d060d,#1a0205);box-shadow:0 6px 18px rgba(0,0,0,0.25)">
+                <div class="dashboard-card" style="border-radius:18px;border:1.5px solid var(--gold-400);padding:20px;position:relative;background:linear-gradient(145deg,#44060e,#1a0205);box-shadow:0 6px 18px rgba(0,0,0,0.25)">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
                         <h4 style="margin:0;font-size:17px;font-weight:900;color:#ffffff;display:flex;align-items:center;gap:8px">
                             <span style="font-size:20px">🍦</span> ${esc(b.name)}
@@ -5472,7 +5472,7 @@
 
         c.innerHTML = `
         <!-- RESUMEN HISTÓRICO GLOBAL DE LA CADENA (DESDE EL DÍA 1) -->
-        <div class="dashboard-card" style="background:linear-gradient(135deg,#1f0307,#4a0c14);color:#fff;border:2px solid var(--gold-400);padding:22px;border-radius:18px;margin-bottom:20px;box-shadow:var(--shadow-card)">
+        <div class="dashboard-card" style="background:linear-gradient(135deg,#2a0409,#6e0a19);color:#fff;border:2px solid var(--gold-400);padding:22px;border-radius:18px;margin-bottom:20px;box-shadow:var(--shadow-card)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px">
                 <div>
                     <span style="color:#fef08a;font-size:11px;font-weight:900;letter-spacing:1.5px">👑 CONTROL DIRECTIVO SUPERUSUARIO</span>
@@ -5513,7 +5513,7 @@
                         <option value="all"${selectedDate==="all"?" selected":""}>🌐 Todo el Histórico Consolidado</option>
                         ${dateOptions.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?" selected":""}>📅 ${fd(d)}</option>`).join("")}
                     </select>
-                    <button type="button" id="btn-print-daily-acc" style="padding:8px 16px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)">
+                    <button type="button" id="btn-print-daily-acc" style="padding:8px 16px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)">
                         <span>🖨️</span><span>Imprimir Corte Diario</span>
                     </button>
                     <button type="button" id="btn-ref-acc" style="padding:8px 16px;background:#fff;border:1.5px solid var(--gold-500);border-radius:10px;cursor:pointer;font-weight:bold;font-size:12px">🔄 Actualizar</button>
@@ -5604,7 +5604,7 @@
                                 <small style="color:var(--emerald);font-weight:800">✓ Balance Consolidado</small>
                             </div>
                             <button type="button" class="btn-print-hist-day" data-idx="${idx}"
-                                style="padding:7px 12px;background:linear-gradient(135deg,#701721,#3b0a10);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
+                                style="padding:7px 12px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
                                 🖨️ Imprimir Ticket
                             </button>
                             ${S.isSU ? `
@@ -5874,7 +5874,7 @@
 
         c.innerHTML = `
         <!-- ENCABEZADO Y FILTROS -->
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px;background:linear-gradient(135deg,#230408,#450a12);padding:16px 20px;border-radius:16px;border:1.5px solid var(--gold-400);box-shadow:0 4px 15px rgba(0,0,0,0.2)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px;background:linear-gradient(135deg,#44060e,#450a12);padding:16px 20px;border-radius:16px;border:1.5px solid var(--gold-400);box-shadow:0 4px 15px rgba(0,0,0,0.2)">
             <div>
                 <strong style="font-size:18px;color:#ffffff;font-weight:900;display:flex;align-items:center;gap:8px">
                     <span>📊</span> Conteo Diario de Productos Vendidos — ${esc(currentBranchName)}

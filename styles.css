@@ -6,14 +6,19 @@
 
 /* ── 1. VARIABLES & PALETA DE ALTO CONTRASTE ── */
 :root {
-    /* Familia Guinda & Borgoña Velvet */
-    --wine-950: #1a0205;
-    --wine-900: #290509;
-    --wine-850: #38070d;
-    --wine-800: #4a0a12;
-    --wine-700: #630f1a;
-    --wine-600: #7e1523;
-    --wine-500: #9e1d2e;
+    /* Familia Rojo Rubí Imperial & Borgoña Vibrante y Elegante */
+    --wine-950: #2a0409;  /* Sombra profunda rubí */
+    --wine-900: #44060e;  /* Carmín elegante profundo */
+    --wine-850: #5c0814;  /* Rojo intenso aterciopelado */
+    --wine-800: #7a0c1c;  /* Rojo rubí imperial elegante */
+    --wine-700: #991024;  /* Rojo carmesí vibrante */
+    --wine-600: #b8142d;  /* Rojo boutique radiante */
+    --wine-500: #d41836;  /* Rojo vivo distinguido */
+    --wine-400: #ef2e4b;  /* Resalte rubí */
+    --wine-300: #fda4af;  /* Tono suave */
+    --wine-200: #fecdd3;
+    --wine-100: #ffe4e6;
+    --wine-50:  #fff1f2;
 
     /* Oro Real Radiante & Destellos */
     --gold-700: #855502;
@@ -25,13 +30,13 @@
     --gold-100: #fce7ad;
     --gold-50:  #fef7de;
 
-    /* Fondos Guindas & Superficies Velvet (CERO BLANCO) */
-    --bg-base:        #230408;  /* FONDO GUINDA PROFUNDO COMO EL LOGIN */
-    --bg-surface:     #34060c;  /* Superficies secundarias guinda oscuro */
-    --bg-card:        #fffbf2;  /* Tarjetas de producto en Crema Vainilla de alto contraste */
+    /* Fondos Rojo Rubí & Superficies Velvet Vibrantes y Elegantes */
+    --bg-base:        #38050c;  /* FONDO ROJO RUBÍ VIBRANTE Y ELEGANTE */
+    --bg-surface:     #4d0711;  /* Superficies secundarias carmesí */
+    --bg-card:        #fffbf2;  /* Tarjetas de producto en Crema Vainilla */
     --bg-card-hover:  #ffffff;  /* Hover luminoso */
     --bg-input:       #fcf8f0;  /* Campos de texto */
-    --bg-accent-warm: #42080f;  /* Acentos guindas */
+    --bg-accent-warm: #630916;  /* Acentos rojo rubí */
 
     /* Bordes Finos & Biselados */
     --border-subtle:  rgba(232, 162, 23, 0.35);
@@ -74,7 +79,7 @@ body {
     font-family: 'Montserrat', sans-serif;
     background-color: var(--bg-base);
     background-image: 
-        radial-gradient(circle at 50% 10%, #3e0910 0%, #230408 60%, #150204 100%),
+        radial-gradient(circle at 50% 10%, #630916 0%, #3a050c 60%, #200206 100%),
         radial-gradient(circle at 90% 90%, rgba(232, 162, 23, 0.06) 0%, transparent 50%);
     color: var(--text-on-wine);
     overflow: hidden;
@@ -105,7 +110,7 @@ body {
     position: fixed;
     inset: 0;
     z-index: 99999;
-    background: radial-gradient(circle at 50% 20%, #4a0d14 0%, #290509 60%, #150204 100%);
+    background: radial-gradient(circle at 50% 20%, #7a0c1c 0%, #44060e 60%, #200206 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -305,7 +310,7 @@ body:not(.login-active) .login-screen {
 
 /* ── 4. HEADER & LOGO ULTRA VISIBLE, ANCHO & RADIANTE ── */
 .header-la-fuente-elegante {
-    background: linear-gradient(135deg, #180204 0%, #3a070e 45%, #200306 100%);
+    background: linear-gradient(135deg, #2a0409 0%, #630916 45%, #3a050c 100%);
     border-bottom: 3px solid var(--gold-400);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.75);
     flex-shrink: 0;
@@ -403,7 +408,7 @@ body:not(.login-active) .login-screen {
 /* ── 6. SIDEBAR EN GUINDA VELVET CÁLIDO ── */
 .sidebar {
     width: 240px;
-    background: linear-gradient(180deg, #38080f 0%, #240408 100%); /* Guindita suave y elegante */
+    background: linear-gradient(180deg, #520712 0%, #30040a 100%); /* Guindita suave y elegante */
     border-right: 2px solid rgba(232, 162, 23, 0.4);
     padding: 16px 12px;
     display: flex;
