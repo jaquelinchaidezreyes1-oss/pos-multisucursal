@@ -3342,24 +3342,46 @@
         const selectedDate = S.salesFilterDate || "today";
         const selectedShift = S.salesFilterShift || "all";
 
-        let daySales = (selectedDate === "all")
+        // Ventas del día (o histórico) antes de filtrar por turno
+        const rawDaySales = (selectedDate === "all")
             ? branchSales
             : (selectedDate === "today" ? (datesMap.get(todayStr) || []) : (datesMap.get(selectedDate) || []));
 
+        // Ventas activas y canceladas del día
+        const activeDaySales = rawDaySales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
+        const cancelledDaySales = rawDaySales.filter(s => String(s.status||"").toUpperCase() === "CANCELLED");
+
+        // Desglose oficial de turnos para el día seleccionado
+        const matSales = activeDaySales.filter(s => getShiftCategory(s) === "matutino");
+        const vesSales = activeDaySales.filter(s => getShiftCategory(s) === "vespertino");
+
+        const matTotal = matSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+        const matCash = matSales.filter(s => (s.payment_method || "cash") === "cash").reduce((acc,s) => acc + Number(s.total||0), 0);
+        const matCard = matSales.filter(s => s.payment_method === "card").reduce((acc,s) => acc + Number(s.total||0), 0);
+        const matCount = matSales.length;
+
+        const vesTotal = vesSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+        const vesCash = vesSales.filter(s => (s.payment_method || "cash") === "cash").reduce((acc,s) => acc + Number(s.total||0), 0);
+        const vesCard = vesSales.filter(s => s.payment_method === "card").reduce((acc,s) => acc + Number(s.total||0), 0);
+        const vesCount = vesSales.length;
+
+        const totalDayActive = matTotal + vesTotal;
+        const totalDayCash = matCash + vesCash;
+        const totalDayCard = matCard + vesCard;
+        const totalDayCount = matCount + vesCount;
+
+        // Filtrar lista de visualización por turno
+        let filteredSales = rawDaySales;
         if (selectedShift !== "all") {
-            daySales = daySales.filter(s => getShiftCategory(s) === selectedShift);
+            filteredSales = filteredSales.filter(s => getShiftCategory(s) === selectedShift);
         }
 
-        const activeSales = daySales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
-        const cancelledSales = daySales.filter(s => String(s.status||"").toUpperCase() === "CANCELLED");
+        const activeSales = filteredSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
+        const cancelledSales = filteredSales.filter(s => String(s.status||"").toUpperCase() === "CANCELLED");
 
         const targetList = S.salesTab === "cancelled" ? cancelledSales : activeSales;
 
-        const totalActive = activeSales.reduce((acc,s) => acc + Number(s.total||0), 0);
-        const cashSales = activeSales.filter(s => (s.payment_method || "cash") === "cash");
-        const cardSales = activeSales.filter(s => s.payment_method === "card");
-        const totalCash = cashSales.reduce((acc,s) => acc + Number(s.total||0), 0);
-        const totalCard = cardSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+        const currentBranchDisplayName = S.branches.find(b => String(b.id) === String(activeBranchFilter))?.name || S.branchName;
 
         const branchSelectHtml = S.isSU ? `
             <div style="display:flex;align-items:center;gap:8px">
@@ -3375,64 +3397,117 @@
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
             <div>
-                <strong style="font-size:17px;color:#ffffff;font-weight:900">Historial de Ventas — ${activeBranchFilter==='all'?'Toda la Cadena':esc(S.branchName)}</strong>
-                <div style="font-size:12px;color:#fcebd2;margin-top:2px">Tickets cobrados, turnos (Mañana / Tarde), cancelaciones y reimpresiones</div>
+                <strong style="font-size:18px;color:#ffffff;font-weight:900;display:flex;align-items:center;gap:8px">
+                    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981"></span>
+                    Mis Ventas en Vivo — ${activeBranchFilter==='all'?'Toda la Cadena':esc(currentBranchDisplayName)}
+                </strong>
+                <div style="font-size:12.5px;color:#fcebd2;margin-top:2px">
+                    Ventas del día clasificadas por <strong>Turno Mañana (Matutino)</strong> y <strong>Turno Tarde (Vespertino)</strong>
+                </div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
-                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
+                <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora Ghia</span></button>
                 <button type="button" id="btn-ref-sales"
                     style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
                     🔄 Actualizar Ventas</button>
             </div>
         </div>
 
-        <!-- FILTROS Y RESUMEN DE VENTAS -->
-        <div class="dashboard-card" style="padding:18px;border-radius:16px;margin-bottom:20px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+        <!-- TARJETAS DE RESUMEN EN VIVO POR TURNO (MAÑANA Y TARDE) -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:18px">
+            <!-- TARJETA TURNO MAÑANA -->
+            <div class="dashboard-card shift-summary-card" data-shift-select="matutino" style="padding:16px 18px;border-radius:14px;background:linear-gradient(145deg,#ffffff,#fffbeb);border:2px solid ${selectedShift==='matutino'?'#f59e0b':'#fde68a'};box-shadow:0 4px 12px rgba(245,158,11,0.15);cursor:pointer;transition:transform 0.15s ease;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <span style="font-size:12px;font-weight:900;background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:10px;border:1px solid #fde68a">
+                        🌅 TURNO MAÑANA (MATUTINO)
+                    </span>
+                    <small style="font-size:11px;color:#78350f;font-weight:800">${matCount} tickets</small>
+                </div>
+                <div style="font-size:24px;font-weight:900;color:#92400e;margin-bottom:6px">${money(matTotal)}</div>
+                <div style="display:flex;gap:12px;font-size:11.5px;color:#451a03;font-weight:700">
+                    <span>💵 Efectivo: <strong>${money(matCash)}</strong></span>
+                    <span>💳 Tarjeta: <strong>${money(matCard)}</strong></span>
+                </div>
+                <div style="margin-top:8px;font-size:10.5px;color:#b45309;font-weight:800;display:flex;align-items:center;gap:4px">
+                    <span>${selectedShift==='matutino'?'▶ Filtrando este turno activo':'👆 Clic para ver solo Turno Mañana'}</span>
+                </div>
+            </div>
+
+            <!-- TARJETA TURNO TARDE -->
+            <div class="dashboard-card shift-summary-card" data-shift-select="vespertino" style="padding:16px 18px;border-radius:14px;background:linear-gradient(145deg,#ffffff,#eef2ff);border:2px solid ${selectedShift==='vespertino'?'#6366f1':'#c7d2fe'};box-shadow:0 4px 12px rgba(99,102,241,0.15);cursor:pointer;transition:transform 0.15s ease;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <span style="font-size:12px;font-weight:900;background:#e0e7ff;color:#3730a3;padding:3px 10px;border-radius:10px;border:1px solid #c7d2fe">
+                        🌇 TURNO TARDE (VESPERTINO)
+                    </span>
+                    <small style="font-size:11px;color:#312e81;font-weight:800">${vesCount} tickets</small>
+                </div>
+                <div style="font-size:24px;font-weight:900;color:#3730a3;margin-bottom:6px">${money(vesTotal)}</div>
+                <div style="display:flex;gap:12px;font-size:11.5px;color:#1e1b4b;font-weight:700">
+                    <span>💵 Efectivo: <strong>${money(vesCash)}</strong></span>
+                    <span>💳 Tarjeta: <strong>${money(vesCard)}</strong></span>
+                </div>
+                <div style="margin-top:8px;font-size:10.5px;color:#4f46e5;font-weight:800;display:flex;align-items:center;gap:4px">
+                    <span>${selectedShift==='vespertino'?'▶ Filtrando este turno activo':'👆 Clic para ver solo Turno Tarde'}</span>
+                </div>
+            </div>
+
+            <!-- TARJETA TOTAL DEL DÍA -->
+            <div class="dashboard-card shift-summary-card" data-shift-select="all" style="padding:16px 18px;border-radius:14px;background:linear-gradient(145deg,#ffffff,#f0fdf4);border:2px solid ${selectedShift==='all'?'#10b981':'#bbf7d0'};box-shadow:0 4px 12px rgba(16,185,129,0.15);cursor:pointer;transition:transform 0.15s ease;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <span style="font-size:12px;font-weight:900;background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:10px;border:1px solid #86efac">
+                        💰 TOTAL DEL DÍA (AMBOS TURNOS)
+                    </span>
+                    <small style="font-size:11px;color:#14532d;font-weight:800">${totalDayCount} tickets</small>
+                </div>
+                <div style="font-size:24px;font-weight:900;color:#15803d;margin-bottom:6px">${money(totalDayActive)}</div>
+                <div style="display:flex;gap:12px;font-size:11.5px;color:#052e16;font-weight:700">
+                    <span>💵 Efectivo: <strong>${money(totalDayCash)}</strong></span>
+                    <span>💳 Tarjeta: <strong>${money(totalDayCard)}</strong></span>
+                </div>
+                <div style="margin-top:8px;font-size:10.5px;color:#16a34a;font-weight:800;display:flex;align-items:center;gap:4px">
+                    <span>${selectedShift==='all'?'▶ Mostrando ambos turnos':'👆 Clic para ver ambos turnos'}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- BARRA DE FILTROS RÁPIDOS Y PESTAÑAS -->
+        <div class="dashboard-card" style="padding:14px 18px;border-radius:14px;margin-bottom:18px;background:#ffffff;border:1.5px solid rgba(188,132,10,0.3);box-shadow:var(--shadow-sm)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                    <label style="font-size:12px;font-weight:900;color:var(--wine-800)">FECHA:</label>
-                    <select id="sales-date-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12.5px;font-weight:700;background:#fff;outline:none">
+                    <label style="font-size:12px;font-weight:900;color:var(--wine-800)">📅 FECHA:</label>
+                    <select id="sales-date-filter" style="padding:7px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12px;font-weight:700;background:#fff;outline:none">
                         <option value="today"${selectedDate==='today'?' selected':''}>📅 Hoy (${fd(todayStr)})</option>
                         <option value="all"${selectedDate==='all'?' selected':''}>🌐 Todo el Histórico</option>
                         ${dateOptions.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?' selected':''}>📅 ${fd(d)}</option>`).join("")}
                     </select>
 
-                    <label style="font-size:12px;font-weight:900;color:var(--wine-800);margin-left:8px">TURNO:</label>
-                    <select id="sales-shift-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12.5px;font-weight:700;background:#fff;outline:none">
-                        <option value="all"${selectedShift==='all'?' selected':''}>Todos los Turnos</option>
-                        <option value="matutino"${selectedShift==='matutino'?' selected':''}>🌅 Matutino</option>
-                        <option value="vespertino"${selectedShift==='vespertino'?' selected':''}>🌇 Vespertino / Tarde</option>
-                    </select>
+                    <label style="font-size:12px;font-weight:900;color:var(--wine-800);margin-left:6px">🌅 TURNO:</label>
+                    <div style="display:inline-flex;gap:4px;background:#f3f4f6;padding:3px;border-radius:10px;border:1px solid #e5e7eb">
+                        <button type="button" class="btn-shift-pill${selectedShift==='all'?' active-shift-pill':''}" data-shift="all"
+                            style="padding:6px 12px;border-radius:8px;border:none;font-weight:800;font-size:11.5px;cursor:pointer;${selectedShift==='all'?'background:var(--wine-800);color:#fff':'background:transparent;color:#4b5563'}">
+                            🌟 Todos (${totalDayCount})
+                        </button>
+                        <button type="button" class="btn-shift-pill${selectedShift==='matutino'?' active-shift-pill':''}" data-shift="matutino"
+                            style="padding:6px 12px;border-radius:8px;border:none;font-weight:800;font-size:11.5px;cursor:pointer;${selectedShift==='matutino'?'background:#d97706;color:#fff':'background:transparent;color:#4b5563'}">
+                            🌅 Mañana (${matCount})
+                        </button>
+                        <button type="button" class="btn-shift-pill${selectedShift==='vespertino'?' active-shift-pill':''}" data-shift="vespertino"
+                            style="padding:6px 12px;border-radius:8px;border:none;font-weight:800;font-size:11.5px;cursor:pointer;${selectedShift==='vespertino'?'background:#4f46e5;color:#fff':'background:transparent;color:#4b5563'}">
+                            🌇 Tarde (${vesCount})
+                        </button>
+                    </div>
                 </div>
 
                 <div style="display:flex;gap:6px">
                     <button type="button" class="sales-tab-btn${S.salesTab==='active'?' active-stab':''}" data-tab="active"
-                        style="padding:8px 14px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;${S.salesTab==='active'?'background:#15803d;color:#fff;border:none':'background:#f3f4f6;color:#374151;border:1px solid #d1d5db'}">
+                        style="padding:7px 14px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;${S.salesTab==='active'?'background:#15803d;color:#fff;border:none':'background:#f3f4f6;color:#374151;border:1px solid #d1d5db'}">
                         ✓ Ventas Activas (${activeSales.length})
                     </button>
                     <button type="button" class="sales-tab-btn${S.salesTab==='cancelled'?' active-stab':''}" data-tab="cancelled"
-                        style="padding:8px 14px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;${S.salesTab==='cancelled'?'background:#b91c1c;color:#fff;border:none':'background:#f3f4f6;color:#374151;border:1px solid #d1d5db'}">
+                        style="padding:7px 14px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;${S.salesTab==='cancelled'?'background:#b91c1c;color:#fff;border:none':'background:#f3f4f6;color:#374151;border:1px solid #d1d5db'}">
                         🚫 Canceladas (${cancelledSales.length})
                     </button>
-                </div>
-            </div>
-
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
-                <div style="background:#fff;padding:12px 16px;border-radius:12px;border:1.5px solid rgba(188,132,10,.35)">
-                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);display:block">TOTAL VENDIDO</small>
-                    <strong style="font-size:22px;color:var(--wine-900);display:block;margin:2px 0">${money(totalActive)}</strong>
-                    <small style="color:var(--emerald);font-weight:800">${activeSales.length} tickets</small>
-                </div>
-                <div style="background:#f0fdf4;padding:12px 16px;border-radius:12px;border:1.5px solid #86efac">
-                    <small style="font-size:10px;font-weight:900;color:#166534;display:block">💵 EFECTIVO</small>
-                    <strong style="font-size:20px;color:#15803d;display:block;margin:2px 0">${money(totalCash)}</strong>
-                    <small style="color:#166534;font-weight:700">${cashSales.length} tickets</small>
-                </div>
-                <div style="background:#eff6ff;padding:12px 16px;border-radius:12px;border:1.5px solid #93c5fd">
-                    <small style="font-size:10px;font-weight:900;color:#1e40af;display:block">💳 TARJETA</small>
-                    <strong style="font-size:20px;color:#1d4ed8;display:block;margin:2px 0">${money(totalCard)}</strong>
-                    <small style="color:#1e40af;font-weight:700">${cardSales.length} tickets</small>
                 </div>
             </div>
         </div>
@@ -3443,11 +3518,16 @@
             ${targetList.map(s => {
                 const isCan = String(s.status||"").toUpperCase() === "CANCELLED";
                 const isCard = s.payment_method === "card";
+                const shiftCat = getShiftCategory(s);
+                const isMat = shiftCat === "matutino";
                 const timeStr = s.created_at ? fdt(s.created_at) : "--:--";
                 return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
                     <div style="flex:1;min-width:280px">
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
                             <strong style="font-size:15px;color:var(--wine-900)">#${esc(s.sale_number || s.id)} — 📍 ${esc(s.branch_name || S.branchName)}</strong>
+                            <span style="font-size:10.5px;padding:3px 9px;border-radius:10px;font-weight:900;${isMat?'background:#fef3c7;color:#92400e;border:1px solid #fde68a':'background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe'}">
+                                ${isMat ? '🌅 Turno Mañana' : '🌇 Turno Tarde'}
+                            </span>
                             <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:800;${isCan?'background:#fee2e2;color:#991b1b':'background:#dcfce7;color:#15803d'}">
                                 ${isCan ? '🚫 Cancelada' : '✓ Cobrada'}
                             </span>
@@ -3456,7 +3536,7 @@
                             </span>
                         </div>
                         <div style="font-size:11.5px;color:var(--text-muted);font-weight:600">
-                            ${timeStr} • Por: <strong>${esc(s.cashier_name || 'Encargada')}</strong> <small>(${esc(s.shift_name || 'Turno')})</small>
+                            ${timeStr} • Por: <strong>${esc(s.cashier_name || 'Encargada')}</strong> <small>(${esc(s.shift_name || (isMat ? 'Mañana' : 'Tarde'))})</small>
                         </div>
                         <div style="font-size:11px;color:#4b5563;margin-top:6px">
                             ${(s.items||[]).map(i => `${i.quantity}x ${esc(i.product_name || 'Producto')}`).join(" • ")}
@@ -3493,6 +3573,20 @@
         </div>`}
         `;
 
+        // Píldoras de Turno
+        c.querySelectorAll(".btn-shift-pill").forEach(btn => btn.addEventListener("click", async () => {
+            S.salesFilterShift = btn.dataset.shift;
+            await loadSales();
+        }));
+
+        // Clic en tarjetas de resumen de turno
+        c.querySelectorAll(".shift-summary-card").forEach(card => card.addEventListener("click", async () => {
+            if (card.dataset.shiftSelect) {
+                S.salesFilterShift = card.dataset.shiftSelect;
+                await loadSales();
+            }
+        }));
+
         document.getElementById("btn-view-all-sales-hist")?.addEventListener("click", async () => {
             S.salesFilterDate = "all";
             await loadSales();
@@ -3511,17 +3605,13 @@
             await loadSales();
         });
 
-        document.getElementById("sales-shift-filter")?.addEventListener("change", async e => {
-            S.salesFilterShift = e.target.value;
-            await loadSales();
-        });
-
         c.querySelectorAll(".sales-tab-btn").forEach(btn => btn.addEventListener("click", async () => {
             S.salesTab = btn.dataset.tab;
             await loadSales();
         }));
 
         document.getElementById("btn-ref-sales")?.addEventListener("click", async () => {
+            _cachedConsolidatedSales = null;
             await loadSales();
             toast("Ventas actualizadas.", "info");
         });
@@ -6184,10 +6274,11 @@
                         allGSales.unshift(s);
                         gw("all_sales", allGSales);
                     }
+                    _cachedConsolidatedSales = null;
                     if (S.isSU) {
                         toast(`🔔 Venta cobrada en vivo: ${money(s.total)} en ${s.branch_name || 'Sucursal'} (${s.shift_name || 'Turno'})`, "success", 4000);
                     }
-                    safeSilentRefresh();
+                    safeSilentRefresh(true);
                 })
                 // 2. RECEPCIÓN DIRECTA DE CORTES EN TIEMPO REAL (MESH BROADCAST)
                 .on("broadcast", { event: "cut_created" }, async ({ payload }) => {
