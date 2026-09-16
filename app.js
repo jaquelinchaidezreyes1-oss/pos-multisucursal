@@ -152,20 +152,32 @@
         if (!s) return "matutino";
         const email = String(s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
         
-        // 1. Mapeo oficial por encargada:
-        // Matutino (1, 3, 5, 7, 9, 11)
-        if (email.includes("encargado11") || email.includes("encargado9") || email.includes("encargado7") || email.includes("encargado5") || email.includes("encargado3") || email.includes("encargado1")) {
-            return "matutino";
-        }
+        // 1. Mapeo prioritario oficial por encargada:
         // Vespertino (2, 4, 6, 8, 10, 12)
-        if (email.includes("encargado12") || email.includes("encargado10") || email.includes("encargado8") || email.includes("encargado6") || email.includes("encargado4") || email.includes("encargado2")) {
+        if (email.includes("encargado12") || email.includes("encargado10") || email.includes("encargado8") || email.includes("encargado6") || email.includes("encargado4") || email.includes("encargado2") || email.includes("vespertino") || email.includes("tarde") || email.includes("noche")) {
             return "vespertino";
+        }
+        // Matutino (1, 3, 5, 7, 9, 11)
+        if (email.includes("encargado11") || email.includes("encargado9") || email.includes("encargado7") || email.includes("encargado5") || email.includes("encargado3") || email.includes("encargado1") || email.includes("matutino") || email.includes("mañana")) {
+            return "matutino";
         }
 
         // 2. Detección por nombre explícito de turno
         const sn = String(s.shift_name || s.shift || "").toLowerCase();
         if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
         if (sn.includes("mañana") || sn.includes("mat") || sn.includes("dia")) return "matutino";
+
+        // 3. Detección por hora de creación del ticket (>= 15:00 hrs = Vespertino / Tarde)
+        if (s.created_at) {
+            try {
+                const dt = new Date(s.created_at);
+                if (!isNaN(dt.getTime())) {
+                    const hr = dt.getHours();
+                    if (hr >= 15 || hr < 5) return "vespertino";
+                    return "matutino";
+                }
+            } catch(e) {}
+        }
 
         return "matutino";
     }
@@ -182,49 +194,62 @@
             .trim();
     }
 
+    /* ── RESOLVEDOR INEQUÍVOCO DE SUCURSAL POR VENTA ── */
+    function getBranchForSale(sale) {
+        if (!sale) return "";
+        const cLower = String(sale.cashier_name || sale.user_name || sale.performed_by_name || sale.performed_by || "").toLowerCase();
+        const bLower = String(sale.branch_name || "").toLowerCase();
+        const idLower = String(sale.branch_id || "").toLowerCase();
+
+        // 1. Mapeo prioritario e inequívoco por encargada oficial (Staff email o nombre)
+        if (cLower.includes("encargado11") || cLower.includes("encargado12") || cLower.includes("cnop")) return "CNOP";
+        if (cLower.includes("encargado9") || cLower.includes("encargado10") || cLower.includes("tagarete 2") || cLower.includes("tagarete2")) return "Tagarete 2";
+        if (cLower.includes("encargado7") || cLower.includes("encargado8") || cLower.includes("tagarete 1") || cLower.includes("tagarete1")) return "Tagarete 1";
+        if (cLower.includes("encargado5") || cLower.includes("encargado6") || cLower.includes("mollotes")) return "Mollotes";
+        if (cLower.includes("encargado3") || cLower.includes("encargado4") || cLower.includes("rescate")) return "Rescate";
+        if (cLower.includes("encargado1") || cLower.includes("encargado2")) return "La Fuente Calzada";
+
+        // 2. Por nombre explícito de sucursal
+        if (bLower.includes("cnop") || bLower.includes("cenop")) return "CNOP";
+        if (bLower.includes("tagarete 2") || bLower.includes("tagarete_2") || bLower.includes("tagarete2") || (bLower.includes("tagarete") && (bLower.includes("2") || bLower.includes("dos")))) return "Tagarete 2";
+        if (bLower.includes("tagarete 1") || bLower.includes("tagarete_1") || bLower.includes("tagarete1") || (bLower.includes("tagarete") && (bLower.includes("1") || bLower.includes("uno")))) return "Tagarete 1";
+        if (bLower.includes("rescate")) return "Rescate";
+        if (bLower.includes("mollotes")) return "Mollotes";
+        if (bLower.includes("calzada")) return "La Fuente Calzada";
+
+        // 3. Por IDs específicos
+        if (idLower === "branch-6" || idLower.includes("cnop")) return "CNOP";
+        if (idLower === "branch-5" || idLower.includes("tagarete_2") || idLower.includes("tagarete2")) return "Tagarete 2";
+        if (idLower === "branch-4" || idLower.includes("tagarete_1") || idLower.includes("tagarete1")) return "Tagarete 1";
+        if (idLower === "branch-2" || idLower.includes("rescate")) return "Rescate";
+        if (idLower === "branch-3" || idLower.includes("mollotes")) return "Mollotes";
+        if (idLower === "branch-1") return "La Fuente Calzada";
+
+        return sale.branch_name || "";
+    }
+
     function matchesBranch(sale, branchRef) {
         if (!sale) return false;
         if (branchRef === "all" || branchRef?.id === "all") return true;
 
-        const ref = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
-        const sBranch = normalizeBranchName(sale.branch_name || "");
-        const sId = String(sale.branch_id || "").toLowerCase();
-        const sCashier = String(sale.cashier_name || sale.user_name || sale.performed_by_name || sale.performed_by || "").toLowerCase();
-        
-        // Match by branch ID directly
-        if (typeof branchRef === "object" && branchRef?.id && sId && String(branchRef.id).toLowerCase() === sId) {
-            return true;
-        }
+        const targetRef = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
+        const assignedBranch = normalizeBranchName(getBranchForSale(sale));
 
-        // Match by branch name / cashier assignment / ID patterns
-        if (ref.includes("calzada")) {
-            return sBranch.includes("calzada") || sId === "branch-1" || sId.includes("calzada") || sCashier.includes("encargado1") || sCashier.includes("encargado2");
-        }
-        if (ref.includes("rescate")) {
-            return sBranch.includes("rescate") || sId === "branch-2" || sId.includes("rescate") || sCashier.includes("encargado3") || sCashier.includes("encargado4");
-        }
-        if (ref.includes("mollotes")) {
-            return sBranch.includes("mollotes") || sId === "branch-3" || sId.includes("mollotes") || sCashier.includes("encargado5") || sCashier.includes("encargado6");
-        }
-        if (ref.includes("tagarete 2") || (ref.includes("tagarete") && (ref.includes("2") || ref.includes("dos")))) {
-            return (sBranch.includes("tagarete") && (sBranch.includes("2") || sBranch.includes("dos"))) || sId === "branch-5" || sId.includes("tagarete_2") || sId.includes("tagarete2") || sCashier.includes("encargado9") || sCashier.includes("encargado10") || sCashier.includes("tagarete 2");
-        }
-        if (ref.includes("tagarete 1") || (ref.includes("tagarete") && (ref.includes("1") || ref.includes("uno")))) {
-            return (sBranch.includes("tagarete") && (sBranch.includes("1") || sBranch.includes("uno") || (!sBranch.includes("2") && !sBranch.includes("dos")))) || sId === "branch-4" || sId.includes("tagarete_1") || sId.includes("tagarete1") || sCashier.includes("encargado7") || sCashier.includes("encargado8") || sCashier.includes("tagarete 1");
-        }
-        if (ref.includes("tagarete")) {
-            return sBranch.includes("tagarete") || sId.includes("tagarete") || sCashier.includes("encargado7") || sCashier.includes("encargado8") || sCashier.includes("encargado9") || sCashier.includes("encargado10");
-        }
-        if (ref.includes("cnop") || ref.includes("cenop")) {
-            return sBranch.includes("cnop") || sBranch.includes("cenop") || sId === "branch-6" || sId.includes("cnop") || sCashier.includes("encargado11") || sCashier.includes("encargado12");
-        }
-        
-        // Exact normalized name comparison fallback
-        if (ref && sBranch && (ref === sBranch || sBranch.includes(ref) || ref.includes(sBranch))) {
-            return true;
-        }
+        if (!assignedBranch) return false;
 
-        return false;
+        if (targetRef.includes("calzada")) return assignedBranch.includes("calzada");
+        if (targetRef.includes("rescate")) return assignedBranch.includes("rescate");
+        if (targetRef.includes("mollotes")) return assignedBranch.includes("mollotes");
+        if (targetRef.includes("tagarete 2") || (targetRef.includes("tagarete") && targetRef.includes("2"))) {
+            return assignedBranch.includes("tagarete 2") || (assignedBranch.includes("tagarete") && assignedBranch.includes("2"));
+        }
+        if (targetRef.includes("tagarete 1") || (targetRef.includes("tagarete") && targetRef.includes("1"))) {
+            return assignedBranch.includes("tagarete 1") || (assignedBranch.includes("tagarete") && (assignedBranch.includes("1") || (!assignedBranch.includes("2") && !assignedBranch.includes("dos"))));
+        }
+        if (targetRef.includes("tagarete")) return assignedBranch.includes("tagarete");
+        if (targetRef.includes("cnop") || targetRef.includes("cenop")) return assignedBranch.includes("cnop") || assignedBranch.includes("cenop");
+
+        return targetRef === assignedBranch || assignedBranch.includes(targetRef) || targetRef.includes(assignedBranch);
     }
 
     
@@ -3178,24 +3203,34 @@
                             obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
                         } catch(e) {}
 
-                        let bName = obs.branch_name || s.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
                         const cashierName = obs.cashier_name || s.user_name || obs.performed_by_name || "";
-                        if (!bName && cashierName) {
-                            const cLower = cashierName.toLowerCase();
-                            for (const [em, staffInfo] of Object.entries(STAFF)) {
-                                if (cLower.includes(em.toLowerCase()) || (cLower.match(/encargado\d+/) && em.includes(cLower.match(/encargado\d+/)[0]))) {
-                                    bName = staffInfo.b;
-                                    break;
-                                }
+                        const cLower = (cashierName + " " + (obs.user_email || "")).toLowerCase();
+
+                        // 1. Detección prioritaria de sucursal por encargada oficial (Staff mapping)
+                        let bName = "";
+                        for (const [em, staffInfo] of Object.entries(STAFF)) {
+                            const numMatch = em.match(/encargado\d+/);
+                            if (cLower.includes(em.toLowerCase()) || (numMatch && cLower.includes(numMatch[0]))) {
+                                bName = staffInfo.b;
+                                break;
                             }
                         }
+                        if (!bName) {
+                            bName = obs.branch_name || s.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
+                        }
+                        if (!bName && (cLower.includes("cnop") || cLower.includes("cenop"))) bName = "CNOP";
+
+                        // 2. Detección precisa de turno (Matutino vs Vespertino)
+                        const rawShift = obs.shift_name || s.shift_name || "";
+                        const shiftCat = getShiftCategory({ cashier_name: cashierName, shift_name: rawShift, created_at: s.created_at });
+                        const shiftDisplayName = (shiftCat === "vespertino") ? "Tarde" : "Mañana";
 
                         return {
                             id: s.id,
                             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
                             branch_id: s.branch_id || (bName ? S.branches.find(b => b.name === bName)?.id : ""),
-                            branch_name: bName,
-                            shift_name: obs.shift_name || (getShiftCategory({ cashier_name: cashierName, created_at: s.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
+                            branch_name: bName || "CNOP",
+                            shift_name: rawShift || shiftDisplayName,
                             cashier_id: s.user_id,
                             cashier_name: cashierName || "Encargada",
                             total: Number(s.total || 0),
@@ -3289,12 +3324,24 @@
             }
         });
 
-        // 5. Normalizar estado de cancelaciones y motivos
+        // 5. Normalizar estado de cancelaciones, sucursales exactas y turnos
         for (const [k, s] of salesMap.entries()) {
             const reason = cancelledReasons[String(s.id)] || cancelledReasons[String(s.sale_number)];
             if (reason) {
                 s.status = "CANCELLED";
                 if (!s.cancelled_reason) s.cancelled_reason = reason;
+            }
+
+            // Asignación inequívoca de sucursal
+            const assignedBranch = getBranchForSale(s);
+            if (assignedBranch) {
+                s.branch_name = assignedBranch;
+            }
+
+            // Asignación inequívoca de turno
+            const cat = getShiftCategory(s);
+            if (!s.shift_name || s.shift_name === "Turno" || s.shift_name === "General") {
+                s.shift_name = (cat === "vespertino") ? "Tarde" : "Mañana";
             }
         }
 
