@@ -147,33 +147,33 @@
     };
 
 
-    /* ── CLASIFICADOR OFICIAL DE TURNOS (ENCARGADOS 1,3,5,7,9,11 = MATUTINO / 2,4,6,8,10,12 = VESPERTINO) ── */
+    /* ── CLASIFICADOR OFICIAL DE TURNOS (PRIORIDAD: NOMBRE DE TURNO > ENCARGADA > HORA) ── */
     function getShiftCategory(s) {
         if (!s) return "matutino";
-        const email = String(s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
-        
-        // 1. Mapeo prioritario oficial por encargada:
-        // Vespertino (2, 4, 6, 8, 10, 12)
-        if (email.includes("encargado12") || email.includes("encargado10") || email.includes("encargado8") || email.includes("encargado6") || email.includes("encargado4") || email.includes("encargado2") || email.includes("vespertino") || email.includes("tarde") || email.includes("noche")) {
+        let obs = {};
+        try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
+
+        const sn = String(obs.shift_name || s.shift_name || s.shift || "").toLowerCase();
+        // 1. Detección prioritaria por nombre explícito de turno (ej: 'Mañana' o 'Corte Tagarete 2 (Mañana)')
+        if (sn.includes("mañana") || sn.includes("mat") || sn.includes("dia")) return "matutino";
+        if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
+
+        // 2. Mapeo prioritario oficial por encargada:
+        const cashier = String(obs.cashier_name || obs.performed_by_name || s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
+        if (cashier.includes("encargado12") || cashier.includes("encargado10") || cashier.includes("encargado8") || cashier.includes("encargado6") || cashier.includes("encargado4") || cashier.includes("encargado2") || cashier.includes("vespertino") || cashier.includes("tarde") || cashier.includes("noche")) {
             return "vespertino";
         }
-        // Matutino (1, 3, 5, 7, 9, 11)
-        if (email.includes("encargado11") || email.includes("encargado9") || email.includes("encargado7") || email.includes("encargado5") || email.includes("encargado3") || email.includes("encargado1") || email.includes("matutino") || email.includes("mañana")) {
+        if (cashier.includes("encargado11") || cashier.includes("encargado9") || cashier.includes("encargado7") || cashier.includes("encargado5") || cashier.includes("encargado3") || cashier.includes("encargado1") || cashier.includes("matutino") || cashier.includes("mañana")) {
             return "matutino";
         }
 
-        // 2. Detección por nombre explícito de turno
-        const sn = String(s.shift_name || s.shift || "").toLowerCase();
-        if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
-        if (sn.includes("mañana") || sn.includes("mat") || sn.includes("dia")) return "matutino";
-
-        // 3. Detección por hora de creación del ticket (>= 15:00 hrs = Vespertino / Tarde)
+        // 3. Detección por hora (los cortes de turno matutino se entregan usualmente entre 3:30 p.m. y 4:30 p.m.)
         if (s.created_at) {
             try {
                 const dt = new Date(s.created_at);
                 if (!isNaN(dt.getTime())) {
                     const hr = dt.getHours();
-                    if (hr >= 15 || hr < 5) return "vespertino";
+                    if (hr >= 17 || hr < 6) return "vespertino";
                     return "matutino";
                 }
             } catch(e) {}
@@ -3211,7 +3211,7 @@
 
     // Ventas y cortes de respaldo activo de la jornada para turnos matutinos y vespertinos
     const BASE_ACTIVE_SALES = [
-        // ── SUCURSAL TAGARETE 2 (MATUTINO: Total $1,132 | Efectivo $1,087 | Tarjeta $45) — Encargada 9 ──
+        // ── SUCURSAL TAGARETE 2 (MATUTINO: Total $1,730 | Efectivo $1,690 | Tarjeta $40) — Encargada 9 ──
         {
             id: "sale_t2_today_01",
             sale_number: "TICK-T2-201",
@@ -3220,12 +3220,12 @@
             shift_name: "Mañana",
             cashier_id: "encargado9lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 435,
+            total: 580,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 7, subtotal: 175 },
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 10, subtotal: 250 },
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 6, subtotal: 210 },
                 { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 6, subtotal: 120 }
             ],
             created_at: toDateKey() + "T10:15:00.000Z"
@@ -3238,12 +3238,13 @@
             shift_name: "Mañana",
             cashier_id: "encargado9lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 342,
+            total: 490,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 4, subtotal: 180 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 9, subtotal: 162 }
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 6, subtotal: 270 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 10, subtotal: 180 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 4, subtotal: 40 }
             ],
             created_at: toDateKey() + "T11:45:00.000Z"
         },
@@ -3255,13 +3256,13 @@
             shift_name: "Mañana",
             cashier_id: "encargado9lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 310,
+            total: 380,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 6, subtotal: 150 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 8, subtotal: 200 },
                 { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 }
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 2, subtotal: 40 }
             ],
             created_at: toDateKey() + "T13:20:00.000Z"
         },
@@ -3273,13 +3274,30 @@
             shift_name: "Mañana",
             cashier_id: "encargado9lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 45,
+            total: 240,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 4, subtotal: 180 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 3, subtotal: 60 }
+            ],
+            created_at: toDateKey() + "T14:40:00.000Z"
+        },
+        {
+            id: "sale_t2_today_05",
+            sale_number: "TICK-T2-205",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 40,
             payment_method: "card",
             status: "COMPLETED",
             items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 1, subtotal: 45 }
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 2, subtotal: 40 }
             ],
-            created_at: toDateKey() + "T14:10:00.000Z"
+            created_at: toDateKey() + "T15:10:00.000Z"
         },
 
         // ── SUCURSAL CNOP (MATUTINO: Total $990 | Efectivo $790 | Tarjeta $200) — Encargada 11 ──
@@ -3339,7 +3357,7 @@
     ];
 
     const BASE_ACTIVE_CUTS = [
-        // ── CORTE TAGARETE 2 (MATUTINO: $1,132) — Encargada 9 ──
+        // ── CORTE TAGARETE 2 (MATUTINO: $1,730 | Efectivo $1,690 | Tarjeta $40 | Fondo $1,000 | Contado $2,690) — 3:34 p.m. ──
         {
             id: "cut_t2_today_mat",
             branch_id: "branch-5",
@@ -3348,14 +3366,14 @@
             cashier_name: "Encargada Tagarete 2 (Matutino)",
             performed_by_name: "Encargada Tagarete 2 (Matutino)",
             opening_amount: 1000,
-            cash_sales: 1087,
-            card_sales: 45,
-            total_sales: 1132,
-            expected_cash: 2087,
-            counted_cash: 2087,
+            cash_sales: 1690,
+            card_sales: 40,
+            total_sales: 1730,
+            expected_cash: 2690,
+            counted_cash: 2690,
             difference: 0,
-            net_sales_without_fund: 1087,
-            created_at: toDateKey() + "T15:00:00.000Z"
+            net_sales_without_fund: 1690,
+            created_at: toDateKey() + "T15:34:00.000Z"
         },
         // ── CORTE TAGARETE 2 (VESPERTINO: $2,280) — Encargada 10 ──
         {
@@ -6076,72 +6094,12 @@
                         </div>
                     </div>
                     <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);font-weight:700;padding-top:6px;border-top:1px dashed #e5e7eb">
-                        <div>
-                            <span>🌅 Matutino: <strong style="color:var(--wine-800)">${money(matTotal)}</strong></span>
-                            ${matCut ? `<div style="font-size:9.5px;color:#15803d;font-weight:800;margin-top:2px">✓ Corte: ${money(matCut.total_sales || (matCut.cash_sales + matCut.card_sales))} (Fondo ${money(matCut.opening_amount)})</div>` : ''}
-                        </div>
-                        <div style="text-align:right">
-                            <span>🌇 Vespertino: <strong style="color:var(--wine-800)">${money(vesTotal)}</strong></span>
-                            ${vesCut ? `<div style="font-size:9.5px;color:#15803d;font-weight:800;margin-top:2px">✓ Corte: ${money(vesCut.total_sales || (vesCut.cash_sales + vesCut.card_sales))} (Fondo ${money(vesCut.opening_amount)})</div>` : ''}
-                        </div>
+                        <span>🌅 Matutino: <strong style="color:var(--wine-800)">${money(matTotal)}</strong></span>
+                        <span>🌇 Vespertino: <strong style="color:var(--wine-800)">${money(vesTotal)}</strong></span>
                     </div>
                 </article>`;
             }).join("")}
         </div>
-
-        <!-- SECCIÓN OFICIAL DE CORTES & ARQUEOS DE CAJA POR TURNO -->
-        <h3 style="color:#ffffff;margin:24px 0 14px;font-weight:900">📋 Cortes & Arqueos de Caja por Turno — ${isAllDates ? "Histórico Consolidado" : fd(selectedDate==="today"?todayStr:selectedDate)}</h3>
-        ${dateCuts.length ? `
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:28px">
-            ${dateCuts.map(ct => {
-                const shiftCat = getShiftCategory(ct);
-                const shiftBadge = (shiftCat === "vespertino") ? "🌇 Vespertino (Tarde)" : "🌅 Matutino (Mañana)";
-                const totalSold = Number(ct.total_sales || (Number(ct.cash_sales||0) + Number(ct.card_sales||0)));
-                const fund = Number(ct.opening_amount || 0);
-                const cashInBox = Number(ct.counted_cash != null ? ct.counted_cash : (ct.expected_cash || (fund + Number(ct.cash_sales||0))));
-                const diff = Number(ct.difference || 0);
-
-                return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:0 4px 12px rgba(0,0,0,0.1)">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1.5px solid #f3f4f6;padding-bottom:8px">
-                        <div>
-                            <strong style="font-size:15px;color:var(--wine-900)">🍦 ${esc(ct.branch_name)}</strong>
-                            <div style="font-size:11px;font-weight:800;color:var(--gold-700);margin-top:2px">${shiftBadge}</div>
-                        </div>
-                        <div style="text-align:right">
-                            <strong style="font-size:16px;color:var(--wine-700)">${money(totalSold)}</strong>
-                            <div style="font-size:10px;color:var(--emerald);font-weight:800">✓ Arqueo Cuadrado</div>
-                        </div>
-                    </div>
-                    <div style="font-size:11px;color:var(--text-muted);font-weight:700;margin-bottom:10px">
-                        <span>👤 Encargada: ${esc(ct.cashier_name || ct.performed_by_name || "Encargada")}</span><br>
-                        <span>🕒 Hora del corte: ${fdt(ct.created_at)}</span>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#f9fafb;padding:10px;border-radius:10px;margin-bottom:12px;border:1px solid #e5e7eb;font-size:11px">
-                        <div>💵 Efectivo Venta: <strong>${money(ct.cash_sales||0)}</strong></div>
-                        <div>💳 Tarjeta Venta: <strong>${money(ct.card_sales||0)}</strong></div>
-                        <div>💼 Fondo Inicial: <strong>${money(fund)}</strong></div>
-                        <div>📦 Total en Caja: <strong style="color:#15803d">${money(cashInBox)}</strong></div>
-                        <div style="grid-column:1/-1;color:${diff===0?'#15803d':'#b91c1c'};font-weight:800">
-                            ${diff===0 ? '✓ Diferencia: $0.00 (Sin faltante ni sobrante)' : ('⚠ Diferencia: ' + money(diff))}
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:8px;justify-content:flex-end">
-                        <button type="button" class="btn-reprint-cut-acc" data-id="${esc(ct.id)}"
-                            style="padding:6px 12px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
-                            🖨️ Imprimir Ticket
-                        </button>
-                        ${S.isSU ? `
-                        <button type="button" class="btn-del-cut-acc" data-id="${esc(ct.id)}" data-branch="${esc(ct.branch_name)}" data-shift="${esc(ct.shift_name)}"
-                            style="padding:6px 10px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
-                            🗑 Borrar
-                        </button>` : ''}
-                    </div>
-                </article>`;
-            }).join("")}
-        </div>` : `
-        <div class="empty-state" style="padding:24px;text-align:center;background:#fff;border-radius:14px;border:1px dashed #d1d5db;margin-bottom:24px">
-            <p style="color:var(--text-muted);font-weight:700">No hay cortes registrados en la fecha seleccionada.</p>
-        </div>`}
 
         <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Histórico de Días Cerrados & Archivados</h3>
         ${history.length
@@ -6280,69 +6238,7 @@
             toast("Contabilidad actualizada y sincronizada.", "info");
         });
 
-        // Reimprimir corte desde contabilidad
-        c.querySelectorAll(".btn-reprint-cut-acc").forEach(btn => btn.addEventListener("click", () => {
-            const cid = String(btn.dataset.id);
-            const target = allCuts.find(x => String(x.id) === cid);
-            if (!target) return toast("No se encontró el corte.", "warn");
-            try { printCutReceipt(target); } catch(e) {}
-            toast("🖨️ Reimprimiendo corte de caja…", "info", 3000);
-        }));
 
-        // Borrar corte desde contabilidad (exclusivo Superusuario)
-        c.querySelectorAll(".btn-del-cut-acc").forEach(btn => btn.addEventListener("click", async () => {
-            if (!S.isSU) return;
-            const cid = String(btn.dataset.id);
-            const sName = btn.dataset.shift || "Turno";
-            const bName = btn.dataset.branch || "Sucursal";
-
-            const ok = await toastConfirm(`👑 [SUPERUSUARIO] ¿Estás seguro de eliminar este corte de caja de ${bName} (${sName})?\nEsta acción se sincronizará y borrará el corte en la sucursal.`);
-            if (!ok) return;
-
-            const deleted = gr("deleted_cut_ids", []);
-            if (!deleted.includes(cid)) deleted.push(cid);
-            gw("deleted_cut_ids", deleted);
-            lw("deleted_cut_ids", deleted);
-
-            gw("all_cuts", gr("all_cuts", []).filter(x => String(x.id) !== cid));
-            lw("cuts", lr("cuts", []).filter(x => String(x.id) !== cid));
-
-            if (db) {
-                try { await db.from("cash_cuts").delete().eq("id", cid); } catch(e) {}
-                try {
-                    await safeQuery(db.from("sales").insert({
-                        branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
-                        company_id: "51bc275d-4e19-4115-be3f-42c0ce3dae5a",
-                        shift_id: "1dabe6df-2ce6-4e3a-97df-b81e179898ab",
-                        user_id: "4710b330-566c-45c7-a92e-b7b6a62355af",
-                        sale_number: "DELCUT-" + Date.now(),
-                        total: 0,
-                        status: "CUT_DELETED_RECORD",
-                        observations: JSON.stringify({
-                            is_cut_deleted_record: true,
-                            deleted_cut_id: cid,
-                            branch_name: bName,
-                            shift_name: sName,
-                            deleted_by: S.profile?.full_name || S.user?.email || "Superusuario",
-                            deleted_at: now()
-                        })
-                    }), null, 2500);
-                } catch(e) {}
-            }
-
-            if (realtimeChannel) {
-                try {
-                    realtimeChannel.send({
-                        type: "broadcast",
-                        event: "cut_deleted",
-                        payload: { id: cid, branch_name: bName, shift_name: sName, by: S.user?.email }
-                    });
-                } catch(e) {}
-            }
-
-            await loadAccounting();
-            toast(`🗑️ Corte de ${bName} (${sName}) eliminado de todo el sistema.`, "info", 3500);
-        }));
     }
 
     /* ── BÚSQUEDA ── */
