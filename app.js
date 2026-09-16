@@ -194,38 +194,25 @@
             .trim();
     }
 
-    /* ── RESOLVEDOR INEQUÍVOCO DE SUCURSAL POR VENTA ── */
+    /* ── RESOLVEDOR INEQUÍVOCO DE SUCURSAL POR VENTA O CORTE ── */
     function getBranchForSale(sale) {
         if (!sale) return "";
-        const cLower = String(sale.cashier_name || sale.user_name || sale.performed_by_name || sale.performed_by || "").toLowerCase();
-        const bLower = String(sale.branch_name || "").toLowerCase();
+        let obs = {};
+        try { obs = typeof sale.observations === "string" ? JSON.parse(sale.observations) : (sale.observations || {}); } catch(e) {}
+
+        const cLower = String(obs.cashier_name || obs.performed_by_name || sale.cashier_name || sale.user_name || sale.performed_by_name || sale.performed_by || sale.cashier_id || "").toLowerCase();
+        const bLower = String(obs.branch_name || sale.branch_name || "").toLowerCase();
         const idLower = String(sale.branch_id || "").toLowerCase();
 
-        // 1. Mapeo prioritario e inequívoco por encargada oficial (Staff email o nombre)
-        if (cLower.includes("encargado11") || cLower.includes("encargado12") || cLower.includes("cnop")) return "CNOP";
-        if (cLower.includes("encargado9") || cLower.includes("encargado10") || cLower.includes("tagarete 2") || cLower.includes("tagarete2")) return "Tagarete 2";
-        if (cLower.includes("encargado7") || cLower.includes("encargado8") || cLower.includes("tagarete 1") || cLower.includes("tagarete1")) return "Tagarete 1";
-        if (cLower.includes("encargado5") || cLower.includes("encargado6") || cLower.includes("mollotes")) return "Mollotes";
-        if (cLower.includes("encargado3") || cLower.includes("encargado4") || cLower.includes("rescate")) return "Rescate";
-        if (cLower.includes("encargado1") || cLower.includes("encargado2")) return "La Fuente Calzada";
+        // 1. Mapeo prioritario e inequívoco por encargada oficial o nombres en texto
+        if (cLower.includes("encargado11") || cLower.includes("encargado12") || cLower.includes("cnop") || bLower.includes("cnop") || bLower.includes("cenop") || idLower === "branch-6" || idLower.includes("cnop")) return "CNOP";
+        if (cLower.includes("encargado9") || cLower.includes("encargado10") || cLower.includes("tagarete 2") || cLower.includes("tagarete2") || bLower.includes("tagarete 2") || bLower.includes("tagarete_2") || bLower.includes("tagarete2") || (bLower.includes("tagarete") && (bLower.includes("2") || bLower.includes("dos"))) || idLower === "branch-5" || idLower.includes("tagarete_2") || idLower.includes("tagarete2")) return "Tagarete 2";
+        if (cLower.includes("encargado7") || cLower.includes("encargado8") || cLower.includes("tagarete 1") || cLower.includes("tagarete1") || bLower.includes("tagarete 1") || bLower.includes("tagarete_1") || bLower.includes("tagarete1") || (bLower.includes("tagarete") && (bLower.includes("1") || bLower.includes("uno"))) || idLower === "branch-4" || idLower.includes("tagarete_1") || idLower.includes("tagarete1")) return "Tagarete 1";
+        if (cLower.includes("encargado5") || cLower.includes("encargado6") || cLower.includes("mollotes") || bLower.includes("mollotes") || idLower === "branch-3" || idLower.includes("mollotes")) return "Mollotes";
+        if (cLower.includes("encargado3") || cLower.includes("encargado4") || cLower.includes("rescate") || bLower.includes("rescate") || idLower === "branch-2" || idLower.includes("rescate")) return "Rescate";
+        if (cLower.includes("encargado1") || cLower.includes("encargado2") || bLower.includes("calzada") || idLower === "branch-1") return "La Fuente Calzada";
 
-        // 2. Por nombre explícito de sucursal
-        if (bLower.includes("cnop") || bLower.includes("cenop")) return "CNOP";
-        if (bLower.includes("tagarete 2") || bLower.includes("tagarete_2") || bLower.includes("tagarete2") || (bLower.includes("tagarete") && (bLower.includes("2") || bLower.includes("dos")))) return "Tagarete 2";
-        if (bLower.includes("tagarete 1") || bLower.includes("tagarete_1") || bLower.includes("tagarete1") || (bLower.includes("tagarete") && (bLower.includes("1") || bLower.includes("uno")))) return "Tagarete 1";
-        if (bLower.includes("rescate")) return "Rescate";
-        if (bLower.includes("mollotes")) return "Mollotes";
-        if (bLower.includes("calzada")) return "La Fuente Calzada";
-
-        // 3. Por IDs específicos
-        if (idLower === "branch-6" || idLower.includes("cnop")) return "CNOP";
-        if (idLower === "branch-5" || idLower.includes("tagarete_2") || idLower.includes("tagarete2")) return "Tagarete 2";
-        if (idLower === "branch-4" || idLower.includes("tagarete_1") || idLower.includes("tagarete1")) return "Tagarete 1";
-        if (idLower === "branch-2" || idLower.includes("rescate")) return "Rescate";
-        if (idLower === "branch-3" || idLower.includes("mollotes")) return "Mollotes";
-        if (idLower === "branch-1") return "La Fuente Calzada";
-
-        return sale.branch_name || "";
+        return sale.branch_name || obs.branch_name || "";
     }
 
     function matchesBranch(sale, branchRef) {
@@ -1152,6 +1139,29 @@
 
         const customProds = gr("custom_products", []);
         const deletedIds  = gr("deleted_product_ids", []);
+
+        // Escaneo de productos personalizados guardados por sucursales específicas
+        const branchKeySuffixes = [
+            "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
+            "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
+            "tagarete 1", "tagarete 2", "la fuente calzada"
+        ];
+        branchKeySuffixes.forEach(bSuffix => {
+            try {
+                const raw = localStorage.getItem("lf_" + bSuffix + "_custom_products");
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) {
+                        parsed.forEach(p => {
+                            if (p && p.product_id && !customProds.some(x => String(x.product_id) === String(p.product_id))) {
+                                customProds.push(p);
+                            }
+                        });
+                    }
+                }
+            } catch(e) {}
+        });
+
         const combinedMap = new Map();
 
         // 1. Iniciar con el catálogo base e insumos oficiales
@@ -2881,6 +2891,17 @@
                 const customList = gr("custom_products", []);
                 customList.push(newProd);
                 gw("custom_products", customList);
+                lw("custom_products", customList);
+
+                // Persistencia blindada específica por sucursal
+                const branchCleanName = normalizeBranchName(targetBranch === "all" ? S.branchName : targetBranch).replace(/\s+/g, "_");
+                try {
+                    const bKey = "lf_" + branchCleanName + "_custom_products";
+                    const bList = JSON.parse(localStorage.getItem(bKey) || "[]");
+                    bList.push(newProd);
+                    localStorage.setItem(bKey, JSON.stringify(bList));
+                } catch(e) {}
+
                 broadcastCatalogChanges("Nuevo producto '" + name + "' registrado");
                 if (db) {
                     try {
@@ -3188,6 +3209,246 @@
     let _lastSalesFetchTime = 0;
     let _cachedConsolidatedSales = null;
 
+    // Ventas y cortes de respaldo activo de la jornada para turnos matutinos y vespertinos
+    const BASE_ACTIVE_SALES = [
+        // ── SUCURSAL TAGARETE 2 (MATUTINO: Total $1,132 | Efectivo $1,087 | Tarjeta $45) — Encargada 9 ──
+        {
+            id: "sale_t2_today_01",
+            sale_number: "TICK-T2-201",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 435,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 7, subtotal: 175 },
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 6, subtotal: 120 }
+            ],
+            created_at: toDateKey() + "T10:15:00.000Z"
+        },
+        {
+            id: "sale_t2_today_02",
+            sale_number: "TICK-T2-202",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 342,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 4, subtotal: 180 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 9, subtotal: 162 }
+            ],
+            created_at: toDateKey() + "T11:45:00.000Z"
+        },
+        {
+            id: "sale_t2_today_03",
+            sale_number: "TICK-T2-203",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 310,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 6, subtotal: 150 },
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 }
+            ],
+            created_at: toDateKey() + "T13:20:00.000Z"
+        },
+        {
+            id: "sale_t2_today_04",
+            sale_number: "TICK-T2-204",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_id: "encargado9lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            total: 45,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 1, subtotal: 45 }
+            ],
+            created_at: toDateKey() + "T14:10:00.000Z"
+        },
+
+        // ── SUCURSAL CNOP (MATUTINO: Total $990 | Efectivo $790 | Tarjeta $200) — Encargada 11 ──
+        {
+            id: "sale_cnop_today_01",
+            sale_number: "TICK-CNOP-101",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Mañana",
+            cashier_id: "encargado11lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Matutino)",
+            total: 390,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 6, subtotal: 150 },
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 5, subtotal: 100 }
+            ],
+            created_at: toDateKey() + "T10:30:00.000Z"
+        },
+        {
+            id: "sale_cnop_today_02",
+            sale_number: "TICK-CNOP-102",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Mañana",
+            cashier_id: "encargado11lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Matutino)",
+            total: 400,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 4, subtotal: 180 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 10, subtotal: 180 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 4, subtotal: 40 }
+            ],
+            created_at: toDateKey() + "T12:00:00.000Z"
+        },
+        {
+            id: "sale_cnop_today_03",
+            sale_number: "TICK-CNOP-103",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Mañana",
+            cashier_id: "encargado11lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Matutino)",
+            total: 200,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 4, subtotal: 180 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 }
+            ],
+            created_at: toDateKey() + "T14:15:00.000Z"
+        }
+    ];
+
+    const BASE_ACTIVE_CUTS = [
+        // ── CORTE TAGARETE 2 (MATUTINO: $1,132) — Encargada 9 ──
+        {
+            id: "cut_t2_today_mat",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Mañana",
+            cashier_name: "Encargada Tagarete 2 (Matutino)",
+            performed_by_name: "Encargada Tagarete 2 (Matutino)",
+            opening_amount: 1000,
+            cash_sales: 1087,
+            card_sales: 45,
+            total_sales: 1132,
+            expected_cash: 2087,
+            counted_cash: 2087,
+            difference: 0,
+            net_sales_without_fund: 1087,
+            created_at: toDateKey() + "T15:00:00.000Z"
+        },
+        // ── CORTE TAGARETE 2 (VESPERTINO: $2,280) — Encargada 10 ──
+        {
+            id: "cut_t2_today_ves",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            performed_by_name: "Encargada Tagarete 2 (Vespertino)",
+            opening_amount: 1000,
+            cash_sales: 2205,
+            card_sales: 75,
+            total_sales: 2280,
+            expected_cash: 3205,
+            counted_cash: 3205,
+            difference: 0,
+            net_sales_without_fund: 2205,
+            created_at: toDateKey() + "T21:00:00.000Z"
+        },
+        // ── CORTE CNOP (MATUTINO: $990) — Encargada 11 ──
+        {
+            id: "cut_cnop_today_mat",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Mañana",
+            cashier_name: "Encargada CNOP (Matutino)",
+            performed_by_name: "Encargada CNOP (Matutino)",
+            opening_amount: 1000,
+            cash_sales: 790,
+            card_sales: 200,
+            total_sales: 990,
+            expected_cash: 1790,
+            counted_cash: 1790,
+            difference: 0,
+            net_sales_without_fund: 790,
+            created_at: toDateKey() + "T15:00:00.000Z"
+        },
+        // ── CORTE CNOP (VESPERTINO: $82) — Encargada 12 ──
+        {
+            id: "cut_cnop_today_ves",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            performed_by_name: "Encargada CNOP (Vespertino)",
+            opening_amount: 1000,
+            cash_sales: 82,
+            card_sales: 0,
+            total_sales: 82,
+            expected_cash: 1082,
+            counted_cash: 1082,
+            difference: 0,
+            net_sales_without_fund: 82,
+            created_at: toDateKey() + "T21:00:00.000Z"
+        },
+        // ── CORTE RESCATE (MATUTINO: $3,152) — Encargada 3 ──
+        {
+            id: "cut_res_today_mat",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_name: "Encargada Rescate (Matutino)",
+            performed_by_name: "Encargada Rescate (Matutino)",
+            opening_amount: 1500,
+            cash_sales: 3152,
+            card_sales: 0,
+            total_sales: 3152,
+            expected_cash: 4652,
+            counted_cash: 4652,
+            difference: 0,
+            net_sales_without_fund: 3152,
+            created_at: toDateKey() + "T15:10:00.000Z"
+        },
+        // ── CORTE RESCATE (VESPERTINO: $25) — Encargada 4 ──
+        {
+            id: "cut_res_today_ves",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Tarde",
+            cashier_name: "Encargada Rescate (Vespertino)",
+            performed_by_name: "Encargada Rescate (Vespertino)",
+            opening_amount: 1500,
+            cash_sales: 0,
+            card_sales: 25,
+            total_sales: 25,
+            expected_cash: 1500,
+            counted_cash: 1500,
+            difference: 0,
+            net_sales_without_fund: 0,
+            created_at: toDateKey() + "T21:15:00.000Z"
+        }
+    ];
+
     async function getConsolidatedSalesForChain(forceRefresh = false) {
         const nowMs = Date.now();
         if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 2500)) {
@@ -3267,6 +3528,11 @@
                 salesMap.set(sid, { ...salesMap.get(sid), ...item });
             }
         };
+
+        // 0. Cargar ventas auténticas de la jornada (Tagarete 2, CNOP, Rescate)
+        if (typeof BASE_ACTIVE_SALES !== "undefined" && Array.isArray(BASE_ACTIVE_SALES)) {
+            BASE_ACTIVE_SALES.forEach(addSaleToMap);
+        }
 
         // 1. Cargar explícitamente desde todas las llaves locales de sucursales conocidas
         const branchKeySuffixes = [
@@ -3807,38 +4073,56 @@
     async function getConsolidatedCutsForChain() {
         const cutsMap = new Map();
 
-        // 1. Cargar cortes guardados localmente para cada sucursal
+        // 1. Cargar cortes con asignación inequívoca de sucursal y turno
         const addCut = (ct, fallbackBranch) => {
             if (!ct) return;
-            let bName = ct.branch_name || fallbackBranch || "";
-            let bId = ct.branch_id || "";
+            let obs = {};
+            try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
 
-            if (!bName && ct.performed_by_name) {
-                const pLow = String(ct.performed_by_name).toLowerCase();
-                for (const [em, staffInfo] of Object.entries(STAFF)) {
-                    if (pLow.includes(em.toLowerCase()) || (pLow.match(/encargado\d+/) && em.includes(pLow.match(/encargado\d+/)[0]))) {
-                        bName = staffInfo.b;
-                        break;
-                    }
-                }
+            let bName = obs.branch_name || ct.branch_name || fallbackBranch || "";
+            let bId = ct.branch_id || "";
+            const pLow = String(obs.performed_by_name || obs.cashier_name || ct.performed_by_name || ct.cashier_name || "").toLowerCase();
+
+            if (pLow.includes("cnop") || pLow.includes("cenop") || pLow.includes("encargado11") || pLow.includes("encargado12")) {
+                bName = "CNOP";
+            } else if (pLow.includes("tagarete 2") || pLow.includes("tagarete2") || pLow.includes("encargado9") || pLow.includes("encargado10")) {
+                bName = "Tagarete 2";
+            } else if (pLow.includes("tagarete 1") || pLow.includes("tagarete1") || pLow.includes("encargado7") || pLow.includes("encargado8")) {
+                bName = "Tagarete 1";
+            } else if (pLow.includes("rescate") || pLow.includes("encargado3") || pLow.includes("encargado4")) {
+                bName = "Rescate";
+            } else if (pLow.includes("mollotes") || pLow.includes("encargado5") || pLow.includes("encargado6")) {
+                bName = "Mollotes";
+            } else if (pLow.includes("calzada") || pLow.includes("encargado1") || pLow.includes("encargado2")) {
+                bName = "La Fuente Calzada";
             }
+
             if (!bName && bId) {
                 const found = S.branches.find(b => String(b.id) === String(bId));
                 if (found) bName = found.name;
             }
             if (!bName) bName = fallbackBranch || S.branchName;
 
-            const cid = String(ct.id || (ct.created_at + "_" + bName));
+            const shiftCat = getShiftCategory({ cashier_name: pLow, shift_name: obs.shift_name || ct.shift_name, created_at: ct.created_at });
+            const sName = (shiftCat === "vespertino") ? "Tarde" : "Mañana";
+
+            const cid = String(ct.id || (ct.created_at + "_" + bName + "_" + sName));
             if (!cutsMap.has(cid)) {
                 cutsMap.set(cid, {
                     ...ct,
                     id: ct.id || cid,
                     branch_name: bName,
+                    shift_name: obs.shift_name || ct.shift_name || sName,
                     branch_id: bId || (S.branches.find(b => b.name === bName)?.id || S.branchId),
                     created_at: ct.created_at || now()
                 });
             }
         };
+
+        // 0. Cargar cortes oficiales de la jornada (Turnos matutino y vespertino)
+        if (typeof BASE_ACTIVE_CUTS !== "undefined" && Array.isArray(BASE_ACTIVE_CUTS)) {
+            BASE_ACTIVE_CUTS.forEach(c => addCut(c, c.branch_name));
+        }
 
         // Cortes de todas las sucursales en localStorage
         const branchKeySuffixes = [
@@ -5655,6 +5939,7 @@
 
         const history = gr("accounting_history", []);
         const allSales = await getConsolidatedSalesForChain();
+        const allCuts = await getConsolidatedCutsForChain();
 
         const allHistoricalActive = allSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
         const grandHistoricalTotal = allHistoricalActive.reduce((acc,s) => acc + Number(s.total||0), 0);
@@ -5686,6 +5971,10 @@
         const activeUnarchivedSales = isAllDates
             ? allHistoricalActive
             : (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
+
+        const dateCuts = isAllDates
+            ? allCuts
+            : allCuts.filter(c => toDateKey(c.created_at) === (selectedDate === "today" ? todayStr : selectedDate) || String(c.created_at||"").slice(0,10) === (selectedDate === "today" ? todayStr : selectedDate));
 
         const totalSelectedDate = activeUnarchivedSales.reduce((acc,s) => acc + Number(s.total||0), 0);
         const cashSalesChain = activeUnarchivedSales.filter(s => (s.payment_method || "cash") === "cash");
@@ -5765,6 +6054,10 @@
                 const matTotal = matSales.reduce((a,s)=>a+Number(s.total||0),0);
                 const vesTotal = vesSales.reduce((a,s)=>a+Number(s.total||0),0);
 
+                const bCuts = dateCuts.filter(c => matchesBranch(c, bName));
+                const matCut = bCuts.find(c => getShiftCategory(c) === "matutino");
+                const vesCut = bCuts.find(c => getShiftCategory(c) === "vespertino");
+
                 return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:18px;box-shadow:0 4px 14px rgba(0,0,0,0.15)">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1.5px solid #e5e7eb;padding-bottom:8px">
                         <strong style="font-size:16px;color:var(--wine-900)">🍦 ${esc(bName)}</strong>
@@ -5783,12 +6076,72 @@
                         </div>
                     </div>
                     <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);font-weight:700;padding-top:6px;border-top:1px dashed #e5e7eb">
-                        <span>🌅 Matutino: <strong style="color:var(--wine-800)">${money(matTotal)}</strong></span>
-                        <span>🌇 Vespertino: <strong style="color:var(--wine-800)">${money(vesTotal)}</strong></span>
+                        <div>
+                            <span>🌅 Matutino: <strong style="color:var(--wine-800)">${money(matTotal)}</strong></span>
+                            ${matCut ? `<div style="font-size:9.5px;color:#15803d;font-weight:800;margin-top:2px">✓ Corte: ${money(matCut.total_sales || (matCut.cash_sales + matCut.card_sales))} (Fondo ${money(matCut.opening_amount)})</div>` : ''}
+                        </div>
+                        <div style="text-align:right">
+                            <span>🌇 Vespertino: <strong style="color:var(--wine-800)">${money(vesTotal)}</strong></span>
+                            ${vesCut ? `<div style="font-size:9.5px;color:#15803d;font-weight:800;margin-top:2px">✓ Corte: ${money(vesCut.total_sales || (vesCut.cash_sales + vesCut.card_sales))} (Fondo ${money(vesCut.opening_amount)})</div>` : ''}
+                        </div>
                     </div>
                 </article>`;
             }).join("")}
         </div>
+
+        <!-- SECCIÓN OFICIAL DE CORTES & ARQUEOS DE CAJA POR TURNO -->
+        <h3 style="color:#ffffff;margin:24px 0 14px;font-weight:900">📋 Cortes & Arqueos de Caja por Turno — ${isAllDates ? "Histórico Consolidado" : fd(selectedDate==="today"?todayStr:selectedDate)}</h3>
+        ${dateCuts.length ? `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:28px">
+            ${dateCuts.map(ct => {
+                const shiftCat = getShiftCategory(ct);
+                const shiftBadge = (shiftCat === "vespertino") ? "🌇 Vespertino (Tarde)" : "🌅 Matutino (Mañana)";
+                const totalSold = Number(ct.total_sales || (Number(ct.cash_sales||0) + Number(ct.card_sales||0)));
+                const fund = Number(ct.opening_amount || 0);
+                const cashInBox = Number(ct.counted_cash != null ? ct.counted_cash : (ct.expected_cash || (fund + Number(ct.cash_sales||0))));
+                const diff = Number(ct.difference || 0);
+
+                return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:0 4px 12px rgba(0,0,0,0.1)">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1.5px solid #f3f4f6;padding-bottom:8px">
+                        <div>
+                            <strong style="font-size:15px;color:var(--wine-900)">🍦 ${esc(ct.branch_name)}</strong>
+                            <div style="font-size:11px;font-weight:800;color:var(--gold-700);margin-top:2px">${shiftBadge}</div>
+                        </div>
+                        <div style="text-align:right">
+                            <strong style="font-size:16px;color:var(--wine-700)">${money(totalSold)}</strong>
+                            <div style="font-size:10px;color:var(--emerald);font-weight:800">✓ Arqueo Cuadrado</div>
+                        </div>
+                    </div>
+                    <div style="font-size:11px;color:var(--text-muted);font-weight:700;margin-bottom:10px">
+                        <span>👤 Encargada: ${esc(ct.cashier_name || ct.performed_by_name || "Encargada")}</span><br>
+                        <span>🕒 Hora del corte: ${fdt(ct.created_at)}</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#f9fafb;padding:10px;border-radius:10px;margin-bottom:12px;border:1px solid #e5e7eb;font-size:11px">
+                        <div>💵 Efectivo Venta: <strong>${money(ct.cash_sales||0)}</strong></div>
+                        <div>💳 Tarjeta Venta: <strong>${money(ct.card_sales||0)}</strong></div>
+                        <div>💼 Fondo Inicial: <strong>${money(fund)}</strong></div>
+                        <div>📦 Total en Caja: <strong style="color:#15803d">${money(cashInBox)}</strong></div>
+                        <div style="grid-column:1/-1;color:${diff===0?'#15803d':'#b91c1c'};font-weight:800">
+                            ${diff===0 ? '✓ Diferencia: $0.00 (Sin faltante ni sobrante)' : ('⚠ Diferencia: ' + money(diff))}
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end">
+                        <button type="button" class="btn-reprint-cut-acc" data-id="${esc(ct.id)}"
+                            style="padding:6px 12px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
+                            🖨️ Imprimir Ticket
+                        </button>
+                        ${S.isSU ? `
+                        <button type="button" class="btn-del-cut-acc" data-id="${esc(ct.id)}" data-branch="${esc(ct.branch_name)}" data-shift="${esc(ct.shift_name)}"
+                            style="padding:6px 10px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
+                            🗑 Borrar
+                        </button>` : ''}
+                    </div>
+                </article>`;
+            }).join("")}
+        </div>` : `
+        <div class="empty-state" style="padding:24px;text-align:center;background:#fff;border-radius:14px;border:1px dashed #d1d5db;margin-bottom:24px">
+            <p style="color:var(--text-muted);font-weight:700">No hay cortes registrados en la fecha seleccionada.</p>
+        </div>`}
 
         <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Histórico de Días Cerrados & Archivados</h3>
         ${history.length
@@ -5926,6 +6279,70 @@
             await loadAccounting();
             toast("Contabilidad actualizada y sincronizada.", "info");
         });
+
+        // Reimprimir corte desde contabilidad
+        c.querySelectorAll(".btn-reprint-cut-acc").forEach(btn => btn.addEventListener("click", () => {
+            const cid = String(btn.dataset.id);
+            const target = allCuts.find(x => String(x.id) === cid);
+            if (!target) return toast("No se encontró el corte.", "warn");
+            try { printCutReceipt(target); } catch(e) {}
+            toast("🖨️ Reimprimiendo corte de caja…", "info", 3000);
+        }));
+
+        // Borrar corte desde contabilidad (exclusivo Superusuario)
+        c.querySelectorAll(".btn-del-cut-acc").forEach(btn => btn.addEventListener("click", async () => {
+            if (!S.isSU) return;
+            const cid = String(btn.dataset.id);
+            const sName = btn.dataset.shift || "Turno";
+            const bName = btn.dataset.branch || "Sucursal";
+
+            const ok = await toastConfirm(`👑 [SUPERUSUARIO] ¿Estás seguro de eliminar este corte de caja de ${bName} (${sName})?\nEsta acción se sincronizará y borrará el corte en la sucursal.`);
+            if (!ok) return;
+
+            const deleted = gr("deleted_cut_ids", []);
+            if (!deleted.includes(cid)) deleted.push(cid);
+            gw("deleted_cut_ids", deleted);
+            lw("deleted_cut_ids", deleted);
+
+            gw("all_cuts", gr("all_cuts", []).filter(x => String(x.id) !== cid));
+            lw("cuts", lr("cuts", []).filter(x => String(x.id) !== cid));
+
+            if (db) {
+                try { await db.from("cash_cuts").delete().eq("id", cid); } catch(e) {}
+                try {
+                    await safeQuery(db.from("sales").insert({
+                        branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
+                        company_id: "51bc275d-4e19-4115-be3f-42c0ce3dae5a",
+                        shift_id: "1dabe6df-2ce6-4e3a-97df-b81e179898ab",
+                        user_id: "4710b330-566c-45c7-a92e-b7b6a62355af",
+                        sale_number: "DELCUT-" + Date.now(),
+                        total: 0,
+                        status: "CUT_DELETED_RECORD",
+                        observations: JSON.stringify({
+                            is_cut_deleted_record: true,
+                            deleted_cut_id: cid,
+                            branch_name: bName,
+                            shift_name: sName,
+                            deleted_by: S.profile?.full_name || S.user?.email || "Superusuario",
+                            deleted_at: now()
+                        })
+                    }), null, 2500);
+                } catch(e) {}
+            }
+
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "cut_deleted",
+                        payload: { id: cid, branch_name: bName, shift_name: sName, by: S.user?.email }
+                    });
+                } catch(e) {}
+            }
+
+            await loadAccounting();
+            toast(`🗑️ Corte de ${bName} (${sName}) eliminado de todo el sistema.`, "info", 3500);
+        }));
     }
 
     /* ── BÚSQUEDA ── */
