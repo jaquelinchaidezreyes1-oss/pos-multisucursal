@@ -1108,7 +1108,7 @@
         // Cargar registros de personalizaciones y cambios de catálogo desde la nube
         if (db) {
             try {
-                const {data: catalogRecords} = await safeQuery(db.from("sales").select("*").eq("status", "CATALOG_RECORD").order("created_at", {ascending: false}).limit(5), null, 2000);
+                const {data: catalogRecords} = await safeQuery(db.from("sales").select("*").eq("status", "CATALOG_RECORD").order("created_at", {ascending: false}).limit(50), null, 2500);
                 if (catalogRecords && catalogRecords.length) {
                     const localCustom = gr("custom_products", []);
                     const mapCust = new Map();
@@ -1126,8 +1126,12 @@
                         }
                     });
 
-                    gw("custom_products", Array.from(mapCust.values()));
-                    gw("deleted_product_ids", Array.from(delSet));
+                    const mergedCustom = Array.from(mapCust.values());
+                    const mergedDel = Array.from(delSet);
+                    gw("custom_products", mergedCustom);
+                    lw("custom_products", mergedCustom);
+                    gw("deleted_product_ids", mergedDel);
+                    lw("deleted_product_ids", mergedDel);
                 }
             } catch(e) {}
         }
@@ -3888,6 +3892,24 @@
             } catch(e) {}
         }
 
+        // Cargar registros de cortes eliminados desde Supabase
+        if (db) {
+            try {
+                const {data: delRecs} = await safeQuery(db.from("sales").select("observations").eq("status", "CUT_DELETED_RECORD").limit(100), null, 2000);
+                if (delRecs && delRecs.length) {
+                    const localDelCuts = new Set(gr("deleted_cut_ids", []));
+                    delRecs.forEach(dr => {
+                        let obs = {};
+                        try { obs = typeof dr.observations === "string" ? JSON.parse(dr.observations) : (dr.observations || {}); } catch(e) {}
+                        if (obs.deleted_cut_id) localDelCuts.add(String(obs.deleted_cut_id));
+                    });
+                    const arrDel = Array.from(localDelCuts);
+                    gw("deleted_cut_ids", arrDel);
+                    lw("deleted_cut_ids", arrDel);
+                }
+            } catch(e) {}
+        }
+
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
         const consolidatedCuts = Array.from(cutsMap.values())
             .filter(c => !deletedCutIds.has(String(c.id)))
@@ -4232,32 +4254,68 @@
             const sName = btn.dataset.shift || "Turno";
             const bName = btn.dataset.branch || "Sucursal";
 
-            const ok = await toastConfirm(`👑 [SUPERUSUARIO] ¿Estás seguro de eliminar este corte de caja de ${bName} (${sName})?\nEsta acción no se puede deshacer.`);
+            const ok = await toastConfirm(`👑 [SUPERUSUARIO] ¿Estás seguro de eliminar este corte de caja de ${bName} (${sName})?\nEsta acción se sincronizará y borrará el corte en la sucursal.`);
             if (!ok) return;
 
+            // 1. Guardar en lista de cortes eliminados global y local
             const deleted = gr("deleted_cut_ids", []);
             if (!deleted.includes(cid)) deleted.push(cid);
             gw("deleted_cut_ids", deleted);
+            lw("deleted_cut_ids", deleted);
 
+            // 2. Limpiar de todas las memorias locales
             gw("all_cuts", gr("all_cuts", []).filter(x => String(x.id) !== cid));
             lw("cuts", lr("cuts", []).filter(x => String(x.id) !== cid));
+            const bKeySuffixes = ["calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop", "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6"];
+            bKeySuffixes.forEach(sfx => {
+                try {
+                    const raw = localStorage.getItem("lf_" + sfx + "_cuts");
+                    if (raw) {
+                        const arr = JSON.parse(raw);
+                        if (Array.isArray(arr)) {
+                            localStorage.setItem("lf_" + sfx + "_cuts", JSON.stringify(arr.filter(x => String(x.id) !== cid)));
+                        }
+                    }
+                } catch(e) {}
+            });
 
+            // 3. Eliminar de Supabase cash_cuts y registrar eliminación
             if (db) {
                 try { await db.from("cash_cuts").delete().eq("id", cid); } catch(e) {}
+                try {
+                    await safeQuery(db.from("sales").insert({
+                        branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
+                        company_id: "51bc275d-4e19-4115-be3f-42c0ce3dae5a",
+                        shift_id: "1dabe6df-2ce6-4e3a-97df-b81e179898ab",
+                        user_id: "4710b330-566c-45c7-a92e-b7b6a62355af",
+                        sale_number: "DELCUT-" + Date.now(),
+                        total: 0,
+                        status: "CUT_DELETED_RECORD",
+                        observations: JSON.stringify({
+                            is_cut_deleted_record: true,
+                            deleted_cut_id: cid,
+                            branch_name: bName,
+                            shift_name: sName,
+                            deleted_by: S.profile?.full_name || S.user?.email || "Superusuario",
+                            deleted_at: now()
+                        })
+                    }), null, 2500);
+                } catch(e) {}
             }
 
+            // 4. Difusión en tiempo real por canal Mesh
             if (realtimeChannel) {
                 try {
                     realtimeChannel.send({
                         type: "broadcast",
                         event: "cut_deleted",
-                        payload: { id: cid }
+                        payload: { id: cid, branch_name: bName, shift_name: sName, by: S.user?.email }
                     });
                 } catch(e) {}
             }
 
             await loadCuts();
-            toast("🗑️ Corte eliminado del sistema.", "info", 3000);
+            toast(`🗑️ Corte de ${bName} (${sName}) eliminado de todo el sistema y sucursal.`, "info", 3500);
         }));
     }
     /* ── GESTIÓN DE TURNOS & APERTURA ── */
@@ -6340,6 +6398,40 @@
                         toast(`✂️ Nuevo Corte de Caja: ${c.branch_name || 'Sucursal'} (${c.shift_name || 'Turno'}) — Total: ${money(c.total_sales || c.net_sales_without_fund || 0)}`, "info", 5000);
                     }
                     safeSilentRefresh();
+                })
+                .on("broadcast", { event: "cut_deleted" }, async ({ payload }) => {
+                    if (!payload || !payload.id) return;
+                    const cid = String(payload.id);
+
+                    // 1. Guardar en lista de cortes eliminados
+                    const deleted = gr("deleted_cut_ids", []);
+                    if (!deleted.includes(cid)) deleted.push(cid);
+                    gw("deleted_cut_ids", deleted);
+                    lw("deleted_cut_ids", deleted);
+
+                    // 2. Remover de todas las memorias locales
+                    gw("all_cuts", gr("all_cuts", []).filter(x => String(x.id) !== cid));
+                    lw("cuts", lr("cuts", []).filter(x => String(x.id) !== cid));
+                    const bKeySuffixes = ["calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop", "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6"];
+                    bKeySuffixes.forEach(sfx => {
+                        try {
+                            const raw = localStorage.getItem("lf_" + sfx + "_cuts");
+                            if (raw) {
+                                const arr = JSON.parse(raw);
+                                if (Array.isArray(arr)) {
+                                    localStorage.setItem("lf_" + sfx + "_cuts", JSON.stringify(arr.filter(x => String(x.id) !== cid)));
+                                }
+                            }
+                        } catch(e) {}
+                    });
+
+                    if (S.branchName === payload.branch_name && !S.isSU) {
+                        toast(`ℹ️ Un corte de caja (${payload.shift_name || 'Turno'}) fue eliminado por Dirección.`, "info", 4000);
+                    }
+
+                    if (S.view === "cuts") await loadCuts(true);
+                    else if (S.view === "accounting") await loadAccounting(true);
+                    else if (S.view === "private-access") await loadPrivateAccess(true);
                 })
                 // 2.1 RECEPCIÓN DIRECTA DE INVENTARIOS EN TIEMPO REAL (MESH BROADCAST)
                 .on("broadcast", { event: "damage_reported" }, async ({ payload }) => {
