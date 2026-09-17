@@ -631,6 +631,7 @@
         if (S.view === "private-access") await loadPrivateAccess();
         if (S.view === "damage-reports") await loadDamageReports();
         if (S.view === "accounting")     await loadAccounting();
+        updatePosLiveMovement();
         
         toast("📍 Sucursal activa: " + S.branchName + " (Inventario y Cortes actualizados)", "success", 3000);
     }
@@ -1283,6 +1284,99 @@
         }));
     }
 
+    /* ── NUEVA FUNCIÓN: MONITOR DE MOVIMIENTO EN VIVO & VENTAS DEL DÍA ── */
+    async function updatePosLiveMovement() {
+        const prodSec = document.querySelector(".products-section");
+        if (!prodSec) return;
+
+        let bar = document.getElementById("pos-live-movement-bar");
+        if (!bar) {
+            bar = document.createElement("div");
+            bar.id = "pos-live-movement-bar";
+            const tabs = document.getElementById("category-tabs");
+            if (tabs) prodSec.insertBefore(bar, tabs);
+            else prodSec.prepend(bar);
+        }
+
+        const allSales = await getConsolidatedSalesForChain();
+        const activeSales = allSales.filter(s => String(s.status || "").toUpperCase() !== "CANCELLED");
+
+        const todayStr = toDateKey();
+        const bSales = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }) && toDateKey(s.created_at) === todayStr);
+
+        const matSales = bSales.filter(s => getShiftCategory(s) === "matutino");
+        const vesSales = bSales.filter(s => getShiftCategory(s) === "vespertino");
+
+        const matCash = matSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a, s) => a + Number(s.total || 0), 0);
+        const matCard = matSales.filter(s => s.payment_method === "card").reduce((a, s) => a + Number(s.total || 0), 0);
+        const matTotal = matCash + matCard;
+
+        const vesCash = vesSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a, s) => a + Number(s.total || 0), 0);
+        const vesCard = vesSales.filter(s => s.payment_method === "card").reduce((a, s) => a + Number(s.total || 0), 0);
+        const vesTotal = vesCash + vesCard;
+
+        const dayCash = matCash + vesCash;
+        const dayCard = matCard + vesCard;
+        const dayTotal = matTotal + vesTotal;
+
+        const allShifts = gr("all_shifts", []);
+        const branchShift = allShifts.find(sh => matchesBranch(sh, { id: S.branchId, name: S.branchName }));
+        const activeLocalShift = lr("current_shift", null);
+        const initialFund = (branchShift && branchShift.opening_amount != null)
+            ? Number(branchShift.opening_amount)
+            : (activeLocalShift && activeLocalShift.opening_amount != null
+                ? Number(activeLocalShift.opening_amount)
+                : (S.currentShift?.opening_amount != null ? Number(S.currentShift.opening_amount) : 1000));
+
+        const isCurrentVesp = (S.shift || "").toLowerCase().includes("tarde") || (S.shift || "").toLowerCase().includes("vesp");
+
+        bar.innerHTML = `
+        <div style="background:linear-gradient(135deg,#ffffff,#fffdf5);border:1.5px solid var(--gold-400);border-radius:14px;padding:12px 16px;margin-bottom:14px;box-shadow:0 3px 12px rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+            <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-size:24px">🍦</span>
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <strong style="font-size:14px;color:var(--wine-900);font-weight:900">📍 ${esc(S.branchName)}</strong>
+                        <span style="font-size:10px;font-weight:900;background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:10px;border:1px solid #86efac;display:inline-flex;align-items:center;gap:4px">
+                            <span style="width:6px;height:6px;background:#15803d;border-radius:50%;display:inline-block"></span> EN VIVO
+                        </span>
+                    </div>
+                    <small style="color:var(--text-muted);font-size:11px;display:block;margin-top:2px">
+                        Turno actual: <strong style="color:var(--wine-800)">${esc(S.shift)}</strong> • Fondo Inicial: <strong>${money(initialFund)}</strong> • 🧾 <strong>${bSales.length} tickets hoy</strong>
+                    </small>
+                </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <!-- MAÑANA -->
+                <div style="background:#fffef0;padding:6px 12px;border-radius:10px;border:1.5px solid ${!isCurrentVesp ? '#d97706' : '#fde68a'};text-align:right">
+                    <small style="font-size:9.5px;font-weight:900;color:#92400e;display:block">🌅 MAÑANA (${matSales.length} tks)</small>
+                    <strong style="font-size:14px;color:#78350f">${money(matTotal)}</strong>
+                </div>
+
+                <!-- TARDE -->
+                <div style="background:#eef2ff;padding:6px 12px;border-radius:10px;border:1.5px solid ${isCurrentVesp ? '#6366f1' : '#c7d2fe'};text-align:right">
+                    <small style="font-size:9.5px;font-weight:900;color:#3730a3;display:block">🌇 TARDE (EN VIVO - ${vesSales.length} tks)</small>
+                    <strong style="font-size:14px;color:#312e81">${money(vesTotal)}</strong>
+                </div>
+
+                <!-- TOTAL DÍA -->
+                <div style="background:#f0fdf4;padding:6px 14px;border-radius:10px;border:1.5px solid #86efac;text-align:right">
+                    <small style="font-size:10px;font-weight:900;color:#166534;display:block">💰 TOTAL VENDIDO HOY</small>
+                    <strong style="font-size:16px;color:#15803d">${money(dayTotal)}</strong>
+                </div>
+
+                <button type="button" class="btn-goto-sales-live" style="padding:7px 12px;background:linear-gradient(135deg,var(--wine-800),var(--wine-950));color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
+                    📋 Ver Tickets
+                </button>
+            </div>
+        </div>`;
+
+        bar.querySelector(".btn-goto-sales-live")?.addEventListener("click", () => {
+            if (window.changeView) window.changeView("sales");
+        });
+    }
+
     function renderPOS(products) {
         const c = $("#products-grid");
         if (!c) return;
@@ -1312,6 +1406,7 @@
         c.querySelectorAll(".product-card:not([disabled])").forEach(btn =>
             btn.addEventListener("click", () => addToCart(btn.dataset.pid))
         );
+        updatePosLiveMovement();
     }
 
     /* ── CARRITO & COBRO DE ÓRDENES ── */
@@ -3211,7 +3306,10 @@
 
     // Ventas y cortes de respaldo activo de la jornada para turnos matutinos y vespertinos
     const BASE_ACTIVE_SALES = [
-        // ── SUCURSAL TAGARETE 2 (MATUTINO: Total $1,730 | Efectivo $1,690 | Tarjeta $40) — Encargada 9 ──
+        // ═══════════════════════════════════════════════════════════════════
+        // 1. SUCURSAL TAGARETE 2 (ACTIVA)
+        // ═══════════════════════════════════════════════════════════════════
+        // ── TAGARETE 2 (MATUTINO: Total $1,730 | Efectivo $1,690 | Tarjeta $40) — Encargada 9 ──
         {
             id: "sale_t2_today_01",
             sale_number: "TICK-T2-201",
@@ -3299,8 +3397,85 @@
             ],
             created_at: toDateKey() + "T15:10:00.000Z"
         },
+        // ── TAGARETE 2 (VESPERTINO: Total $2,280 | Efectivo $2,205 | Tarjeta $75) — Encargada 10 ──
+        {
+            id: "sale_t2_today_06",
+            sale_number: "TICK-T2-206",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 735,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 7, subtotal: 315 },
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 6, subtotal: 270 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 5, subtotal: 100 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
+            ],
+            created_at: toDateKey() + "T16:15:00.000Z"
+        },
+        {
+            id: "sale_t2_today_07",
+            sale_number: "TICK-T2-207",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 810,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 10, subtotal: 350 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 10, subtotal: 250 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 10, subtotal: 180 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 1, subtotal: 10 }
+            ],
+            created_at: toDateKey() + "T18:00:00.000Z"
+        },
+        {
+            id: "sale_t2_today_08",
+            sale_number: "TICK-T2-208",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 660,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_name: "Cono Doble Chocolate", product_code: "CDCH", category: "helados", price: 45, quantity: 8, subtotal: 360 },
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 6, subtotal: 210 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 5, subtotal: 90 }
+            ],
+            created_at: toDateKey() + "T19:30:00.000Z"
+        },
+        {
+            id: "sale_t2_today_09",
+            sale_number: "TICK-T2-209",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 75,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 3, subtotal: 75 }
+            ],
+            created_at: toDateKey() + "T20:15:00.000Z"
+        },
 
-        // ── SUCURSAL CNOP (MATUTINO: Total $990 | Efectivo $790 | Tarjeta $200) — Encargada 11 ──
+        // ═══════════════════════════════════════════════════════════════════
+        // 2. SUCURSAL CNOP (ACTIVA)
+        // ═══════════════════════════════════════════════════════════════════
+        // ── CNOP (MATUTINO: Total $990 | Efectivo $790 | Tarjeta $200) — Encargada 11 ──
         {
             id: "sale_cnop_today_01",
             sale_number: "TICK-CNOP-101",
@@ -3353,6 +3528,119 @@
                 { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 }
             ],
             created_at: toDateKey() + "T14:15:00.000Z"
+        },
+        // ── CNOP (VESPERTINO: Total $82 | Efectivo $82 | Tarjeta $0) — Encargada 12 ──
+        {
+            id: "sale_cnop_today_04",
+            sale_number: "TICK-CNOP-201",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 50,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
+            ],
+            created_at: toDateKey() + "T17:20:00.000Z"
+        },
+        {
+            id: "sale_cnop_today_05",
+            sale_number: "TICK-CNOP-202",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 32,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 1, subtotal: 18 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 1, subtotal: 10 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 4, quantity: 1, subtotal: 4 }
+            ],
+            created_at: toDateKey() + "T19:10:00.000Z"
+        },
+
+        // ═══════════════════════════════════════════════════════════════════
+        // 3. SUCURSAL RESCATE (ACTIVA)
+        // ═══════════════════════════════════════════════════════════════════
+        // ── RESCATE (MATUTINO: Total $3,152 | Efectivo $3,152 | Tarjeta $0) — Encargada 3 ──
+        {
+            id: "sale_res_today_01",
+            sale_number: "TICK-RES-101",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 1250,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 14, subtotal: 630 },
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 12, subtotal: 420 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 10, subtotal: 200 }
+            ],
+            created_at: toDateKey() + "T10:20:00.000Z"
+        },
+        {
+            id: "sale_res_today_02",
+            sale_number: "TICK-RES-102",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 1100,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 12, subtotal: 540 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 14, subtotal: 350 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 11, subtotal: 198 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 12, quantity: 1, subtotal: 12 }
+            ],
+            created_at: toDateKey() + "T12:45:00.000Z"
+        },
+        {
+            id: "sale_res_today_03",
+            sale_number: "TICK-RES-103",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 802,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 12, subtotal: 420 },
+                { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_name: "Cono Doble Chocolate", product_code: "CDCH", category: "helados", price: 45, quantity: 6, subtotal: 270 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 5, subtotal: 100 },
+                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 12, quantity: 1, subtotal: 12 }
+            ],
+            created_at: toDateKey() + "T14:30:00.000Z"
+        },
+        // ── RESCATE (VESPERTINO: Total $25 | Efectivo $0 | Tarjeta $25) — Encargada 4 ──
+        {
+            id: "sale_res_today_04",
+            sale_number: "TICK-RES-201",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Tarde",
+            cashier_id: "encargado4lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Vespertino)",
+            total: 25,
+            payment_method: "card",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 }
+            ],
+            created_at: toDateKey() + "T17:40:00.000Z"
         }
     ];
 
@@ -3375,7 +3663,7 @@
             net_sales_without_fund: 1690,
             created_at: toDateKey() + "T15:34:00.000Z"
         },
-        // ── CORTE TAGARETE 2 (VESPERTINO: $2,280) — Encargada 10 ──
+        // ── CORTE TAGARETE 2 (VESPERTINO: $2,280 | Efectivo $2,205 | Tarjeta $75 | Fondo $1,000 | Contado $3,205) — Encargada 10 ──
         {
             id: "cut_t2_today_ves",
             branch_id: "branch-5",
@@ -3393,7 +3681,7 @@
             net_sales_without_fund: 2205,
             created_at: toDateKey() + "T21:00:00.000Z"
         },
-        // ── CORTE CNOP (MATUTINO: $990) — Encargada 11 ──
+        // ── CORTE CNOP (MATUTINO: $990 | Efectivo $790 | Tarjeta $200 | Fondo $1,000 | Contado $1,790) — Encargada 11 ──
         {
             id: "cut_cnop_today_mat",
             branch_id: "branch-6",
@@ -3411,7 +3699,7 @@
             net_sales_without_fund: 790,
             created_at: toDateKey() + "T15:00:00.000Z"
         },
-        // ── CORTE CNOP (VESPERTINO: $82) — Encargada 12 ──
+        // ── CORTE CNOP (VESPERTINO: $82 | Efectivo $82 | Tarjeta $0 | Fondo $1,000 | Contado $1,082) — Encargada 12 ──
         {
             id: "cut_cnop_today_ves",
             branch_id: "branch-6",
@@ -3429,7 +3717,7 @@
             net_sales_without_fund: 82,
             created_at: toDateKey() + "T21:00:00.000Z"
         },
-        // ── CORTE RESCATE (MATUTINO: $3,152) — Encargada 3 ──
+        // ── CORTE RESCATE (MATUTINO: $3,152 | Efectivo $3,152 | Tarjeta $0 | Fondo $1,500 | Contado $4,652) — Encargada 3 ──
         {
             id: "cut_res_today_mat",
             branch_id: "branch-2",
@@ -3447,7 +3735,7 @@
             net_sales_without_fund: 3152,
             created_at: toDateKey() + "T15:10:00.000Z"
         },
-        // ── CORTE RESCATE (VESPERTINO: $25) — Encargada 4 ──
+        // ── CORTE RESCATE (VESPERTINO: $25 | Efectivo $0 | Tarjeta $25 | Fondo $1,500 | Contado $1,500) — Encargada 4 ──
         {
             id: "cut_res_today_ves",
             branch_id: "branch-2",
@@ -6548,6 +6836,7 @@
         else if (S.view === "sales") loadSales(true);
         else if (S.view === "cuts") loadCuts(true);
         else if (S.view === "sales-count") loadSalesCount(true);
+        if (S.view === "pos") updatePosLiveMovement();
     }
 
     async function triggerLiveNetworkSync() {
@@ -7058,6 +7347,7 @@
         loadProfile,
         loadShiftView,
         loadDamageReports,
+        updatePosLiveMovement,
         loadAccounting,
         renderCart,
         processSale,
