@@ -188,63 +188,72 @@
             .toLowerCase()
             .replace(/la fuente/g, "")
             .replace(/sucursal/g, "")
+            .replace(/paleteria|paletería/g, "")
+            .replace(/el rescate/g, "rescate")
             .replace(/matutino|vespertino|mañana|tarde/g, "")
             .replace(/[()_-]/g, " ")
             .replace(/\s+/g, " ")
             .trim();
     }
 
-    /* ── RESOLVEDOR INEQUÍVOCO DE SUCURSAL POR VENTA O CORTE ── */
+    /* ── RESOLVEDOR INEQUÍVOCO DE SUCURSAL CANÓNICA ── */
+    function resolveCanonicalBranch(ref) {
+        if (!ref) return "";
+        let str = "";
+        if (typeof ref === "string") {
+            str = ref;
+        } else if (typeof ref === "object") {
+            str = `${ref.name || ""} ${ref.branch_name || ""} ${ref.id || ""} ${ref.branch_id || ""} ${ref.cashier_name || ""} ${ref.cashier_id || ""} ${ref.user_name || ""} ${ref.user_email || ""}`;
+            let obs = {};
+            try { obs = typeof ref.observations === "string" ? JSON.parse(ref.observations) : (ref.observations || {}); } catch(e) {}
+            str += ` ${obs.branch_name || ""} ${obs.cashier_name || ""} ${obs.user_email || ""}`;
+        }
+        const s = String(str).toLowerCase().trim();
+
+        if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargado12")) return "CNOP";
+        if (s.includes("branch-5") || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || s.includes("encargado9") || s.includes("encargado10")) return "Tagarete 2";
+        if (s.includes("branch-4") || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || s.includes("encargado7") || s.includes("encargado8")) return "Tagarete 1";
+        if (s.includes("branch-3") || s.includes("mollotes") || s.includes("encargado5") || s.includes("encargado6")) return "Mollotes";
+        if (s.includes("branch-2") || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4")) return "Rescate";
+        if (s.includes("branch-1") || s.includes("calzada") || s.includes("encargado1") || s.includes("encargado2")) return "La Fuente Calzada";
+
+        return "";
+    }
+
     function getBranchForSale(sale) {
-        if (!sale) return "";
-        let obs = {};
-        try { obs = typeof sale.observations === "string" ? JSON.parse(sale.observations) : (sale.observations || {}); } catch(e) {}
-
-        const cLower = String(obs.cashier_name || obs.performed_by_name || sale.cashier_name || sale.user_name || sale.performed_by_name || sale.performed_by || sale.cashier_id || "").toLowerCase();
-        const bLower = String(obs.branch_name || sale.branch_name || "").toLowerCase();
-        const idLower = String(sale.branch_id || "").toLowerCase();
-
-        // 1. Mapeo prioritario e inequívoco por encargada oficial o nombres en texto
-        if (cLower.includes("encargado11") || cLower.includes("encargado12") || cLower.includes("cnop") || bLower.includes("cnop") || bLower.includes("cenop") || idLower === "branch-6" || idLower.includes("cnop")) return "CNOP";
-        if (cLower.includes("encargado9") || cLower.includes("encargado10") || cLower.includes("tagarete 2") || cLower.includes("tagarete2") || bLower.includes("tagarete 2") || bLower.includes("tagarete_2") || bLower.includes("tagarete2") || (bLower.includes("tagarete") && (bLower.includes("2") || bLower.includes("dos"))) || idLower === "branch-5" || idLower.includes("tagarete_2") || idLower.includes("tagarete2")) return "Tagarete 2";
-        if (cLower.includes("encargado7") || cLower.includes("encargado8") || cLower.includes("tagarete 1") || cLower.includes("tagarete1") || bLower.includes("tagarete 1") || bLower.includes("tagarete_1") || bLower.includes("tagarete1") || (bLower.includes("tagarete") && (bLower.includes("1") || bLower.includes("uno"))) || idLower === "branch-4" || idLower.includes("tagarete_1") || idLower.includes("tagarete1")) return "Tagarete 1";
-        if (cLower.includes("encargado5") || cLower.includes("encargado6") || cLower.includes("mollotes") || bLower.includes("mollotes") || idLower === "branch-3" || idLower.includes("mollotes")) return "Mollotes";
-        if (cLower.includes("encargado3") || cLower.includes("encargado4") || cLower.includes("rescate") || bLower.includes("rescate") || idLower === "branch-2" || idLower.includes("rescate")) return "Rescate";
-        if (cLower.includes("encargado1") || cLower.includes("encargado2") || bLower.includes("calzada") || idLower === "branch-1") return "La Fuente Calzada";
-
-        return sale.branch_name || obs.branch_name || "";
+        return resolveCanonicalBranch(sale);
     }
 
     function matchesBranch(sale, branchRef) {
         if (!sale) return false;
         if (branchRef === "all" || branchRef?.id === "all") return true;
 
-        const targetRef = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
-        const assignedBranch = normalizeBranchName(getBranchForSale(sale));
+        const targetCanonical = resolveCanonicalBranch(branchRef);
+        const saleCanonical = resolveCanonicalBranch(sale);
 
-        if (!assignedBranch) return false;
-
-        if (targetRef.includes("calzada")) return assignedBranch.includes("calzada");
-        if (targetRef.includes("rescate")) return assignedBranch.includes("rescate");
-        if (targetRef.includes("mollotes")) return assignedBranch.includes("mollotes");
-        if (targetRef.includes("tagarete 2") || (targetRef.includes("tagarete") && targetRef.includes("2"))) {
-            return assignedBranch.includes("tagarete 2") || (assignedBranch.includes("tagarete") && assignedBranch.includes("2"));
+        if (targetCanonical && saleCanonical) {
+            return targetCanonical === saleCanonical;
         }
-        if (targetRef.includes("tagarete 1") || (targetRef.includes("tagarete") && targetRef.includes("1"))) {
-            return assignedBranch.includes("tagarete 1") || (assignedBranch.includes("tagarete") && (assignedBranch.includes("1") || (!assignedBranch.includes("2") && !assignedBranch.includes("dos"))));
-        }
-        if (targetRef.includes("tagarete")) return assignedBranch.includes("tagarete");
-        if (targetRef.includes("cnop") || targetRef.includes("cenop")) return assignedBranch.includes("cnop") || assignedBranch.includes("cenop");
 
-        return targetRef === assignedBranch || assignedBranch.includes(targetRef) || targetRef.includes(assignedBranch);
+        // Fallback por inclusión de subcadenas si no coincide directo
+        const t = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
+        const s = normalizeBranchName(saleCanonical || getBranchForSale(sale));
+        if (t && s) {
+            if (t.includes("rescate") && s.includes("rescate")) return true;
+            if (t.includes("cnop") && s.includes("cnop")) return true;
+            if (t.includes("tagarete 2") && s.includes("tagarete 2")) return true;
+            if (t.includes("tagarete 1") && s.includes("tagarete 1")) return true;
+            if (t.includes("calzada") && s.includes("calzada")) return true;
+            if (t.includes("mollotes") && s.includes("mollotes")) return true;
+        }
+        return false;
     }
 
-    
     function isProductAllowedInBranch(product, bName) {
         if (!product) return false;
-        const b = normalizeBranchName(bName || S.branchName || "calzada").toLowerCase();
-        const isRescate = b.includes("rescate");
-        const isCalzada = b.includes("calzada");
+        const bCanonical = resolveCanonicalBranch(bName || S.branchName || "calzada");
+        const isRescate = bCanonical === "Rescate";
+        const isCalzada = bCanonical === "La Fuente Calzada";
 
         const pid = String(product.product_id || product.id || "").toLowerCase();
         const pName = String(product.product_name || product.name || "").toLowerCase();
@@ -254,32 +263,26 @@
                                    pid.includes("sodas_italianas") || pName.includes("soda italiana") || pName.includes("sodas italianas") ||
                                    pid.includes("waffle") || pName.includes("waffle");
         if (isRescateExclusive) {
-            return isRescate; // Solo disponible en El Rescate
+            return isRescate;
         }
 
-        // 2. Chechis (Bolsa y Vaso) -> En Rescate, Mollotes, Tagarete 1, Tagarete 2, CNOP. (NUNCA en La Fuente Calzada)
+        // 2. Chechis -> En Rescate, Mollotes, Tagarete 1, Tagarete 2, CNOP. (NUNCA en La Fuente Calzada)
         const isChechis = pid.includes("chechis") || pName.includes("chechis");
         if (isChechis) {
-            if (isCalzada) return false; // Prohibido en La Fuente Calzada
-            return true; // Permitido en las demás 5 sucursales
+            if (isCalzada) return false;
+            return true;
         }
 
         // 3. Reglas explícitas por sucursal personalizada
         if (product.branch_name && product.branch_name !== "General" && product.branch_name !== "all") {
-            if (!matchesBranch({ branch_name: product.branch_name, branch_id: product.branch_id }, { name: bName || S.branchName, id: S.branchId })) {
+            const pBranchCanonical = resolveCanonicalBranch(product.branch_name);
+            if (pBranchCanonical && pBranchCanonical !== bCanonical) {
                 return false;
-            }
-        }
-
-        if (Array.isArray(product.excluded_branches) && product.excluded_branches.length) {
-            for (const ex of product.excluded_branches) {
-                if (b.includes(normalizeBranchName(ex).toLowerCase())) return false;
             }
         }
 
         return true;
     }
-
 
     /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE ── */
     let _isSyncingSales = false;
@@ -591,7 +594,11 @@
 
     async function changeBranch(id) {
         if (!S.isSU) return;
-        const b = S.branches.find(x => String(x.id) === String(id) || String(x.name).toLowerCase().trim() === String(id).toLowerCase().trim());
+        const targetCanonical = resolveCanonicalBranch(id);
+        let b = S.branches.find(x => resolveCanonicalBranch(x) === targetCanonical);
+        if (!b) {
+            b = S.branches.find(x => String(x.id).toLowerCase() === String(id).toLowerCase() || String(x.name).toLowerCase().trim() === String(id).toLowerCase().trim());
+        }
         if (!b) return;
 
         // 1. Guardar inventario de la sucursal previa
@@ -3343,773 +3350,7809 @@
 
     // Ventas y cortes de respaldo activo de la jornada para turnos matutinos y vespertinos
     const BASE_ACTIVE_SALES = [
-        // ═══════════════════════════════════════════════════════════════════
-        // 1. SUCURSAL TAGARETE 2 (ACTIVA)
-        // ═══════════════════════════════════════════════════════════════════
-        // ── TAGARETE 2: CORTE Y VENTAS MATUTINAS ($1,730.00) ──
         {
-            id: "sale_t2_675618",
-            sale_number: "TICK-675618",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Mañana",
-            cashier_id: "encargado9lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 1690,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 10, subtotal: 250 },
-                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 10, subtotal: 450 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 12, subtotal: 216 },
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 8, subtotal: 360 },
-                { product_id: "p_paleta_crema_gde", product_name: "Paleta Crema Grande", product_code: "PCG", category: "paletas", price: 30, quantity: 6, subtotal: 180 },
-                { product_id: "p_fresas_crema", product_name: "Fresas Congeladas", product_code: "FC", category: "preparados", price: 45, quantity: 4, subtotal: 180 },
-                { product_id: "prod_escamocha_gde", product_name: "Escamocha Grande", product_code: "ESC-G", category: "preparados", price: 75, quantity: 1, subtotal: 75 },
-                { product_id: "prod_canasta_doble", product_name: "Canasta Doble", product_code: "CAN-D", category: "helados", price: 40, quantity: 1, subtotal: 40 }
-            ],
-            created_at: toDateKey() + "T10:15:00.000Z"
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "created_at": "2026-09-17T21:51:12.733Z",
+                "id": "sale_1789681872733_mumw1",
+                "items": [
+                        {
+                                "price": 30,
+                                "product_id": "p_paleta_crema_gde",
+                                "product_name": "Paleta Crema Grande",
+                                "quantity": 2,
+                                "subtotal": 60
+                        },
+                        {
+                                "price": 25,
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 3,
+                                "subtotal": 75
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-923241",
+                "shift_name": "Ma�ana",
+                "status": "COMPLETADA",
+                "total": 135
         },
         {
-            id: "sale_t2_card_mat",
-            sale_number: "TICK-767105",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Mañana",
-            cashier_id: "encargado9lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 40,
-            payment_method: "card",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_paleta_agua_chica", product_name: "Paleta Agua Chica", product_code: "PAC", category: "paletas", price: 12, quantity: 2, subtotal: 24 },
-                { product_id: "p_bolis", product_name: "Paleta Mini", product_code: "MINI", category: "paletas", price: 8, quantity: 2, subtotal: 16 }
-            ],
-            created_at: toDateKey() + "T13:45:00.000Z"
-        },
-
-        // ── TAGARETE 2: VENTAS VESPERTINAS EN VIVO ($2,280.00) ──
-        {
-            id: "sale_t2_532111",
-            sale_number: "TICK-532111",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 50,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono sensillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 25, quantity: 1, subtotal: 25 }
-            ],
-            created_at: toDateKey() + "T16:20:00.000Z"
+                "id": "sale_1789680467130_asubn",
+                "sale_number": "TICK-941954",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-17T21:27:47.130Z"
         },
         {
-            id: "sale_t2_127740",
-            sale_number: "TICK-127740",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 50,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 1, subtotal: 30 },
-                { product_id: "p_helado_vaso1", product_name: "VASO 1 BOLITA", product_code: "V-1B", category: "helados", price: 20, quantity: 1, subtotal: 20 }
-            ],
-            created_at: toDateKey() + "T16:35:00.000Z"
+                "id": "sale_1789679779487_cg3se",
+                "sale_number": "TICK-307344",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 15,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-17T21:16:19.488Z"
         },
         {
-            id: "sale_t2_505850",
-            sale_number: "TICK-505850",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 180,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 2, subtotal: 90 },
-                { product_id: "p_fresas_crema", product_name: "Fresas Congeladas", product_code: "FC", category: "preparados", price: 45, quantity: 2, subtotal: 90 }
-            ],
-            created_at: toDateKey() + "T17:05:00.000Z"
+                "id": "sale_1789678710335_zlqvw",
+                "sale_number": "TICK-187002",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-17T20:58:30.336Z"
         },
         {
-            id: "sale_t2_756668",
-            sale_number: "TICK-756668",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 255,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "prod_vaso_bolitas_2", product_name: "Vaso bolitas 2", product_code: "VB-2", category: "helados", price: 35, quantity: 6, subtotal: 210 },
-                { product_id: "p_fresas_crema", product_name: "Fresa Congelada", product_code: "FC", category: "preparados", price: 45, quantity: 1, subtotal: 45 }
-            ],
-            created_at: toDateKey() + "T17:40:00.000Z"
+                "id": "sale_1789678606470_ztjui",
+                "sale_number": "TICK-580208",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T20:56:46.470Z"
         },
         {
-            id: "sale_t2_574609",
-            sale_number: "TICK-574609",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 235,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono doble vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 2, subtotal: 90 },
-                { product_id: "prod_paleta_pinon", product_name: "Paleta de piñón", product_code: "PP", category: "paletas", price: 40, quantity: 1, subtotal: 40 },
-                { product_id: "prod_canasta_doble", product_name: "Canasta Doble", product_code: "CAN-D", category: "helados", price: 80, quantity: 1, subtotal: 80 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono sensillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 }
-            ],
-            created_at: toDateKey() + "T18:15:00.000Z"
+                "id": "sale_1789678592655_jjzcm",
+                "sale_number": "TICK-709708",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 400,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_mediana",
+                                "product_name": "Agua Mediana",
+                                "quantity": 3,
+                                "price": 30,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 6,
+                                "price": 15,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789506101474_lslp",
+                                "product_name": "Paleta mini",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        },
+                        {
+                                "product_id": "p_helado_vaso2",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 2,
+                                "price": 35,
+                                "subtotal": 70
+                        },
+                        {
+                                "product_id": "prod_1789590955783_zcr9",
+                                "product_name": "Cheetos preparados",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "created_at": "2026-09-17T20:56:32.655Z"
         },
         {
-            id: "sale_t2_163600",
-            sale_number: "TICK-163600",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 30,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 1, subtotal: 30 }
-            ],
-            created_at: toDateKey() + "T18:30:00.000Z"
+                "id": "sale_1789677465578_ozael",
+                "sale_number": "TICK-173479",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789511159938_cxxn",
+                                "product_name": "Paleta agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789439461017_qaqo",
+                                "product_name": "Vaso 1 bolita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789524447372_5210",
+                                "product_name": "Agua chica",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "p_choco_corazon",
+                                "product_name": "Chocolate Coraz�n",
+                                "quantity": 1,
+                                "price": 10,
+                                "subtotal": 10
+                        }
+                ],
+                "created_at": "2026-09-17T20:37:45.578Z"
         },
         {
-            id: "sale_t2_280429",
-            sale_number: "TICK-280429",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 50,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 },
-                { product_id: "prod_mordisco", product_name: "Mordisco", product_code: "MOR", category: "helados", price: 25, quantity: 1, subtotal: 25 }
-            ],
-            created_at: toDateKey() + "T18:50:00.000Z"
+                "id": "sale_1789677231453_c4pjw",
+                "sale_number": "TICK-325467",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789510933216_lzqv",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T20:33:51.454Z"
         },
         {
-            id: "sale_t2_945692",
-            sale_number: "TICK-945692",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 510,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "prod_escamocha_gde", product_name: "Escamocha Grande", product_code: "ESC-G", category: "preparados", price: 75, quantity: 1, subtotal: 75 },
-                { product_id: "prod_escamocha_chica", product_name: "Escamocha Chica", product_code: "ESC-C", category: "preparados", price: 55, quantity: 1, subtotal: 55 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono sensillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 },
-                { product_id: "prod_cono_doble_choco", product_name: "Cono doble chocolate", product_code: "CDC", category: "helados", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "prod_paleta_pinon", product_name: "Paleta de piñon", product_code: "PP", category: "paletas", price: 40, quantity: 1, subtotal: 40 },
-                { product_id: "p_fresas_crema", product_name: "Fresas Congeladas", product_code: "FC", category: "preparados", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "prod_dorinachos", product_name: "Dorinachos", product_code: "DORI", category: "preparados", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "prod_agua_chica", product_name: "Agua Chica", product_code: "AC", category: "aguas", price: 25, quantity: 1, subtotal: 25 },
-                { product_id: "p_cacahuatadas", product_name: "Cacahuatadas", product_code: "CACAH", category: "preparados", price: 35, quantity: 1, subtotal: 35 },
-                { product_id: "p_helado_vaso1", product_name: "Helado una bolita", product_code: "H1B", category: "helados", price: 20, quantity: 1, subtotal: 20 },
-                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 1, subtotal: 30 },
-                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 1, subtotal: 45 }
-            ],
-            created_at: toDateKey() + "T19:15:00.000Z"
+                "id": "sale_1789676861261_xcfnp",
+                "sale_number": "TICK-342370",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 5,
+                                "price": 15,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-17T20:27:41.261Z"
         },
         {
-            id: "sale_t2_421049",
-            sale_number: "TICK-421049",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 510,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 5, subtotal: 225 },
-                { product_id: "p_papas_cueros", product_name: "Papas Con Cueros", product_code: "PC", category: "preparados", price: 50, quantity: 4, subtotal: 200 },
-                { product_id: "p_bolis", product_name: "Paleta Mini", product_code: "MINI", category: "paletas", price: 5, quantity: 2, subtotal: 10 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 3, subtotal: 75 }
-            ],
-            created_at: toDateKey() + "T19:45:00.000Z"
+                "id": "sale_1789676627034_cd6kz",
+                "sale_number": "TICK-556454",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 180,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 4,
+                                "price": 45,
+                                "subtotal": 180
+                        }
+                ],
+                "created_at": "2026-09-17T20:23:47.034Z"
         },
         {
-            id: "sale_t2_vesp_pack",
-            sale_number: "TICK-674349",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_id: "encargado10lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 360,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 3, subtotal: 135 },
-                { product_id: "p_tostilocos", product_name: "Tostilocos", product_code: "TL", category: "preparados", price: 55, quantity: 1, subtotal: 55 },
-                { product_id: "p_paleta_agua", product_name: "Paleta Chaparrita", product_code: "CHIC", category: "paletas", price: 20, quantity: 3, subtotal: 60 },
-                { product_id: "prod_escamocha_gde", product_name: "Escamocha Grande", product_code: "ESC-G", category: "preparados", price: 75, quantity: 1, subtotal: 75 },
-                { product_id: "p_helado_vaso2", product_name: "Helado dos bolitas", product_code: "H2B", category: "helados", price: 35, quantity: 1, subtotal: 35 }
-            ],
-            created_at: toDateKey() + "T20:10:00.000Z"
-        },
-
-        // ═══════════════════════════════════════════════════════════════════
-        // 2. SUCURSAL CNOP (ACTIVA)
-        // ═══════════════════════════════════════════════════════════════════
-        // ── CNOP: VENTAS MATUTINAS ($990.00) ──
-        {
-            id: "sale_cnop_753094",
-            sale_number: "TICK-753094",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Mañana",
-            cashier_id: "encargado11lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Matutino)",
-            total: 492,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_esquimal", product_name: "Esquimal Gde", product_code: "ESQ-G", category: "paletas", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "p_agua_half", product_name: "Agua Mediana", product_code: "AG-MED", category: "aguas", price: 30, quantity: 1, subtotal: 30 },
-                { product_id: "p_bolis", product_name: "Paleta mini", product_code: "MINI", category: "paletas", price: 5, quantity: 2, subtotal: 10 },
-                { product_id: "p_chechis_bolsa", product_name: "Chechis Preparados en Bolsa", product_code: "CHPB", category: "preparados", price: 20, quantity: 1, subtotal: 20 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 },
-                { product_id: "p_nieve_1lt", product_name: "Litro de Nieve", product_code: "NV-1L", category: "helados", price: 120, quantity: 1, subtotal: 120 },
-                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 1, subtotal: 30 },
-                { product_id: "p_paleta_crema_gde", product_name: "Paleta Crema Grande", product_code: "PCG", category: "paletas", price: 30, quantity: 1, subtotal: 30 },
-                { product_id: "p_tostilocos", product_name: "Tostiloco", product_code: "TL", category: "preparados", price: 55, quantity: 1, subtotal: 55 },
-                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "prod_cono_doble_choco", product_name: "Cono Doble Chocolate", product_code: "CDC", category: "helados", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "p_paleta_agua_chica", product_name: "Paleta Agua Chica", product_code: "PAC", category: "paletas", price: 12, quantity: 1, subtotal: 12 }
-            ],
-            created_at: toDateKey() + "T10:45:00.000Z"
+                "id": "sale_1789676380014_fztsx",
+                "sale_number": "TICK-678868",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-17T20:19:40.015Z"
         },
         {
-            id: "sale_cnop_647303",
-            sale_number: "TICK-647303",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Mañana",
-            cashier_id: "encargado11lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Matutino)",
-            total: 90,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 2, subtotal: 90 }
-            ],
-            created_at: toDateKey() + "T11:20:00.000Z"
+                "id": "sale_1789676005140_hnwwn",
+                "sale_number": "TICK-510820",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 110,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789521409924_eswt",
+                                "product_name": "Tostiloco morados",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "prod_1789511159938_cxxn",
+                                "product_name": "Paleta agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T20:13:25.141Z"
         },
         {
-            id: "sale_cnop_172702",
-            sale_number: "TICK-172702",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Mañana",
-            cashier_id: "encargado11lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Matutino)",
-            total: 135,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "prod_canasta_triple", product_name: "CANASTA TRIPLE", product_code: "CAN-T", category: "helados", price: 50, quantity: 1, subtotal: 50 },
-                { product_id: "prod_canasta_doble", product_name: "CANASTA DOBLE", product_code: "CAN-D", category: "helados", price: 40, quantity: 1, subtotal: 40 },
-                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 1, subtotal: 45 }
-            ],
-            created_at: toDateKey() + "T12:05:00.000Z"
+                "id": "sale_1789675080720_lupei",
+                "sale_number": "TICK-158598",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T19:58:00.720Z"
         },
         {
-            id: "sale_cnop_813544",
-            sale_number: "TICK-813544",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Mañana",
-            cashier_id: "encargado11lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Matutino)",
-            total: 120,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_agua_half", product_name: "Agua Mediana", product_code: "AG-MED", category: "aguas", price: 30, quantity: 2, subtotal: 60 },
-                { product_id: "p_paleta_crema_gde", product_name: "Paleta Crema Grande", product_code: "PCG", category: "paletas", price: 30, quantity: 2, subtotal: 60 }
-            ],
-            created_at: toDateKey() + "T12:55:00.000Z"
+                "id": "sale_1789674360878_s6zeu",
+                "sale_number": "TICK-520322",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 22,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_agua_chica",
+                                "product_name": "Sabrita Sola",
+                                "quantity": 1,
+                                "price": 22,
+                                "subtotal": 22
+                        }
+                ],
+                "created_at": "2026-09-17T19:46:00.879Z"
         },
         {
-            id: "sale_cnop_mat_extras",
-            sale_number: "TICK-553338",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Mañana",
-            cashier_id: "encargado11lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Matutino)",
-            total: 153,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 3, subtotal: 75 },
-                { product_id: "p_helado_vaso1", product_name: "Helado Vaso 1 Bolita", product_code: "V1B", category: "helados", price: 20, quantity: 2, subtotal: 40 },
-                { product_id: "p_paleta_agua_chica", product_name: "Paleta Agua Chica", product_code: "PAC", category: "paletas", price: 12, quantity: 1, subtotal: 12 },
-                { product_id: "p_paleta_agua_chica", product_name: "Paleta mini", product_code: "PM", category: "paletas", price: 5, quantity: 2, subtotal: 10 },
-                { product_id: "p_chicle", product_name: "Dulces varios", product_code: "DV", category: "dulces", price: 16, quantity: 1, subtotal: 16 }
-            ],
-            created_at: toDateKey() + "T13:40:00.000Z"
-        },
-
-        // ── CNOP: VENTAS VESPERTINAS EN VIVO ($956.00) ──
-        {
-            id: "sale_cnop_283913",
-            sale_number: "TICK-283913",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 302,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_ag_grande", product_name: "AGUA GRANDE", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 2, subtotal: 90 },
-                { product_id: "p_paleta_agua_gde", product_name: "Paleta Agua Grande", product_code: "PAG", category: "paletas", price: 22, quantity: 6, subtotal: 132 },
-                { product_id: "prod_paleta_chaparrita", product_name: "Paleta Chaparrita", product_code: "P-CHAP", category: "paletas", price: 20, quantity: 4, subtotal: 80 }
-            ],
-            created_at: toDateKey() + "T16:15:00.000Z"
+                "id": "sale_1789673107705_edjwb",
+                "sale_number": "TICK-309035",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 65,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_nat_grande",
+                                "product_name": "Agua Natural Grande",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T19:25:07.705Z"
         },
         {
-            id: "sale_cnop_404966",
-            sale_number: "TICK-404966",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 90,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 },
-                { product_id: "p_helado_vaso2", product_name: "Helado Vaso", product_code: "HV", category: "helados", price: 32, quantity: 1, subtotal: 32 },
-                { product_id: "prod_trufa", product_name: "Trufa", product_code: "TRUF", category: "dulces", price: 12, quantity: 1, subtotal: 12 },
-                { product_id: "prod_gomitas_carrucel", product_name: "Gomitas Carrucel", product_code: "GC", category: "dulces", price: 21, quantity: 1, subtotal: 21 }
-            ],
-            created_at: toDateKey() + "T17:10:00.000Z"
+                "id": "sale_1789672672219_z1kwl",
+                "sale_number": "TICK-876780",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-17T19:17:52.219Z"
         },
         {
-            id: "sale_cnop_488867",
-            sale_number: "TICK-488867",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 50,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
-            ],
-            created_at: toDateKey() + "T17:50:00.000Z"
+                "id": "sale_1789672617481_h0fs3",
+                "sale_number": "TICK-820002",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789510933216_lzqv",
+                                "product_name": "Agua Mediana",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-17T19:16:57.482Z"
         },
         {
-            id: "sale_cnop_122032",
-            sale_number: "TICK-122032",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 50,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
-            ],
-            created_at: toDateKey() + "T18:25:00.000Z"
+                "id": "sale_1789672080659_wjugd",
+                "sale_number": "TICK-671766",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 70,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T19:08:00.660Z"
         },
         {
-            id: "sale_cnop_97570",
-            sale_number: "TICK-97570",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 135,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_fresas_crema", product_name: "Fresa Congelada", product_code: "FC", category: "preparados", price: 45, quantity: 3, subtotal: 135 }
-            ],
-            created_at: toDateKey() + "T19:05:00.000Z"
+                "id": "sale_1789671563071_42r8m",
+                "sale_number": "TICK-391943",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 22,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_agua_chica",
+                                "product_name": "Sabrita Sola",
+                                "quantity": 1,
+                                "price": 22,
+                                "subtotal": 22
+                        }
+                ],
+                "created_at": "2026-09-17T18:59:23.071Z"
         },
         {
-            id: "sale_cnop_76003",
-            sale_number: "TICK-76003",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 90,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_esquimal", product_name: "Esquimal Gde", product_code: "ESQ-G", category: "paletas", price: 45, quantity: 2, subtotal: 90 }
-            ],
-            created_at: toDateKey() + "T19:35:00.000Z"
+                "id": "sale_1789671376183_nizba",
+                "sale_number": "TICK-669650",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-17T18:56:16.184Z"
         },
         {
-            id: "sale_cnop_802781",
-            sale_number: "TICK-802781",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 60,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 2, subtotal: 60 }
-            ],
-            created_at: toDateKey() + "T20:00:00.000Z"
+                "id": "sale_1789669399715_eil8g",
+                "sale_number": "TICK-113217",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789510937494_4n1e",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T18:23:19.716Z"
         },
         {
-            id: "sale_cnop_vesp_pack",
-            sale_number: "TICK-401334",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 179,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "p_paleta_agua_gde", product_name: "Paleta Agua Grande", product_code: "PAG", category: "paletas", price: 22, quantity: 2, subtotal: 44 },
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "p_paleta_agua_chica", product_name: "Paleta de Agua Chica", product_code: "PAC", category: "paletas", price: 25, quantity: 1, subtotal: 25 },
-                { product_id: "p_bolis", product_name: "Paleta mini", product_code: "MINI", category: "paletas", price: 5, quantity: 4, subtotal: 20 }
-            ],
-            created_at: toDateKey() + "T20:25:00.000Z"
-        },
-
-        // ═══════════════════════════════════════════════════════════════════
-        // 3. SUCURSAL EL RESCATE (ACTIVA)
-        // ═══════════════════════════════════════════════════════════════════
-        // ── EL RESCATE: VENTAS MATUTINAS ($2,592.00) ──
-        {
-            id: "sale_res_391943",
-            sale_number: "TICK-391943",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_id: "encargado3lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Matutino)",
-            total: 22,
-            payment_method: "card",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_sabrita_sola", product_name: "Sabrita Sola", product_code: "SAB-S", category: "desechables", price: 22, quantity: 1, subtotal: 22 }
-            ],
-            created_at: toDateKey() + "T11:00:00.000Z"
+                "id": "sale_1789669211026_l4euw",
+                "sale_number": "TICK-151237",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 2,
+                                "price": 15,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789511159938_cxxn",
+                                "product_name": "Paleta agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-17T18:20:11.027Z"
         },
         {
-            id: "sale_res_431167",
-            sale_number: "TICK-431167",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_id: "encargado3lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Matutino)",
-            total: 35,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_helado_vaso1", product_name: "Helado Vaso 1", product_code: "HV1", category: "helados", price: 20, quantity: 1, subtotal: 20 },
-                { product_id: "prod_gomitas_carrucel", product_name: "Gomitas carrucel", product_code: "GC", category: "dulces", price: 15, quantity: 1, subtotal: 15 }
-            ],
-            created_at: toDateKey() + "T11:30:00.000Z"
+                "id": "sale_1789668930668_m54et",
+                "sale_number": "TICK-564437",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        },
+                        {
+                                "product_id": "prod_1789343891215_tlc3",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-17T18:15:30.669Z"
         },
         {
-            id: "sale_res_21198",
-            sale_number: "TICK-21198",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_id: "encargado3lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Matutino)",
-            total: 90,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_paleta_agua_gde", product_name: "Paleta agua grande", product_code: "PAG", category: "paletas", price: 25, quantity: 1, subtotal: 25 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 },
-                { product_id: "p_bolis", product_name: "Helado", product_code: "H", category: "helados", price: 15, quantity: 1, subtotal: 15 }
-            ],
-            created_at: toDateKey() + "T12:15:00.000Z"
+                "id": "sale_1789667461395_u456d",
+                "sale_number": "TICK-509789",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 125,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 3,
+                                "price": 30,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789578850152_p01a",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-17T17:51:01.396Z"
         },
         {
-            id: "sale_res_972178",
-            sale_number: "TICK-972178",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_id: "encargado3lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Matutino)",
-            total: 75,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 3, subtotal: 75 }
-            ],
-            created_at: toDateKey() + "T12:45:00.000Z"
+                "id": "sale_1789667199617_wvxlo",
+                "sale_number": "TICK-419699",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 35,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789578850152_p01a",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-17T17:46:39.617Z"
         },
         {
-            id: "sale_res_291111",
-            sale_number: "TICK-291111",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_id: "encargado3lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Matutino)",
-            total: 50,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
-            ],
-            created_at: toDateKey() + "T13:15:00.000Z"
+                "id": "sale_1789666115281_73eqr",
+                "sale_number": "TICK-284636",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_chechis_vaso",
+                                "product_name": "Chechis Preparados Vaso",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-17T17:28:35.281Z"
         },
         {
-            id: "sale_res_bulk_01",
-            sale_number: "TICK-RES-206",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_id: "encargado3lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Matutino)",
-            total: 800,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 10, subtotal: 350 },
-                { product_id: "prod_cono_doble_choco", product_name: "Cono Doble Chocolate", product_code: "CDC", category: "helados", price: 45, quantity: 6, subtotal: 270 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 9, subtotal: 180 }
-            ],
-            created_at: toDateKey() + "T13:30:00.000Z"
+                "id": "sale_1789666051996_le0vi",
+                "sale_number": "TICK-561488",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789344787923_spve",
+                                "product_name": "Esquimal Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T17:27:31.996Z"
         },
         {
-            id: "sale_res_bulk_02",
-            sale_number: "TICK-RES-205",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_id: "encargado3lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Matutino)",
-            total: 900,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 10, subtotal: 450 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 10, subtotal: 250 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 10, subtotal: 180 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 }
-            ],
-            created_at: toDateKey() + "T13:45:00.000Z"
+                "id": "sale_1789664863048_t7c7b",
+                "sale_number": "TICK-243993",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-17T17:07:43.049Z"
         },
         {
-            id: "sale_res_bulk_03",
-            sale_number: "TICK-RES-204",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_id: "encargado3lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Matutino)",
-            total: 620,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 8, subtotal: 360 },
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 6, subtotal: 120 }
-            ],
-            created_at: toDateKey() + "T14:00:00.000Z"
-        },
-
-        // ── EL RESCATE: VENTAS VESPERTINAS EN VIVO ($110.00) ──
-        {
-            id: "sale_res_940207",
-            sale_number: "TICK-940207",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Tarde",
-            cashier_id: "encargado4lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Vespertino)",
-            total: 110,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_fresas_crema", product_name: "Fresa Congelada", product_code: "FC", category: "preparados", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "prod_choco_corazon", product_name: "Chocolate Corazón", product_code: "CH-COR", category: "dulces", price: 65, quantity: 1, subtotal: 65 }
-            ],
-            created_at: toDateKey() + "T16:45:00.000Z"
+                "id": "sale_1789664522371_2beeu",
+                "sale_number": "TICK-239045",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789518578935_d117",
+                                "product_name": "Chetos nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T17:02:02.372Z"
         },
         {
-            id: "sale_res_725473",
-            sale_number: "TICK-725473",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Tarde",
-            cashier_id: "encargado4lafuente@gmail.com",
-            cashier_name: "Encargada Rescate (Vespertino)",
-            total: 50,
-            payment_method: "cash",
-            status: "CANCELLED",
-            cancelled_reason: "Prueba",
-            cancelled_by: "Encargada Rescate (Vespertino)",
-            cancelled_at: toDateKey() + "T16:50:00.000Z",
-            items: [
-                { product_id: "p_papas_cueros", product_name: "Papas Con Cueros", product_code: "PC", category: "preparados", price: 50, quantity: 1, subtotal: 50 }
-            ],
-            created_at: toDateKey() + "T16:48:00.000Z"
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "created_at": "2026-09-17T03:00:48.949Z",
+                "id": "sale_1789614048949_5s0d2",
+                "items": [
+                        {
+                                "product_id": "prod_1789439246280_ciwz",
+                                "product_name": "AGUA GRANDE",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "p_paleta_agua_gde",
+                                "product_name": "Paleta Agua Grande",
+                                "quantity": 6,
+                                "price": 25,
+                                "subtotal": 150
+                        },
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 4,
+                                "price": 20,
+                                "subtotal": 80
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-283913",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 320
+        },
+        {
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "created_at": "2026-09-17T02:58:31.753Z",
+                "id": "sale_1789613911752_yd09m",
+                "items": [
+                        {
+                                "product_id": "prod_1789519605495_luuy",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "p_choco_corazon",
+                                "product_name": "Chocolate Coraz�n",
+                                "quantity": 2,
+                                "price": 10,
+                                "subtotal": 20
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-940207",
+                "shift_name": "Tarde",
+                "status": "CANCELLED",
+                "total": 110,
+                "cancelled_reason": "Equivocado",
+                "cancelled_by": "Encargada Rescate (Vespertino)",
+                "cancelled_at": "2026-09-17T22:14:16.232Z"
+        },
+        {
+                "id": "sale_1789613038986_n1rxc",
+                "sale_number": "TICK-444066",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789503512135_chg1",
+                                "product_name": "paleta de agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-17T02:43:58.986Z"
+        },
+        {
+                "id": "sale_1789612503230_e6utn",
+                "sale_number": "TICK-532111",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789440083334_8qwx",
+                                "product_name": "VASO 1 BOLITA",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-17T02:35:03.230Z"
+        },
+        {
+                "id": "sale_1789612434985_wbkr6",
+                "sale_number": "TICK-127740",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T02:33:54.985Z"
+        },
+        {
+                "id": "sale_1789612357171_a7xqa",
+                "sale_number": "TICK-675618",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T02:32:37.171Z"
+        },
+        {
+                "id": "sale_1789611646714_xjnhl",
+                "sale_number": "TICK-690171",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "CANCELLED",
+                "items": [
+                        {
+                                "product_id": "prod_1789510937494_4n1e",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789439454737_s9hc",
+                                "product_name": "Vaso 1 bolita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789611634761_lcps",
+                                "product_name": "Carrucel",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-17T02:20:46.714Z",
+                "cancelled_reason": "Pruebas",
+                "cancelled_by": "Encargada Rescate (Matutino)",
+                "cancelled_at": "2026-09-17T16:21:54.966Z"
+        },
+        {
+                "id": "2a15574c-f599-40c2-8e15-8e9f40f6c5ab",
+                "sale_number": "CATALOG-1789611634791",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-17T02:20:36.4667+00:00",
+                "local_id": "2a15574c-f599-40c2-8e15-8e9f40f6c5ab"
+        },
+        {
+                "id": "sale_1789611482947_kz5b0",
+                "sale_number": "TICK-371776",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T02:18:02.947Z"
+        },
+        {
+                "id": "sale_1789611398383_z3v4m",
+                "sale_number": "TICK-720798",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_crema_gde",
+                                "product_name": "Paleta Crema Grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T02:16:38.383Z"
+        },
+        {
+                "id": "sale_1789611135540_5mqsv",
+                "sale_number": "TICK-212828",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 105,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523192471_i682",
+                                "product_name": "Tostilocos",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "p_ag_chica",
+                                "product_name": "Agua Chica",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-17T02:12:15.541Z"
+        },
+        {
+                "id": "sale_1789611045888_jva3c",
+                "sale_number": "TICK-543906",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 185,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_canasta_doble",
+                                "product_name": "Canasta Doble",
+                                "quantity": 1,
+                                "price": 40,
+                                "subtotal": 40
+                        },
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_paleta_crema_gde",
+                                "product_name": "Paleta Crema Grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_mini",
+                                "product_name": "Mini",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        },
+                        {
+                                "product_id": "prod_1789494305417_z1ao",
+                                "product_name": "Helado Vaso 3 Bolitas",
+                                "quantity": 1,
+                                "price": 40,
+                                "subtotal": 40
+                        },
+                        {
+                                "product_id": "p_papas_cueros",
+                                "product_name": "Papas con Cueros",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-17T02:10:45.888Z"
+        },
+        {
+                "id": "sale_1789610755397_1edwc",
+                "sale_number": "TICK-261018",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789521489453_elhu",
+                                "product_name": "Papas cueros",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789519605495_luuy",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T02:05:55.398Z"
+        },
+        {
+                "id": "sale_1789610634183_1og4n",
+                "sale_number": "TICK-155357",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 3,
+                                "price": 25,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-17T02:03:54.183Z"
+        },
+        {
+                "id": "sale_1789610535849_nqr01",
+                "sale_number": "TICK-576057",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 150,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789521489453_elhu",
+                                "product_name": "Papas cueros",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789518578935_d117",
+                                "product_name": "Chetos nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_semillas",
+                                "product_name": "Semillas",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789578850152_p01a",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-17T02:02:15.849Z"
+        },
+        {
+                "id": "sale_1789610375401_hcsnz",
+                "sale_number": "TICK-697241",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-17T01:59:35.402Z"
+        },
+        {
+                "id": "sale_1789610318626_e1lv0",
+                "sale_number": "TICK-363957",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_fresa_congelada",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T01:58:38.626Z"
+        },
+        {
+                "id": "sale_1789609914600_td38j",
+                "sale_number": "TICK-156012",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 12,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789427782105_pdn1",
+                                "product_name": "PALETA DE AGUA CHICA",
+                                "quantity": 1,
+                                "price": 12,
+                                "subtotal": 12
+                        }
+                ],
+                "created_at": "2026-09-17T01:51:54.601Z"
+        },
+        {
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "created_at": "2026-09-17T01:50:54.665Z",
+                "id": "sale_1789609854665_1evsz",
+                "items": [
+                        {
+                                "product_id": "prod_1789439246280_ciwz",
+                                "product_name": "AGUA GRANDE",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-911908",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 45
+        },
+        {
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "created_at": "2026-09-17T01:48:33.821Z",
+                "id": "sale_1789609713821_keu9z",
+                "items": [
+                        {
+                                "product_id": "p_ag_mediana",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789593330645_gc0f",
+                                "product_name": "CHEETOS SOLOS",
+                                "quantity": 1,
+                                "price": 22,
+                                "subtotal": 22
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-491009",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 52
+        },
+        {
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "created_at": "2026-09-17T01:47:18.369Z",
+                "id": "sale_1789609638368_50wnr",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo_solo",
+                                "product_name": "Cono Sencillo Solo",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-383980",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 5
+        },
+        {
+                "id": "sale_1789609426062_eee05",
+                "sale_number": "TICK-172737",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789343891215_tlc3",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789344787923_spve",
+                                "product_name": "Esquimal Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T01:43:46.063Z"
+        },
+        {
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "created_at": "2026-09-17T01:43:19.305Z",
+                "id": "sale_1789609399305_4y6w7",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-684505",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 25
+        },
+        {
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "created_at": "2026-09-17T01:42:59.669Z",
+                "id": "sale_1789609379668_hkl62",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 2,
+                                "price": 15,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_dorinachos",
+                                "product_name": "Dorinachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-979619",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 75
+        },
+        {
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "created_at": "2026-09-17T01:41:34.832Z",
+                "id": "sale_1789609294831_hgtyl",
+                "items": [
+                        {
+                                "product_id": "p_tostilocos",
+                                "product_name": "Tostilocos",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-621135",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 55
+        },
+        {
+                "id": "sale_1789609124744_n722r",
+                "sale_number": "TICK-401334",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523132831_1n2c",
+                                "product_name": "Trol",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-17T01:38:44.744Z"
+        },
+        {
+                "id": "sale_1789609074110_e4dhw",
+                "sale_number": "TICK-999386",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789506101474_lslp",
+                                "product_name": "Paleta mini",
+                                "quantity": 5,
+                                "price": 5,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789523132831_1n2c",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T01:37:54.110Z"
+        },
+        {
+                "id": "sale_1789608850996_nhcxl",
+                "sale_number": "TICK-503918",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789524447372_5210",
+                                "product_name": "Agua chica",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-17T01:34:10.997Z"
+        },
+        {
+                "id": "sale_1789608589524_517ce",
+                "sale_number": "TICK-763763",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-17T01:29:49.524Z"
+        },
+        {
+                "id": "sale_1789608502354_zwhf1",
+                "sale_number": "TICK-716913",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 240,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_barcel_nacho",
+                                "product_name": "Barcel Nacho",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789524184275_n7yl",
+                                "product_name": "Escamocha grande",
+                                "quantity": 2,
+                                "price": 75,
+                                "subtotal": 150
+                        }
+                ],
+                "created_at": "2026-09-17T01:28:22.354Z"
+        },
+        {
+                "id": "sale_1789608336080_9pyt1",
+                "sale_number": "TICK-820308",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789581994012_afpt",
+                                "product_name": "paleta de crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T01:25:36.080Z"
+        },
+        {
+                "id": "sale_1789608150453_wfg9l",
+                "sale_number": "TICK-858991",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 85,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_fresa_congelada",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 2,
+                                "price": 20,
+                                "subtotal": 40
+                        }
+                ],
+                "created_at": "2026-09-17T01:22:30.453Z"
+        },
+        {
+                "id": "sale_1789608078998_0y481",
+                "sale_number": "TICK-437132",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 2,
+                                "price": 15,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T01:21:18.998Z"
+        },
+        {
+                "id": "sale_1789607847530_2m40t",
+                "sale_number": "TICK-707585",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 15,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-17T01:17:27.530Z"
+        },
+        {
+                "id": "sale_1789607770202_1y3p2",
+                "sale_number": "TICK-193348",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523132831_1n2c",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T01:16:10.202Z"
+        },
+        {
+                "id": "sale_1789607761383_va80a",
+                "sale_number": "TICK-245309",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789581994012_afpt",
+                                "product_name": "paleta de crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T01:16:01.383Z"
+        },
+        {
+                "id": "sale_1789607437898_ne3hv",
+                "sale_number": "TICK-591909",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_trufa",
+                                "product_name": "Trufa",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        },
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T01:10:37.898Z"
+        },
+        {
+                "id": "sale_1789607407799_oa46w",
+                "sale_number": "TICK-564766",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 12,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789427782105_pdn1",
+                                "product_name": "PALETA DE AGUA CHICA",
+                                "quantity": 1,
+                                "price": 12,
+                                "subtotal": 12
+                        }
+                ],
+                "created_at": "2026-09-17T01:10:07.799Z"
+        },
+        {
+                "id": "sale_1789607398110_i3ywu",
+                "sale_number": "TICK-510359",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 180,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_fresa_congelada",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 4,
+                                "price": 45,
+                                "subtotal": 180
+                        }
+                ],
+                "created_at": "2026-09-17T01:09:58.110Z"
+        },
+        {
+                "id": "sale_1789607232795_a9jp6",
+                "sale_number": "TICK-213840",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789581994012_afpt",
+                                "product_name": "paleta de crema grande",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-17T01:07:12.795Z"
+        },
+        {
+                "id": "sale_1789607226178_zk3zt",
+                "sale_number": "TICK-565646",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523132831_1n2c",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T01:07:06.178Z"
+        },
+        {
+                "id": "sale_1789606965919_rhzz6",
+                "sale_number": "TICK-179643",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 5,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_mini",
+                                "product_name": "Mini",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "created_at": "2026-09-17T01:02:45.919Z"
+        },
+        {
+                "id": "sale_1789606730950_35agz",
+                "sale_number": "TICK-896486",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789439246280_ciwz",
+                                "product_name": "AGUA GRANDE",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789439085479_k88o",
+                                "product_name": "VASO 2 BOLITAS",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-17T00:58:50.950Z"
+        },
+        {
+                "id": "sale_1789606586945_686p7",
+                "sale_number": "TICK-287660",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_choco_corazon",
+                                "product_name": "Chocolate Coraz�n",
+                                "quantity": 2,
+                                "price": 10,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789606575228_8ndd",
+                                "product_name": "Cacahuatada",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-17T00:56:26.945Z"
+        },
+        {
+                "id": "404fc2df-a842-4e21-9969-234d388a4831",
+                "sale_number": "CATALOG-1789606575255",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-17T00:56:16.693194+00:00",
+                "local_id": "404fc2df-a842-4e21-9969-234d388a4831"
+        },
+        {
+                "id": "sale_1789606400475_wqisi",
+                "sale_number": "TICK-116787",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 150,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_escamocha_gde",
+                                "product_name": "Escamocha Grande",
+                                "quantity": 2,
+                                "price": 75,
+                                "subtotal": 150
+                        }
+                ],
+                "created_at": "2026-09-17T00:53:20.475Z"
+        },
+        {
+                "id": "sale_1789606371958_4utgg",
+                "sale_number": "TICK-631322",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_fresa_congelada",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T00:52:51.958Z"
+        },
+        {
+                "id": "sale_1789606289756_q7mfh",
+                "sale_number": "TICK-397426",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 2,
+                                "price": 15,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T00:51:29.757Z"
+        },
+        {
+                "id": "sale_1789606239511_i85t8",
+                "sale_number": "TICK-222207",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_fresa_congelada",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T00:50:39.512Z"
+        },
+        {
+                "id": "sale_1789606173167_t9dmy",
+                "sale_number": "TICK-434783",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 54,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789427782105_pdn1",
+                                "product_name": "PALETA DE AGUA CHICA",
+                                "quantity": 2,
+                                "price": 12,
+                                "subtotal": 24
+                        },
+                        {
+                                "product_id": "p_paleta_crema_gde",
+                                "product_name": "Paleta Crema Grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T00:49:33.167Z"
+        },
+        {
+                "id": "sale_1789605979743_6zhvd",
+                "sale_number": "TICK-217376",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-17T00:46:19.743Z"
+        },
+        {
+                "id": "sale_1789605967151_6ri9j",
+                "sale_number": "TICK-412373",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 70,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789605951174_8lur",
+                                "product_name": "Dorinacho",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T00:46:07.151Z"
+        },
+        {
+                "id": "5d76e803-d4b5-4ade-ab54-66b167ff3fe1",
+                "sale_number": "CATALOG-1789605951199",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-17T00:45:52.719664+00:00",
+                "local_id": "5d76e803-d4b5-4ade-ab54-66b167ff3fe1"
+        },
+        {
+                "id": "sale_1789605908472_l97pi",
+                "sale_number": "TICK-908902",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 2,
+                                "price": 15,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T00:45:08.472Z"
+        },
+        {
+                "id": "sale_1789605832901_ns787",
+                "sale_number": "TICK-733897",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-17T00:43:52.901Z"
+        },
+        {
+                "id": "sale_1789605454270_yn2yt",
+                "sale_number": "TICK-492764",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 10,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789506101474_lslp",
+                                "product_name": "Paleta mini",
+                                "quantity": 2,
+                                "price": 5,
+                                "subtotal": 10
+                        }
+                ],
+                "created_at": "2026-09-17T00:37:34.270Z"
+        },
+        {
+                "id": "sale_1789605177438_m22eo",
+                "sale_number": "TICK-460365",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-17T00:32:57.438Z"
+        },
+        {
+                "id": "sale_1789604879519_sd0ey",
+                "sale_number": "TICK-664392",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 65,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789588715064_n0ik",
+                                "product_name": "Gomitas carrucel",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-17T00:27:59.519Z"
+        },
+        {
+                "id": "sale_1789604793507_brypg",
+                "sale_number": "TICK-931080",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 70,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-17T00:26:33.507Z"
+        },
+        {
+                "id": "sale_1789604778842_3heda",
+                "sale_number": "TICK-492159",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-17T00:26:18.842Z"
+        },
+        {
+                "id": "sale_1789604422638_5eax1",
+                "sale_number": "TICK-985339",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-17T00:20:22.638Z"
+        },
+        {
+                "id": "sale_1789604136987_c8969",
+                "sale_number": "TICK-739913",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789501746703_ww8e",
+                                "product_name": "Fresas Congeladas",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-17T00:15:36.987Z"
+        },
+        {
+                "id": "sale_1789603197413_w4lhw",
+                "sale_number": "TICK-491579",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T23:59:57.413Z"
+        },
+        {
+                "id": "sale_1789603155052_u4r27",
+                "sale_number": "TICK-398455",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 320,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789519605495_luuy",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 5,
+                                "price": 45,
+                                "subtotal": 225
+                        },
+                        {
+                                "product_id": "prod_1789582932954_4zly",
+                                "product_name": "Nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_rebanada_pay",
+                                "product_name": "Rebanada Pay",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T23:59:15.052Z"
+        },
+        {
+                "id": "sale_1789602660700_n45og",
+                "sale_number": "TICK-340726",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T23:51:00.701Z"
+        },
+        {
+                "id": "sale_1789602573758_9jac4",
+                "sale_number": "TICK-826647",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T23:49:33.758Z"
+        },
+        {
+                "id": "sale_1789602408708_lldzk",
+                "sale_number": "TICK-545803",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 245,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789344787923_spve",
+                                "product_name": "Esquimal Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789521489453_elhu",
+                                "product_name": "Papas cueros",
+                                "quantity": 2,
+                                "price": 50,
+                                "subtotal": 100
+                        },
+                        {
+                                "product_id": "prod_1789602349227_tspm",
+                                "product_name": "Mordisco",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T23:46:48.708Z"
+        },
+        {
+                "id": "sale_1789602400084_0qt2h",
+                "sale_number": "TICK-284966",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T23:46:40.084Z"
+        },
+        {
+                "id": "861a2829-dc17-4682-8578-dac0d410d673",
+                "sale_number": "CATALOG-1789602349253",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-16T23:45:50.706703+00:00",
+                "local_id": "861a2829-dc17-4682-8578-dac0d410d673"
+        },
+        {
+                "id": "sale_1789602249324_r968s",
+                "sale_number": "TICK-703567",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789510933216_lzqv",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T23:44:09.325Z"
+        },
+        {
+                "id": "sale_1789602227660_qc9rw",
+                "sale_number": "TICK-729490",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789439136025_ds7y",
+                                "product_name": "AGUA MEDIANA",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T23:43:47.660Z"
+        },
+        {
+                "id": "sale_1789601886423_az28l",
+                "sale_number": "TICK-889579",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_zanahoria",
+                                "product_name": "Zanahoria",
+                                "quantity": 1,
+                                "price": 40,
+                                "subtotal": 40
+                        },
+                        {
+                                "product_id": "prod_1789581994012_afpt",
+                                "product_name": "paleta de crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789503512135_chg1",
+                                "product_name": "paleta de agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T23:38:06.423Z"
+        },
+        {
+                "id": "sale_1789601623469_rm10v",
+                "sale_number": "TICK-761728",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_escamocha_gde",
+                                "product_name": "Escamocha Grande",
+                                "quantity": 1,
+                                "price": 75,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T23:33:43.469Z"
+        },
+        {
+                "id": "sale_1789601607228_jginj",
+                "sale_number": "TICK-783327",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 220,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 2,
+                                "price": 20,
+                                "subtotal": 40
+                        },
+                        {
+                                "product_id": "prod_1789415873355_j12h",
+                                "product_name": "Medio Litro de Nieve",
+                                "quantity": 1,
+                                "price": 60,
+                                "subtotal": 60
+                        },
+                        {
+                                "product_id": "p_nachos",
+                                "product_name": "Nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_fresa_congelada",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "p_mini",
+                                "product_name": "Mini",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "created_at": "2026-09-16T23:33:27.228Z"
+        },
+        {
+                "id": "sale_1789601420808_u3ond",
+                "sale_number": "TICK-129621",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 190,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789519605495_luuy",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789600771887_fm7r",
+                                "product_name": "Extra Nuez",
+                                "quantity": 2,
+                                "price": 5,
+                                "subtotal": 10
+                        },
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-16T23:30:20.809Z"
+        },
+        {
+                "id": "dd8514ff-17b2-460a-a0ca-54edfd6cc0d4",
+                "sale_number": "CATALOG-1789600771915",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-16T23:19:33.203107+00:00",
+                "local_id": "dd8514ff-17b2-460a-a0ca-54edfd6cc0d4"
+        },
+        {
+                "id": "40506928-ed42-4d5a-bbdd-44c7f6eb1a4d",
+                "sale_number": "CATALOG-1789600675715",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-16T23:17:59.012811+00:00",
+                "local_id": "40506928-ed42-4d5a-bbdd-44c7f6eb1a4d"
+        },
+        {
+                "id": "sale_1789600513844_i6e3n",
+                "sale_number": "TICK-625636",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789427668265_puwa",
+                                "product_name": "ESQUIMAL GRANDE",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T23:15:13.844Z"
+        },
+        {
+                "id": "sale_1789600314098_4m4ao",
+                "sale_number": "TICK-744710",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 358,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789581994012_afpt",
+                                "product_name": "paleta de crema grande",
+                                "quantity": 5,
+                                "price": 30,
+                                "subtotal": 150
+                        },
+                        {
+                                "product_id": "prod_1789426642889_x5qa",
+                                "product_name": "Paleta de agua chica",
+                                "quantity": 4,
+                                "price": 12,
+                                "subtotal": 48
+                        },
+                        {
+                                "product_id": "prod_1789434885052_e855",
+                                "product_name": "Chaparrita",
+                                "quantity": 3,
+                                "price": 20,
+                                "subtotal": 60
+                        },
+                        {
+                                "product_id": "prod_1789503512135_chg1",
+                                "product_name": "paleta de agua grande",
+                                "quantity": 4,
+                                "price": 25,
+                                "subtotal": 100
+                        }
+                ],
+                "created_at": "2026-09-16T23:11:54.098Z"
+        },
+        {
+                "id": "sale_1789599545606_72hau",
+                "sale_number": "TICK-119342",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 125,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 5,
+                                "price": 25,
+                                "subtotal": 125
+                        }
+                ],
+                "created_at": "2026-09-16T22:59:05.606Z"
+        },
+        {
+                "id": "sale_1789599540679_spmei",
+                "sale_number": "TICK-940481",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789599530518_4toy",
+                                "product_name": "Mordisco",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T22:59:00.679Z"
+        },
+        {
+                "id": "930bd56d-daee-4aef-bd0d-0724fac4b9fa",
+                "sale_number": "CATALOG-1789599530521",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-16T22:58:53.783637+00:00",
+                "local_id": "930bd56d-daee-4aef-bd0d-0724fac4b9fa"
+        },
+        {
+                "id": "sale_1789599527470_t7hfz",
+                "sale_number": "TICK-290903",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 40,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789343891215_tlc3",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T22:58:47.471Z"
+        },
+        {
+                "id": "sale_1789599427511_v349e",
+                "sale_number": "TICK-800455",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 100,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 4,
+                                "price": 25,
+                                "subtotal": 100
+                        }
+                ],
+                "created_at": "2026-09-16T22:57:07.511Z"
+        },
+        {
+                "id": "sale_1789599152125_uvqk4",
+                "sale_number": "TICK-708191",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T22:52:32.125Z"
+        },
+        {
+                "id": "sale_1789599111287_wd53x",
+                "sale_number": "TICK-795293",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 120,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_crema_gde",
+                                "product_name": "Paleta Crema Grande",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        },
+                        {
+                                "product_id": "prod_1789439246280_ciwz",
+                                "product_name": "AGUA GRANDE",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_trufa",
+                                "product_name": "Trufa",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T22:51:51.287Z"
+        },
+        {
+                "id": "sale_1789598832925_uuk3d",
+                "sale_number": "TICK-527865",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789578850152_p01a",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        },
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T22:47:12.925Z"
+        },
+        {
+                "id": "sale_1789598511425_wdyuj",
+                "sale_number": "TICK-510819",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789524184275_n7yl",
+                                "product_name": "Escamocha grande",
+                                "quantity": 1,
+                                "price": 75,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T22:41:51.425Z"
+        },
+        {
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "created_at": "2026-09-16T22:36:36.519Z",
+                "id": "sale_1789598196519_0t9u5",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-415862",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 15
+        },
+        {
+                "id": "sale_1789598098268_zb47p",
+                "sale_number": "TICK-424599",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 145,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_semillas",
+                                "product_name": "Semillas",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_ag_nat_grande",
+                                "product_name": "Agua Natural Grande",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789524184275_n7yl",
+                                "product_name": "Escamocha grande",
+                                "quantity": 1,
+                                "price": 75,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T22:34:58.268Z"
+        },
+        {
+                "id": "8091046c-07b5-4987-9784-446a5ade8ac4",
+                "sale_number": "CATALOG-1789597639752",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-16T22:29:20.392044+00:00",
+                "local_id": "8091046c-07b5-4987-9784-446a5ade8ac4"
+        },
+        {
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "created_at": "2026-09-16T22:22:54.067Z",
+                "id": "sale_1789597374067_1zp84",
+                "items": [
+                        {
+                                "product_id": "prod_1789440083334_8qwx",
+                                "product_name": "VASO 1 BOLITA",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_mini",
+                                "product_name": "Mini",
+                                "quantity": 6,
+                                "price": 5,
+                                "subtotal": 30
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-392494",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 50
+        },
+        {
+                "id": "sale_1789597315985_bbj06",
+                "sale_number": "TICK-932688",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 40,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789343891215_tlc3",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 2,
+                                "price": 20,
+                                "subtotal": 40
+                        }
+                ],
+                "created_at": "2026-09-16T22:21:55.985Z"
+        },
+        {
+                "id": "sale_1789597273440_qs4b3",
+                "sale_number": "TICK-924440",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 85,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_paleta_nuez_esp",
+                                "product_name": "Nuez Especial",
+                                "quantity": 1,
+                                "price": 40,
+                                "subtotal": 40
+                        }
+                ],
+                "created_at": "2026-09-16T22:21:13.441Z"
+        },
+        {
+                "id": "sale_1789596980758_od8ha",
+                "sale_number": "TICK-471495",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789519605495_luuy",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T22:16:20.758Z"
+        },
+        {
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "created_at": "2026-09-16T22:13:17.947Z",
+                "id": "sale_1789596797947_3hcp8",
+                "items": [
+                        {
+                                "product_id": "prod_1789503512135_chg1",
+                                "product_name": "paleta de agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-479022",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 25
+        },
+        {
+                "id": "sale_1789596605692_23xzs",
+                "sale_number": "TICK-690838",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 100,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789519605495_luuy",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789510933216_lzqv",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T22:10:05.692Z"
+        },
+        {
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "created_at": "2026-09-16T22:09:04.851Z",
+                "id": "sale_1789596544851_obizj",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-874845",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 15
+        },
+        {
+                "id": "sale_1789596395852_t1yyf",
+                "sale_number": "TICK-349254",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 295,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789511159938_cxxn",
+                                "product_name": "Paleta agua grande",
+                                "quantity": 10,
+                                "price": 25,
+                                "subtotal": 250
+                        },
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T22:06:35.853Z"
+        },
+        {
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "created_at": "2026-09-16T21:57:43.466Z",
+                "id": "sale_1789595863466_u5s3w",
+                "items": [
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789427782105_pdn1",
+                                "product_name": "PALETA DE AGUA CHICA",
+                                "quantity": 1,
+                                "price": 12,
+                                "subtotal": 12
+                        },
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-624148",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 82
+        },
+        {
+                "id": "sale_1789595817815_r7bmf",
+                "sale_number": "TICK-903250",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T21:56:57.815Z"
+        },
+        {
+                "id": "sale_1789595155106_4p1u3",
+                "sale_number": "TICK-963884",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 18,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maq_sencillo",
+                                "product_name": "Helado M�quina Sencillo",
+                                "quantity": 1,
+                                "price": 18,
+                                "subtotal": 18
+                        }
+                ],
+                "created_at": "2026-09-16T21:45:55.106Z"
+        },
+        {
+                "id": "sale_1789594648410_yunh5",
+                "sale_number": "TICK-747119",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789439246280_ciwz",
+                                "product_name": "AGUA GRANDE",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T21:37:28.410Z"
+        },
+        {
+                "id": "sale_1789594610915_of2r7",
+                "sale_number": "TICK-429008",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 195,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_tostilocos",
+                                "product_name": "Tostilocos",
+                                "quantity": 2,
+                                "price": 55,
+                                "subtotal": 110
+                        },
+                        {
+                                "product_id": "p_fresa_congelada",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T21:36:50.915Z"
+        },
+        {
+                "id": "sale_1789594095001_9zeaw",
+                "sale_number": "TICK-293470",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 57,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 3,
+                                "price": 15,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789586005313_lxkq",
+                                "product_name": "Paleta Agua Chica",
+                                "quantity": 1,
+                                "price": 12,
+                                "subtotal": 12
+                        }
+                ],
+                "created_at": "2026-09-16T21:28:15.001Z"
+        },
+        {
+                "id": "sale_1789594002074_sxbvu",
+                "sale_number": "TICK-625146",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 190,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789522617796_i9hi",
+                                "product_name": "Cono Chocolate",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_ag_mediana",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T21:26:42.074Z"
+        },
+        {
+                "id": "sale_1789593996170_m6ff4",
+                "sale_number": "TICK-709052",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789510937494_4n1e",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789511159938_cxxn",
+                                "product_name": "Paleta agua grande",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T21:26:36.170Z"
+        },
+        {
+                "id": "sale_1789593590219_x3bhs",
+                "sale_number": "TICK-637638",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 15,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789593561338_lvgx",
+                                "product_name": "Gomitas Carrucel",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T21:19:50.219Z"
+        },
+        {
+                "id": "sale_1789593250410_hnxqx",
+                "sale_number": "TICK-205841",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T21:14:10.410Z"
+        },
+        {
+                "id": "sale_1789593005268_37lze",
+                "sale_number": "TICK-776854",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T21:10:05.268Z"
+        },
+        {
+                "id": "sale_1789592843924_u4m7h",
+                "sale_number": "TICK-246677",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 40,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789592822603_7wpm",
+                                "product_name": "Helado Vaso 3",
+                                "quantity": 1,
+                                "price": 40,
+                                "subtotal": 40
+                        }
+                ],
+                "created_at": "2026-09-16T21:07:23.924Z"
+        },
+        {
+                "id": "sale_1789592376040_pvz9u",
+                "sale_number": "TICK-221985",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 35,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789578850152_p01a",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-16T20:59:36.041Z"
+        },
+        {
+                "id": "sale_1789591717390_c6dam",
+                "sale_number": "TICK-187533",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 160,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_cubierto",
+                                "product_name": "Cono Cubierto",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        },
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789511159938_cxxn",
+                                "product_name": "Paleta agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T20:48:37.390Z"
+        },
+        {
+                "id": "sale_1789590999442_6jilo",
+                "sale_number": "TICK-907380",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789590955783_zcr9",
+                                "product_name": "Cheetos preparados",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "created_at": "2026-09-16T20:36:39.442Z"
+        },
+        {
+                "id": "sale_1789590852410_qfma9",
+                "sale_number": "TICK-901959",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 3,
+                                "price": 15,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T20:34:12.410Z"
+        },
+        {
+                "id": "sale_1789590524343_myqsj",
+                "sale_number": "TICK-429907",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T20:28:44.343Z"
+        },
+        {
+                "id": "sale_1789590450558_4za1d",
+                "sale_number": "TICK-547978",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 135,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 3,
+                                "price": 45,
+                                "subtotal": 135
+                        }
+                ],
+                "created_at": "2026-09-16T20:27:30.558Z"
+        },
+        {
+                "id": "sale_1789590442209_p8g1v",
+                "sale_number": "TICK-295948",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 35,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_vaso1",
+                                "product_name": "Helado Vaso 1",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789588715064_n0ik",
+                                "product_name": "Gomitas carrucel",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T20:27:22.209Z"
+        },
+        {
+                "id": "sale_1789590344046_fo52o",
+                "sale_number": "TICK-431167",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789511159938_cxxn",
+                                "product_name": "Paleta agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T20:25:44.046Z"
+        },
+        {
+                "id": "sale_1789589910630_lgdh7",
+                "sale_number": "TICK-211987",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-16T20:18:30.630Z"
+        },
+        {
+                "id": "sale_t2_today_09",
+                "sale_number": "TICK-T2-209",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado10lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino)",
+                "total": 75,
+                "payment_method": "card",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 3,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T20:15:00.000Z"
+        },
+        {
+                "id": "sale_cnop_today_07",
+                "sale_number": "TICK-CNOP-204",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado12lafuente@gmail.com",
+                "cashier_name": "Encargada CNOP (Vespertino)",
+                "total": 193,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "p_paleta_agua_gd",
+                                "product_name": "Paleta de Agua Grande",
+                                "product_code": "PAL-AGD",
+                                "category": "paletas",
+                                "price": 22,
+                                "quantity": 4,
+                                "subtotal": 88
+                        },
+                        {
+                                "product_id": "a5c3b67a-c276-42f2-863f-a01c6f9294ed",
+                                "product_name": "Cono Doble Vainilla",
+                                "product_code": "CDV",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 1,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "sup_agua_med",
+                                "product_name": "Agua Mediana",
+                                "product_code": "AG-MED",
+                                "category": "aguas",
+                                "price": 30,
+                                "quantity": 1,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_chicle",
+                                "product_name": "Chicle",
+                                "product_code": "CHIC",
+                                "category": "dulces",
+                                "price": 10,
+                                "quantity": 3,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T20:10:00.000Z"
+        },
+        {
+                "id": "sale_1789589329432_fezm7",
+                "sale_number": "TICK-940405",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 12,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789586005313_lxkq",
+                                "product_name": "Paleta Agua Chica",
+                                "quantity": 1,
+                                "price": 12,
+                                "subtotal": 12
+                        }
+                ],
+                "created_at": "2026-09-16T20:08:49.432Z"
+        },
+        {
+                "id": "sale_1789588696323_bj6wz",
+                "sale_number": "TICK-424105",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 22,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_agua_chica",
+                                "product_name": "Sabrita Sola",
+                                "quantity": 1,
+                                "price": 22,
+                                "subtotal": 22
+                        }
+                ],
+                "created_at": "2026-09-16T19:58:16.323Z"
+        },
+        {
+                "id": "sale_1789588665717_41x6o",
+                "sale_number": "TICK-974602",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 155,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789520111905_q9lr",
+                                "product_name": "Fresa Natural",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "prod_1789521409924_eswt",
+                                "product_name": "Tostiloco morados",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "created_at": "2026-09-16T19:57:45.718Z"
+        },
+        {
+                "id": "sale_1789588553805_aeu4e",
+                "sale_number": "TICK-961470",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 110,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        },
+                        {
+                                "product_id": "prod_1789521489453_elhu",
+                                "product_name": "Papas cueros",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T19:55:53.805Z"
+        },
+        {
+                "id": "sale_1789588247615_05qyv",
+                "sale_number": "TICK-250297",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789581994012_afpt",
+                                "product_name": "paleta de crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T19:50:47.615Z"
+        },
+        {
+                "id": "sale_1789587859987_6ckfi",
+                "sale_number": "TICK-549052",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 77,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_barcel_solo",
+                                "product_name": "Barcel Solo",
+                                "quantity": 1,
+                                "price": 22,
+                                "subtotal": 22
+                        },
+                        {
+                                "product_id": "prod_1789521489453_elhu",
+                                "product_name": "Papas cueros",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "p_gomi_fish",
+                                "product_name": "Gomi Fish",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "created_at": "2026-09-16T19:44:19.987Z"
+        },
+        {
+                "id": "sale_1789587790122_vjos6",
+                "sale_number": "TICK-669114",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 185,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789587405124_mzg6",
+                                "product_name": "Escamocha Chica",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "prod_1789519605495_luuy",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789520111905_q9lr",
+                                "product_name": "Fresa Natural",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "p_paleta_payaso",
+                                "product_name": "Paleta Payaso",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T19:43:10.122Z"
+        },
+        {
+                "id": "sale_1789587743856_g1als",
+                "sale_number": "TICK-591445",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 310,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 3,
+                                "price": 15,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789521953007_i4xo",
+                                "product_name": "Doritos Queso",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789521908175_93he",
+                                "product_name": "Chetos preparados",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "prod_1789518578935_d117",
+                                "product_name": "Chetos nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789510937494_4n1e",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T19:42:23.856Z"
+        },
+        {
+                "id": "sale_1789587638246_fedk2",
+                "sale_number": "TICK-836563",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T19:40:38.246Z"
+        },
+        {
+                "id": "sale_1789587609285_apika",
+                "sale_number": "TICK-904042",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 230,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        },
+                        {
+                                "product_id": "prod_1789587405124_mzg6",
+                                "product_name": "Escamocha Chica",
+                                "quantity": 2,
+                                "price": 55,
+                                "subtotal": 110
+                        },
+                        {
+                                "product_id": "prod_1789520111905_q9lr",
+                                "product_name": "Fresa Natural",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "p_gomi_fish",
+                                "product_name": "Gomi Fish",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "created_at": "2026-09-16T19:40:09.285Z"
+        },
+        {
+                "id": "sale_1789587510429_zbm65",
+                "sale_number": "TICK-871728",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 12,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789586005313_lxkq",
+                                "product_name": "Paleta Agua Chica",
+                                "quantity": 1,
+                                "price": 12,
+                                "subtotal": 12
+                        }
+                ],
+                "created_at": "2026-09-16T19:38:30.429Z"
+        },
+        {
+                "id": "sale_1789587494673_qax8t",
+                "sale_number": "TICK-456703",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T19:38:14.673Z"
+        },
+        {
+                "id": "sale_1789587203318_d2rm5",
+                "sale_number": "TICK-721608",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_payaso",
+                                "product_name": "Paleta Payaso",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T19:33:23.318Z"
+        },
+        {
+                "id": "sale_1789587172755_k6kqd",
+                "sale_number": "TICK-542363",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 180,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789586064937_7n2l",
+                                "product_name": "Cono Doble Chocolate",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789586128844_kn9b",
+                                "product_name": "Cono Doble Vainilla",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T19:32:52.756Z"
+        },
+        {
+                "id": "sale_t2_today_08",
+                "sale_number": "TICK-T2-208",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado10lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino)",
+                "total": 660,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "adef0123-f92d-46ed-8797-2dfb46fb5b6d",
+                                "product_name": "Cono Doble Chocolate",
+                                "product_code": "CDCH",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 8,
+                                "subtotal": 360
+                        },
+                        {
+                                "product_id": "sup_agua_1l",
+                                "product_name": "Agua 1 Lt",
+                                "product_code": "AG-1L",
+                                "category": "aguas",
+                                "price": 35,
+                                "quantity": 6,
+                                "subtotal": 210
+                        },
+                        {
+                                "product_id": "p_paleta_agua",
+                                "product_name": "Paleta de Agua",
+                                "product_code": "PAL-AGUA",
+                                "category": "paletas",
+                                "price": 18,
+                                "quantity": 5,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-16T19:30:00.000Z"
+        },
+        {
+                "id": "sale_1789586739706_eswjm",
+                "sale_number": "TICK-814502",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 15,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789506101474_lslp",
+                                "product_name": "Paleta mini",
+                                "quantity": 3,
+                                "price": 5,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T19:25:39.706Z"
+        },
+        {
+                "id": "sale_1789586185524_tl8nn",
+                "sale_number": "TICK-173333",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 102,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789586005313_lxkq",
+                                "product_name": "Paleta Agua Chica",
+                                "quantity": 1,
+                                "price": 12,
+                                "subtotal": 12
+                        },
+                        {
+                                "product_id": "prod_1789586128844_kn9b",
+                                "product_name": "Cono Doble Vainilla",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-16T19:16:25.525Z"
+        },
+        {
+                "id": "sale_cnop_today_06",
+                "sale_number": "TICK-CNOP-203",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado12lafuente@gmail.com",
+                "cashier_name": "Encargada CNOP (Vespertino)",
+                "total": 298,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "p_paleta_chaparrita",
+                                "product_name": "Paleta Chaparrita",
+                                "product_code": "PAL-CHAP",
+                                "category": "paletas",
+                                "price": 18,
+                                "quantity": 6,
+                                "subtotal": 108
+                        },
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 4,
+                                "subtotal": 100
+                        },
+                        {
+                                "product_id": "p_nieve_vaso12",
+                                "product_name": "Nieve Vaso #12",
+                                "product_code": "NV-12",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 2,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-16T19:15:00.000Z"
+        },
+        {
+                "id": "sale_1789585937615_vevdi",
+                "sale_number": "TICK-956181",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789511204856_eev0",
+                                "product_name": "Paleta crema grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T19:12:17.615Z"
+        },
+        {
+                "id": "sale_cnop_today_05",
+                "sale_number": "TICK-CNOP-202",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado12lafuente@gmail.com",
+                "cashier_name": "Encargada CNOP (Vespertino)",
+                "total": 32,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "p_paleta_agua",
+                                "product_name": "Paleta de Agua",
+                                "product_code": "PAL-AGUA",
+                                "category": "paletas",
+                                "price": 18,
+                                "quantity": 1,
+                                "subtotal": 18
+                        },
+                        {
+                                "product_id": "p_chicle",
+                                "product_name": "Chicle",
+                                "product_code": "CHIC",
+                                "category": "dulces",
+                                "price": 10,
+                                "quantity": 1,
+                                "subtotal": 10
+                        },
+                        {
+                                "product_id": "p_chicle",
+                                "product_name": "Chicle",
+                                "product_code": "CHIC",
+                                "category": "dulces",
+                                "price": 4,
+                                "quantity": 1,
+                                "subtotal": 4
+                        }
+                ],
+                "created_at": "2026-09-16T19:10:00.000Z"
+        },
+        {
+                "id": "sale_1789585711849_dbc2m",
+                "sale_number": "TICK-136895",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-16T19:08:31.849Z"
+        },
+        {
+                "id": "sale_1789585542555_9o0jp",
+                "sale_number": "TICK-587960",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 3,
+                                "price": 15,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789582932954_4zly",
+                                "product_name": "Nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T19:05:42.557Z"
+        },
+        {
+                "id": "sale_1789585400974_lhkty",
+                "sale_number": "TICK-333741",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 2,
+                                "price": 15,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T19:03:20.974Z"
+        },
+        {
+                "id": "sale_1789585365069_rwqft",
+                "sale_number": "TICK-189749",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 15,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T19:02:45.069Z"
+        },
+        {
+                "id": "sale_1789585324276_r9q8q",
+                "sale_number": "TICK-824019",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 3,
+                                "price": 25,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T19:02:04.276Z"
+        },
+        {
+                "id": "sale_1789584704894_eaqpg",
+                "sale_number": "TICK-480945",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_agua_gde",
+                                "product_name": "Paleta Agua Grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T18:51:44.894Z"
+        },
+        {
+                "id": "sale_1789584551506_ic166",
+                "sale_number": "TICK-216369",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 5,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789584480211_lvn1",
+                                "product_name": "Paleta mini",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "created_at": "2026-09-16T18:49:11.507Z"
+        },
+        {
+                "id": "sale_1789584305189_s04l0",
+                "sale_number": "TICK-226496",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T18:45:05.190Z"
+        },
+        {
+                "id": "sale_1789584230511_xb5v5",
+                "sale_number": "TICK-673613",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        }
+                ],
+                "created_at": "2026-09-16T18:43:50.512Z"
+        },
+        {
+                "id": "sale_1789584138534_8zfhu",
+                "sale_number": "TICK-688574",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_nat_grande",
+                                "product_name": "Agua Natural Grande",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T18:42:18.534Z"
+        },
+        {
+                "id": "sale_1789584110019_skqo0",
+                "sale_number": "TICK-489421",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 3,
+                                "price": 15,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:41:50.019Z"
+        },
+        {
+                "id": "sale_1789584024347_hg86o",
+                "sale_number": "TICK-429242",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523132831_1n2c",
+                                "product_name": "Trol",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        },
+                        {
+                                "product_id": "p_ag_nat_chica",
+                                "product_name": "Agua Natural Chica",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T18:40:24.347Z"
+        },
+        {
+                "id": "sale_1789583903563_d5jet",
+                "sale_number": "TICK-128596",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_vaso3",
+                                "product_name": "Helado Vaso 3",
+                                "quantity": 1,
+                                "price": 40,
+                                "subtotal": 40
+                        },
+                        {
+                                "product_id": "p_helado_vaso2",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-16T18:38:23.563Z"
+        },
+        {
+                "id": "sale_1789583803880_5jhen",
+                "sale_number": "TICK-878584",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 155,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789521953007_i4xo",
+                                "product_name": "Doritos Queso",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789583748683_suar",
+                                "product_name": "Canasta Doble",
+                                "quantity": 1,
+                                "price": 40,
+                                "subtotal": 40
+                        }
+                ],
+                "created_at": "2026-09-16T18:36:43.880Z"
+        },
+        {
+                "id": "sale_1789583784820_hcw5c",
+                "sale_number": "TICK-151291",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T18:36:24.820Z"
+        },
+        {
+                "id": "sale_1789583729206_1gntd",
+                "sale_number": "TICK-613323",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-16T18:35:29.206Z"
+        },
+        {
+                "id": "sale_1789583688277_ml3ag",
+                "sale_number": "TICK-392179",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 100,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523192471_i682",
+                                "product_name": "Tostilocos",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        },
+                        {
+                                "product_id": "prod_1789523132831_1n2c",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T18:34:48.277Z"
+        },
+        {
+                "id": "sale_1789583637843_ro2gm",
+                "sale_number": "TICK-660631",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 40,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789582766973_q8p2",
+                                "product_name": "Canasta doble",
+                                "quantity": 1,
+                                "price": 40,
+                                "subtotal": 40
+                        }
+                ],
+                "created_at": "2026-09-16T18:33:57.843Z"
+        },
+        {
+                "id": "sale_1789583404241_engr4",
+                "sale_number": "TICK-590564",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 85,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        },
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T18:30:04.242Z"
+        },
+        {
+                "id": "sale_1789583391976_e6xi9",
+                "sale_number": "TICK-801999",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 2,
+                                "price": 15,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T18:29:51.976Z"
+        },
+        {
+                "id": "sale_1789583209677_8fmn8",
+                "sale_number": "TICK-893161",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:26:49.677Z"
+        },
+        {
+                "id": "sale_1789583207126_ylolk",
+                "sale_number": "TICK-969701",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T18:26:47.126Z"
+        },
+        {
+                "id": "sale_1789583124666_f5krr",
+                "sale_number": "TICK-739526",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 105,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 3,
+                                "price": 25,
+                                "subtotal": 75
+                        },
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T18:25:24.667Z"
+        },
+        {
+                "id": "sale_1789583106074_o6ksa",
+                "sale_number": "TICK-460935",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_frappe",
+                                "product_name": "Frapp�",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789582932954_4zly",
+                                "product_name": "Nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:25:06.074Z"
+        },
+        {
+                "id": "sale_1789583082591_yox1f",
+                "sale_number": "TICK-217816",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 5,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789506101474_lslp",
+                                "product_name": "Paleta mini",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "created_at": "2026-09-16T18:24:42.591Z"
+        },
+        {
+                "id": "sale_1789583037472_uxgn5",
+                "sale_number": "TICK-746361",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 130,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "p_helado_vaso1",
+                                "product_name": "Helado Vaso 1",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T18:23:57.472Z"
+        },
+        {
+                "id": "sale_1789583020307_bjwma",
+                "sale_number": "TICK-654460",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 115,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523132831_1n2c",
+                                "product_name": "Trol",
+                                "quantity": 3,
+                                "price": 30,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T18:23:40.307Z"
+        },
+        {
+                "id": "sale_1789582890006_fzofa",
+                "sale_number": "TICK-539915",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 110,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 3,
+                                "price": 25,
+                                "subtotal": 75
+                        },
+                        {
+                                "product_id": "prod_1789439085479_k88o",
+                                "product_name": "VASO 2 BOLITAS",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-16T18:21:30.006Z"
+        },
+        {
+                "id": "sale_res_today_03",
+                "sale_number": "TICK-690171",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado4lafuente@gmail.com",
+                "cashier_name": "Encargada Rescate (Vespertino)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "sup_agua_1l",
+                                "product_name": "Agua Mediana",
+                                "product_code": "AG-MED",
+                                "category": "aguas",
+                                "price": 30,
+                                "quantity": 1,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 1,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "p_nieve_vaso",
+                                "product_name": "Vaso 1 bolita",
+                                "product_code": "NV-1",
+                                "category": "helados",
+                                "price": 20,
+                                "quantity": 1,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_carrucel",
+                                "product_name": "Carrucel",
+                                "product_code": "CARR",
+                                "category": "dulces",
+                                "price": 15,
+                                "quantity": 1,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T18:20:00.000Z"
+        },
+        {
+                "id": "94725a28-05a5-4372-9a38-368ed76e640e",
+                "sale_number": "CATALOG-1789582766981",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "4710b330-566c-45c7-a92e-b7b6a62355af",
+                "cashier_name": "Encargada",
+                "total": 0,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "cancelled_reason": null,
+                "cancelled_by": null,
+                "cancelled_at": null,
+                "items": [],
+                "created_at": "2026-09-16T18:19:36.096041+00:00",
+                "local_id": "94725a28-05a5-4372-9a38-368ed76e640e"
+        },
+        {
+                "id": "sale_1789582764475_uo93m",
+                "sale_number": "TICK-496789",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:19:24.475Z"
+        },
+        {
+                "id": "sale_1789582657954_c3ww3",
+                "sale_number": "TICK-695740",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 3,
+                                "price": 25,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T18:17:37.954Z"
+        },
+        {
+                "id": "sale_1789582525546_t0til",
+                "sale_number": "TICK-918025",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 3,
+                                "price": 15,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:15:25.546Z"
+        },
+        {
+                "id": "sale_1789582451269_hv842",
+                "sale_number": "TICK-552286",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 155,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789426455958_he78",
+                                "product_name": "Esquimal Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_cono_cubierto",
+                                "product_name": "Cono Cubierto",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_helado_vaso1",
+                                "product_name": "Helado Vaso 1",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:14:11.269Z"
+        },
+        {
+                "id": "sale_1789582364124_d0d02",
+                "sale_number": "TICK-518086",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 3,
+                                "price": 25,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T18:12:44.124Z"
+        },
+        {
+                "id": "sale_1789582168277_nd0s9",
+                "sale_number": "TICK-861055",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789524447372_5210",
+                                "product_name": "Agua chica",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789510933216_lzqv",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T18:09:28.277Z"
+        },
+        {
+                "id": "sale_1789582165407_4lk28",
+                "sale_number": "TICK-914578",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789439246280_ciwz",
+                                "product_name": "AGUA GRANDE",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:09:25.407Z"
+        },
+        {
+                "id": "sale_1789582038673_8jbax",
+                "sale_number": "TICK-198211",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789581994012_afpt",
+                                "product_name": "paleta de crema grande",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-16T18:07:18.673Z"
+        },
+        {
+                "id": "sale_1789581914503_746gh",
+                "sale_number": "TICK-352260",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_doble_vain",
+                                "product_name": "Cono Doble Vainilla",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:05:14.504Z"
+        },
+        {
+                "id": "sale_1789581712706_ve2h7",
+                "sale_number": "TICK-175229",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T18:01:52.706Z"
+        },
+        {
+                "id": "sale_1789581701975_gss6g",
+                "sale_number": "TICK-813528",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_paleta_crema_gde",
+                                "product_name": "Paleta Crema Grande",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T18:01:41.975Z"
+        },
+        {
+                "id": "sale_1789581667496_u0ggp",
+                "sale_number": "TICK-658064",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789519605495_luuy",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T18:01:07.496Z"
+        },
+        {
+                "id": "sale_1789581613568_9sguz",
+                "sale_number": "TICK-401771",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 65,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789501746703_ww8e",
+                                "product_name": "Fresas Congeladas",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_helado_vaso1",
+                                "product_name": "Helado Vaso 1",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T18:00:13.568Z"
+        },
+        {
+                "id": "sale_t2_today_07",
+                "sale_number": "TICK-T2-207",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado10lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino)",
+                "total": 810,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "sup_agua_1l",
+                                "product_name": "Agua 1 Lt",
+                                "product_code": "AG-1L",
+                                "category": "aguas",
+                                "price": 35,
+                                "quantity": 10,
+                                "subtotal": 350
+                        },
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 10,
+                                "subtotal": 250
+                        },
+                        {
+                                "product_id": "p_paleta_agua",
+                                "product_name": "Paleta de Agua",
+                                "product_code": "PAL-AGUA",
+                                "category": "paletas",
+                                "price": 18,
+                                "quantity": 10,
+                                "subtotal": 180
+                        },
+                        {
+                                "product_id": "p_paleta_leche",
+                                "product_name": "Paleta de Leche",
+                                "product_code": "PAL-LECHE",
+                                "category": "paletas",
+                                "price": 20,
+                                "quantity": 1,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_chicle",
+                                "product_name": "Chicle",
+                                "product_code": "CHIC",
+                                "category": "dulces",
+                                "price": 10,
+                                "quantity": 1,
+                                "subtotal": 10
+                        }
+                ],
+                "created_at": "2026-09-16T18:00:00.000Z"
+        },
+        {
+                "id": "sale_1789580776070_o0fjy",
+                "sale_number": "TICK-200414",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_nat_grande",
+                                "product_name": "Agua Natural Grande",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T17:46:16.070Z"
+        },
+        {
+                "id": "sale_res_today_04",
+                "sale_number": "TICK-RES-201",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado4lafuente@gmail.com",
+                "cashier_name": "Encargada Rescate (Vespertino)",
+                "total": 25,
+                "payment_method": "card",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 1,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T17:40:00.000Z"
+        },
+        {
+                "id": "sale_1789580314867_7hhtn",
+                "sale_number": "TICK-918162",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T17:38:34.867Z"
+        },
+        {
+                "id": "sale_1789580145751_135mt",
+                "sale_number": "TICK-175033",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 15,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T17:35:45.751Z"
+        },
+        {
+                "id": "sale_1789580077082_5uq80",
+                "sale_number": "TICK-389519",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 15,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T17:34:37.082Z"
+        },
+        {
+                "id": "sale_1789579478374_0kru0",
+                "sale_number": "TICK-468195",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 35,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789578850152_p01a",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-16T17:24:38.374Z"
+        },
+        {
+                "id": "sale_cnop_today_04",
+                "sale_number": "TICK-CNOP-201",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado12lafuente@gmail.com",
+                "cashier_name": "Encargada CNOP (Vespertino)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 2,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T17:20:00.000Z"
+        },
+        {
+                "id": "sale_1789578891953_npw7x",
+                "sale_number": "TICK-639023",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Ma�ana",
+                "cashier_id": "5ae8adc9-bc8b-4d08-b181-71d22e99744a",
+                "cashier_name": "Encargada Rescate (Matutino) (encargado3lafuente@gmail.com)",
+                "total": 35,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789578850152_p01a",
+                                "product_name": "Helado Vaso 2",
+                                "quantity": 1,
+                                "price": 35,
+                                "subtotal": 35
+                        }
+                ],
+                "created_at": "2026-09-16T17:14:51.954Z"
+        },
+        {
+                "id": "sale_1789578826575_b6lv5",
+                "sale_number": "TICK-789848",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado11lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Matutino) (encargado11lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_mini",
+                                "product_name": "Mini",
+                                "quantity": 4,
+                                "price": 5,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T17:13:46.575Z"
+        },
+        {
+                "id": "sale_1789577451650_2c7a4",
+                "sale_number": "TICK-941695",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "usr_encargado9lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino) (encargado9lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T16:50:51.650Z"
+        },
+        {
+                "id": "sale_t2_today_06",
+                "sale_number": "TICK-T2-206",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "encargado10lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino)",
+                "total": 735,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "a5c3b67a-c276-42f2-863f-a01c6f9294ed",
+                                "product_name": "Cono Doble Vainilla",
+                                "product_code": "CDV",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 7,
+                                "subtotal": 315
+                        },
+                        {
+                                "product_id": "p_nieve_vaso12",
+                                "product_name": "Nieve Vaso #12",
+                                "product_code": "NV-12",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 6,
+                                "subtotal": 270
+                        },
+                        {
+                                "product_id": "p_paleta_leche",
+                                "product_name": "Paleta de Leche",
+                                "product_code": "PAL-LECHE",
+                                "category": "paletas",
+                                "price": 20,
+                                "quantity": 5,
+                                "subtotal": 100
+                        },
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 2,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T16:15:00.000Z"
+        },
+        {
+                "id": "sale_t2_today_05",
+                "sale_number": "TICK-T2-205",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "encargado9lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino)",
+                "total": 40,
+                "payment_method": "card",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "p_paleta_leche",
+                                "product_name": "Paleta de Leche",
+                                "product_code": "PAL-LECHE",
+                                "category": "paletas",
+                                "price": 20,
+                                "quantity": 2,
+                                "subtotal": 40
+                        }
+                ],
+                "created_at": "2026-09-16T15:10:00.000Z"
+        },
+        {
+                "id": "sale_cnop_today_03",
+                "sale_number": "TICK-CNOP-103",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "encargado11lafuente@gmail.com",
+                "cashier_name": "Encargada CNOP (Matutino)",
+                "total": 200,
+                "payment_method": "card",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "a5c3b67a-c276-42f2-863f-a01c6f9294ed",
+                                "product_name": "Cono Doble Vainilla",
+                                "product_code": "CDV",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 4,
+                                "subtotal": 180
+                        },
+                        {
+                                "product_id": "p_paleta_leche",
+                                "product_name": "Paleta de Leche",
+                                "product_code": "PAL-LECHE",
+                                "category": "paletas",
+                                "price": 20,
+                                "quantity": 1,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T14:15:00.000Z"
+        },
+        {
+                "id": "sale_t2_today_04",
+                "sale_number": "TICK-T2-204",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "encargado9lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino)",
+                "total": 45,
+                "payment_method": "card",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "a5c3b67a-c276-42f2-863f-a01c6f9294ed",
+                                "product_name": "Cono Doble Vainilla",
+                                "product_code": "CDV",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 1,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T14:10:00.000Z"
+        },
+        {
+                "id": "sale_t2_today_03",
+                "sale_number": "TICK-T2-203",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "encargado9lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino)",
+                "total": 310,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 6,
+                                "subtotal": 150
+                        },
+                        {
+                                "product_id": "sup_agua_1l",
+                                "product_name": "Agua 1 Lt",
+                                "product_code": "AG-1L",
+                                "category": "aguas",
+                                "price": 35,
+                                "quantity": 4,
+                                "subtotal": 140
+                        },
+                        {
+                                "product_id": "p_paleta_leche",
+                                "product_name": "Paleta de Leche",
+                                "product_code": "PAL-LECHE",
+                                "category": "paletas",
+                                "price": 20,
+                                "quantity": 1,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T13:20:00.000Z"
+        },
+        {
+                "id": "sale_cnop_today_02",
+                "sale_number": "TICK-CNOP-102",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "encargado11lafuente@gmail.com",
+                "cashier_name": "Encargada CNOP (Matutino)",
+                "total": 400,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "p_nieve_vaso12",
+                                "product_name": "Nieve Vaso #12",
+                                "product_code": "NV-12",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 4,
+                                "subtotal": 180
+                        },
+                        {
+                                "product_id": "p_paleta_agua",
+                                "product_name": "Paleta de Agua",
+                                "product_code": "PAL-AGUA",
+                                "category": "paletas",
+                                "price": 18,
+                                "quantity": 10,
+                                "subtotal": 180
+                        },
+                        {
+                                "product_id": "p_chicle",
+                                "product_name": "Chicle",
+                                "product_code": "CHIC",
+                                "category": "dulces",
+                                "price": 10,
+                                "quantity": 4,
+                                "subtotal": 40
+                        }
+                ],
+                "created_at": "2026-09-16T12:00:00.000Z"
+        },
+        {
+                "id": "sale_t2_today_02",
+                "sale_number": "TICK-T2-202",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "encargado9lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino)",
+                "total": 342,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "p_nieve_vaso12",
+                                "product_name": "Nieve Vaso #12",
+                                "product_code": "NV-12",
+                                "category": "helados",
+                                "price": 45,
+                                "quantity": 4,
+                                "subtotal": 180
+                        },
+                        {
+                                "product_id": "p_paleta_agua",
+                                "product_name": "Paleta de Agua",
+                                "product_code": "PAL-AGUA",
+                                "category": "paletas",
+                                "price": 18,
+                                "quantity": 9,
+                                "subtotal": 162
+                        }
+                ],
+                "created_at": "2026-09-16T11:45:00.000Z"
+        },
+        {
+                "id": "sale_cnop_today_01",
+                "sale_number": "TICK-CNOP-101",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Ma�ana",
+                "cashier_id": "encargado11lafuente@gmail.com",
+                "cashier_name": "Encargada CNOP (Matutino)",
+                "total": 390,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 6,
+                                "subtotal": 150
+                        },
+                        {
+                                "product_id": "sup_agua_1l",
+                                "product_name": "Agua 1 Lt",
+                                "product_code": "AG-1L",
+                                "category": "aguas",
+                                "price": 35,
+                                "quantity": 4,
+                                "subtotal": 140
+                        },
+                        {
+                                "product_id": "p_paleta_leche",
+                                "product_name": "Paleta de Leche",
+                                "product_code": "PAL-LECHE",
+                                "category": "paletas",
+                                "price": 20,
+                                "quantity": 5,
+                                "subtotal": 100
+                        }
+                ],
+                "created_at": "2026-09-16T10:30:00.000Z"
+        },
+        {
+                "id": "sale_t2_today_01",
+                "sale_number": "TICK-T2-201",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Ma�ana",
+                "cashier_id": "encargado9lafuente@gmail.com",
+                "cashier_name": "Encargada Tagarete 2 (Matutino)",
+                "total": 435,
+                "payment_method": "cash",
+                "status": "COMPLETED",
+                "items": [
+                        {
+                                "product_id": "adbc5511-68a8-4525-97a3-ac7972856e89",
+                                "product_name": "Cono Sencillo",
+                                "product_code": "CS",
+                                "category": "helados",
+                                "price": 25,
+                                "quantity": 7,
+                                "subtotal": 175
+                        },
+                        {
+                                "product_id": "sup_agua_1l",
+                                "product_name": "Agua 1 Lt",
+                                "product_code": "AG-1L",
+                                "category": "aguas",
+                                "price": 35,
+                                "quantity": 4,
+                                "subtotal": 140
+                        },
+                        {
+                                "product_id": "p_paleta_leche",
+                                "product_name": "Paleta de Leche",
+                                "product_code": "PAL-LECHE",
+                                "category": "paletas",
+                                "price": 20,
+                                "quantity": 6,
+                                "subtotal": 120
+                        }
+                ],
+                "created_at": "2026-09-16T10:15:00.000Z"
+        },
+        {
+                "id": "sale_1789526968619_4p96i",
+                "sale_number": "TICK-892892",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 100,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789521489453_elhu",
+                                "product_name": "Papas cueros",
+                                "quantity": 2,
+                                "price": 50,
+                                "subtotal": 100
+                        }
+                ],
+                "created_at": "2026-09-16T02:49:28.619Z"
+        },
+        {
+                "id": "sale_1789526931883_pp3yn",
+                "sale_number": "TICK-852024",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 35,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789510933216_lzqv",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_gomi_fish",
+                                "product_name": "Gomi Fish",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "created_at": "2026-09-16T02:48:51.883Z"
+        },
+        {
+                "id": "sale_1789526847225_7qvl4",
+                "sale_number": "TICK-596380",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 270,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 6,
+                                "price": 45,
+                                "subtotal": 270
+                        }
+                ],
+                "created_at": "2026-09-16T02:47:27.225Z"
+        },
+        {
+                "id": "sale_1789526806995_9ze2g",
+                "sale_number": "TICK-891543",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 150,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_cubierto",
+                                "product_name": "Cono Cubierto",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789344787923_spve",
+                                "product_name": "Esquimal Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_gomi_fish",
+                                "product_name": "Gomi Fish",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        },
+                        {
+                                "product_id": "prod_1789521409924_eswt",
+                                "product_name": "Tostiloco morados",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "created_at": "2026-09-16T02:46:46.995Z"
+        },
+        {
+                "id": "sale_1789526283235_b8iyr",
+                "sale_number": "TICK-293901",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_fresa_congelada",
+                                "product_name": "Fresa Congelada",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T02:38:03.235Z"
+        },
+        {
+                "id": "sale_1789526282031_ingps",
+                "sale_number": "TICK-996110",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 135,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_ag_grande",
+                                "product_name": "Agua Grande",
+                                "quantity": 3,
+                                "price": 45,
+                                "subtotal": 135
+                        }
+                ],
+                "created_at": "2026-09-16T02:38:02.031Z"
+        },
+        {
+                "id": "sale_1789525176085_pfisv",
+                "sale_number": "TICK-874481",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T02:19:36.085Z"
+        },
+        {
+                "id": "sale_1789524634429_leci5",
+                "sale_number": "TICK-378064",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 135,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 3,
+                                "price": 45,
+                                "subtotal": 135
+                        }
+                ],
+                "created_at": "2026-09-16T02:10:34.429Z"
+        },
+        {
+                "id": "sale_1789524332029_w2x2n",
+                "sale_number": "TICK-229365",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 85,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789510933216_lzqv",
+                                "product_name": "Agua Mediana",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789521409924_eswt",
+                                "product_name": "Tostiloco morados",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "created_at": "2026-09-16T02:05:32.029Z"
+        },
+        {
+                "id": "sale_1789524210024_8k0pr",
+                "sale_number": "TICK-274141",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789524184275_n7yl",
+                                "product_name": "Escamocha grande",
+                                "quantity": 1,
+                                "price": 75,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T02:03:30.025Z"
+        },
+        {
+                "id": "sale_1789523215005_w8x6m",
+                "sale_number": "TICK-207503",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 20,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_chechis_bolsa",
+                                "product_name": "Chechis Preparado Bolsa",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-16T01:46:55.005Z"
+        },
+        {
+                "id": "sale_1789523201590_bga5i",
+                "sale_number": "TICK-856966",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523192471_i682",
+                                "product_name": "Tostilocos",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "created_at": "2026-09-16T01:46:41.590Z"
+        },
+        {
+                "id": "sale_1789523147488_3em5b",
+                "sale_number": "TICK-251169",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789523132831_1n2c",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T01:45:47.488Z"
+        },
+        {
+                "id": "sale_1789522831936_dakp2",
+                "sale_number": "TICK-910618",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 179,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789501746703_ww8e",
+                                "product_name": "Fresas Congeladas",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789434885052_e855",
+                                "product_name": "Chaparrita",
+                                "quantity": 4,
+                                "price": 20,
+                                "subtotal": 80
+                        },
+                        {
+                                "product_id": "prod_1789506102516_xdmy",
+                                "product_name": "Paleta mini",
+                                "quantity": 2,
+                                "price": 5,
+                                "subtotal": 10
+                        },
+                        {
+                                "product_id": "p_barcel_solo",
+                                "product_name": "Barcel Solo",
+                                "quantity": 2,
+                                "price": 22,
+                                "subtotal": 44
+                        }
+                ],
+                "created_at": "2026-09-16T01:40:31.936Z"
+        },
+        {
+                "id": "sale_1789522769537_hdz5v",
+                "sale_number": "TICK-261780",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 150,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789522734663_85bg",
+                                "product_name": "Fresas Naturales",
+                                "quantity": 3,
+                                "price": 50,
+                                "subtotal": 150
+                        }
+                ],
+                "created_at": "2026-09-16T01:39:29.537Z"
+        },
+        {
+                "id": "sale_1789522729650_vlybs",
+                "sale_number": "TICK-697754",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 65,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789415437974_97vw",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_nachos",
+                                "product_name": "Nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T01:38:49.650Z"
+        },
+        {
+                "id": "sale_1789522647090_67isk",
+                "sale_number": "TICK-556074",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789522584487_s4hv",
+                                "product_name": "Cono Chocolate",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T01:37:27.090Z"
+        },
+        {
+                "id": "sale_1789522356358_038ur",
+                "sale_number": "TICK-910111",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "CANCELLED",
+                "items": [
+                        {
+                                "product_id": "p_barcel_nacho",
+                                "product_name": "Barcel Nacho",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-16T01:32:36.359Z",
+                "cancelled_reason": "Equibocado",
+                "cancelled_by": "Encargada Rescate (Vespertino)",
+                "cancelled_at": "2026-09-16T02:05:03.458Z"
+        },
+        {
+                "id": "sale_1789522290667_ot8mm",
+                "sale_number": "TICK-770535",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 120,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 4,
+                                "price": 30,
+                                "subtotal": 120
+                        }
+                ],
+                "created_at": "2026-09-16T01:31:30.667Z"
+        },
+        {
+                "id": "sale_1789522267668_7m9l3",
+                "sale_number": "TICK-155140",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_escamocha_gde",
+                                "product_name": "Escamocha Grande",
+                                "quantity": 1,
+                                "price": 75,
+                                "subtotal": 75
+                        }
+                ],
+                "created_at": "2026-09-16T01:31:07.668Z"
+        },
+        {
+                "id": "sale_1789522227201_0vfdz",
+                "sale_number": "TICK-853956",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 175,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789501746703_ww8e",
+                                "product_name": "Fresas Congeladas",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        },
+                        {
+                                "product_id": "prod_1789434885052_e855",
+                                "product_name": "Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "p_gomitas_carrucel",
+                                "product_name": "Gomitas Carrucel",
+                                "quantity": 3,
+                                "price": 15,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789504002552_zwkg",
+                                "product_name": "Cono sensillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T01:30:27.201Z"
+        },
+        {
+                "id": "sale_1789522036780_jkr1b",
+                "sale_number": "TICK-498037",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 250,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789521908175_93he",
+                                "product_name": "Chetos queso",
+                                "quantity": 2,
+                                "price": 45,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789439454737_s9hc",
+                                "product_name": "Vaso 1 bolita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "prod_1789520111905_q9lr",
+                                "product_name": "Fresa Natural",
+                                "quantity": 2,
+                                "price": 55,
+                                "subtotal": 110
+                        }
+                ],
+                "created_at": "2026-09-16T01:27:16.780Z"
+        },
+        {
+                "id": "sale_1789522035495_nlonn",
+                "sale_number": "TICK-911826",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 205,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 3,
+                                "price": 15,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789426455958_he78",
+                                "product_name": "Esquimal Grande",
+                                "quantity": 3,
+                                "price": 45,
+                                "subtotal": 135
+                        },
+                        {
+                                "product_id": "prod_1789503512135_chg1",
+                                "product_name": "paleta de agua grande",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T01:27:15.495Z"
+        },
+        {
+                "id": "sale_1789521843471_tmpct",
+                "sale_number": "TICK-145520",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 100,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        },
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-16T01:24:03.471Z"
+        },
+        {
+                "id": "sale_1789521822004_mjw6j",
+                "sale_number": "TICK-346163",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 25,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T01:23:42.004Z"
+        },
+        {
+                "id": "sale_1789521724967_yuhc4",
+                "sale_number": "TICK-272956",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado10lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino) (encargado10lafuente@gmail.com)",
+                "total": 15,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_helado_maquina",
+                                "product_name": "Helado M�quina",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        }
+                ],
+                "created_at": "2026-09-16T01:22:04.967Z"
+        },
+        {
+                "id": "sale_1789521500504_oqxod",
+                "sale_number": "TICK-484897",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 100,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_frappe",
+                                "product_name": "Frapp�",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789521489453_elhu",
+                                "product_name": "Papas cueros",
+                                "quantity": 1,
+                                "price": 50,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T01:18:20.504Z"
+        },
+        {
+                "id": "sale_1789521428131_y0ehv",
+                "sale_number": "TICK-753046",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 110,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789521409924_eswt",
+                                "product_name": "Tostiloco morados",
+                                "quantity": 2,
+                                "price": 55,
+                                "subtotal": 110
+                        }
+                ],
+                "created_at": "2026-09-16T01:17:08.131Z"
+        },
+        {
+                "id": "sale_1789521191308_6kiqo",
+                "sale_number": "TICK-451323",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 105,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "prod_1789521167877_qbet",
+                                "product_name": "Tostitos vaso",
+                                "quantity": 1,
+                                "price": 60,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-16T01:13:11.308Z"
+        },
+        {
+                "id": "sale_1789520435401_f95no",
+                "sale_number": "TICK-208453",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 12,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789427782105_pdn1",
+                                "product_name": "PALETA DE AGUA CHICA",
+                                "quantity": 1,
+                                "price": 12,
+                                "subtotal": 12
+                        }
+                ],
+                "created_at": "2026-09-16T01:00:35.401Z"
+        },
+        {
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "created_at": "2026-09-16T00:57:18.999Z",
+                "id": "sale_1789520238999_167ie",
+                "items": [
+                        {
+                                "product_id": "prod_1789511744625_lnbq",
+                                "product_name": "Barcel Loco",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        },
+                        {
+                                "product_id": "p_fresa_natural",
+                                "product_name": "Fresa Natural",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "payment_method": "cash",
+                "sale_number": "TICK-780312",
+                "shift_name": "Tarde",
+                "status": "COMPLETADA",
+                "total": 110
+        },
+        {
+                "id": "sale_1789519762027_8nrr2",
+                "sale_number": "TICK-614493",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "card",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        },
+                        {
+                                "product_id": "p_mini",
+                                "product_name": "Mini",
+                                "quantity": 5,
+                                "price": 5,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T00:49:22.027Z"
+        },
+        {
+                "id": "sale_1789519639953_lxrqu",
+                "sale_number": "TICK-114120",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T00:47:19.953Z"
+        },
+        {
+                "id": "sale_1789518603306_btk8a",
+                "sale_number": "TICK-551082",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 115,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789518578935_d117",
+                                "product_name": "Chetos nachos",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_ag_nat_chica",
+                                "product_name": "Agua Natural Chica",
+                                "quantity": 1,
+                                "price": 15,
+                                "subtotal": 15
+                        },
+                        {
+                                "product_id": "p_fresa_natural",
+                                "product_name": "Fresa Natural",
+                                "quantity": 1,
+                                "price": 55,
+                                "subtotal": 55
+                        }
+                ],
+                "created_at": "2026-09-16T00:30:03.307Z"
+        },
+        {
+                "id": "sale_1789518475057_vaya6",
+                "sale_number": "TICK-988327",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 70,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789427668265_puwa",
+                                "product_name": "ESQUIMAL GRANDE",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 1,
+                                "price": 25,
+                                "subtotal": 25
+                        }
+                ],
+                "created_at": "2026-09-16T00:27:55.057Z"
+        },
+        {
+                "id": "sale_1789518165528_yuhfa",
+                "sale_number": "TICK-767720",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 60,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_trol",
+                                "product_name": "Trol",
+                                "quantity": 2,
+                                "price": 30,
+                                "subtotal": 60
+                        }
+                ],
+                "created_at": "2026-09-16T00:22:45.528Z"
+        },
+        {
+                "id": "sale_1789517609283_fg3tn",
+                "sale_number": "TICK-345533",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado12lafuente_gmail_com",
+                "cashier_name": "Encargada CNOP (Vespertino) (encargado12lafuente@gmail.com)",
+                "total": 10,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_mini",
+                                "product_name": "Mini",
+                                "quantity": 2,
+                                "price": 5,
+                                "subtotal": 10
+                        }
+                ],
+                "created_at": "2026-09-16T00:13:29.284Z"
+        },
+        {
+                "id": "sale_1789517055339_dul8n",
+                "sale_number": "TICK-953250",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 210,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789516901690_gyei",
+                                "product_name": "Trol",
+                                "quantity": 3,
+                                "price": 30,
+                                "subtotal": 90
+                        },
+                        {
+                                "product_id": "prod_1789516980033_ur3w",
+                                "product_name": "Cono sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        },
+                        {
+                                "product_id": "prod_1789343891215_tlc3",
+                                "product_name": "Paleta Chaparrita",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        },
+                        {
+                                "product_id": "prod_1789511159938_cxxn",
+                                "product_name": "Paleta agua grande",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-16T00:04:15.339Z"
+        },
+        {
+                "id": "sale_1789516812422_ly97e",
+                "sale_number": "TICK-827888",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado4lafuente_gmail_com",
+                "cashier_name": "Encargada Rescate (Vespertino) (encargado4lafuente@gmail.com)",
+                "total": 110,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_fresa_natural",
+                                "product_name": "Fresa Natural",
+                                "quantity": 2,
+                                "price": 55,
+                                "subtotal": 110
+                        }
+                ],
+                "created_at": "2026-09-16T00:00:12.422Z"
         }
-    ];
+];
+
 
     const BASE_ACTIVE_CUTS = [
-        // ── CORTE TAGARETE 2 (MATUTINO: $1,730 | Efectivo $1,690 | Tarjeta $40 | Fondo $1,000 | Contado $2,690) — 3:34 p.m. ──
         {
-            id: "cut_t2_today_mat",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Mañana",
-            cashier_name: "Encargada Tagarete 2 (Matutino)",
-            performed_by_name: "Encargada Tagarete 2 (Matutino)",
-            opening_amount: 1000,
-            cash_sales: 1690,
-            card_sales: 40,
-            total_sales: 1730,
-            expected_cash: 2690,
-            counted_cash: 2690,
-            difference: 0,
-            net_sales_without_fund: 1690,
-            created_at: toDateKey() + "T15:34:00.000Z"
+                "id": "cut_1789680694288_ajth",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Rescate (Matutino)",
+                "performed_by_name": "Encargada Rescate (Matutino)",
+                "opening_amount": 1500,
+                "cash_sales": 2592,
+                "card_sales": 0,
+                "total_sales": 2592,
+                "expected_cash": 4092,
+                "counted_cash": 3088,
+                "difference": -1004,
+                "net_sales_without_fund": 1588,
+                "created_at": "2026-09-17T21:31:34.289Z"
         },
-        // ── CORTE TAGARETE 2 (VESPERTINO: $2,280 | Efectivo $2,205 | Tarjeta $75 | Fondo $1,000 | Contado $3,205) — Encargada 10 ──
         {
-            id: "cut_t2_today_ves",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Tarde",
-            cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            performed_by_name: "Encargada Tagarete 2 (Vespertino)",
-            opening_amount: 1000,
-            cash_sales: 2205,
-            card_sales: 75,
-            total_sales: 2280,
-            expected_cash: 3205,
-            counted_cash: 3205,
-            difference: 0,
-            net_sales_without_fund: 2205,
-            created_at: toDateKey() + "T21:00:00.000Z"
+                "id": "cut_1789680578307_6jws",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Tagarete 2 (Matutino)",
+                "performed_by_name": "Encargada Tagarete 2 (Matutino)",
+                "opening_amount": 1000,
+                "cash_sales": 490,
+                "card_sales": 45,
+                "total_sales": 535,
+                "expected_cash": 1490,
+                "counted_cash": 1490,
+                "difference": 0,
+                "net_sales_without_fund": 490,
+                "created_at": "2026-09-17T21:29:38.307Z"
         },
-        // ── CORTE CNOP (MATUTINO: $990 | Efectivo $790 | Tarjeta $200 | Fondo $1,000 | Contado $1,790) — Encargada 11 ──
         {
-            id: "cut_cnop_today_mat",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Mañana",
-            cashier_name: "Encargada CNOP (Matutino)",
-            performed_by_name: "Encargada CNOP (Matutino)",
-            opening_amount: 1000,
-            cash_sales: 790,
-            card_sales: 200,
-            total_sales: 990,
-            expected_cash: 1790,
-            counted_cash: 1790,
-            difference: 0,
-            net_sales_without_fund: 790,
-            created_at: toDateKey() + "T15:00:00.000Z"
+                "id": "cut_res_today_ves",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada Rescate (Vespertino)",
+                "performed_by_name": "Encargada Rescate (Vespertino)",
+                "opening_amount": 1500,
+                "cash_sales": 90,
+                "card_sales": 0,
+                "total_sales": 90,
+                "expected_cash": 1590,
+                "counted_cash": 1590,
+                "difference": 0,
+                "net_sales_without_fund": 90,
+                "created_at": "2026-09-17T21:15:00.000Z"
         },
-        // ── CORTE CNOP (VESPERTINO: $956 | Efectivo $956 | Tarjeta $0 | Fondo $1,000 | Contado $1,956) — Encargada 12 ──
         {
-            id: "cut_cnop_today_ves",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            performed_by_name: "Encargada CNOP (Vespertino)",
-            opening_amount: 1000,
-            cash_sales: 906,
-            card_sales: 50,
-            total_sales: 956,
-            expected_cash: 1906,
-            counted_cash: 1906,
-            difference: 0,
-            net_sales_without_fund: 906,
-            created_at: toDateKey() + "T21:00:00.000Z"
+                "id": "cut_cnop_today_ves",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada CNOP (Vespertino)",
+                "performed_by_name": "Encargada CNOP (Vespertino)",
+                "opening_amount": 1000,
+                "cash_sales": 906,
+                "card_sales": 50,
+                "total_sales": 956,
+                "expected_cash": 1906,
+                "counted_cash": 1906,
+                "difference": 0,
+                "net_sales_without_fund": 906,
+                "created_at": "2026-09-17T21:00:00.000Z"
         },
-        // ── CORTE RESCATE (MATUTINO: $2,592 | Efectivo $2,592 | Tarjeta $0 | Fondo $1,500 | Contado $4,092) — Encargada 3 ──
         {
-            id: "cut_res_today_mat",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Mañana",
-            cashier_name: "Encargada Rescate (Matutino)",
-            performed_by_name: "Encargada Rescate (Matutino)",
-            opening_amount: 1500,
-            cash_sales: 2592,
-            card_sales: 0,
-            total_sales: 2592,
-            expected_cash: 4092,
-            counted_cash: 4092,
-            difference: 0,
-            net_sales_without_fund: 2592,
-            created_at: toDateKey() + "T15:10:00.000Z"
+                "id": "cut_t2_today_mat",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Tagarete 2 (Matutino)",
+                "performed_by_name": "Encargada Tagarete 2 (Matutino)",
+                "opening_amount": 1000,
+                "cash_sales": 1690,
+                "card_sales": 40,
+                "total_sales": 1730,
+                "expected_cash": 2690,
+                "counted_cash": 2690,
+                "difference": 0,
+                "net_sales_without_fund": 1690,
+                "created_at": "2026-09-17T15:34:00.000Z"
         },
-        // ── CORTE RESCATE (VESPERTINO: $90 | Efectivo $90 | Tarjeta $0 | Fondo $1,500 | Contado $1,590) — Encargada 4 ──
         {
-            id: "cut_res_today_ves",
-            branch_id: "branch-2",
-            branch_name: "Rescate",
-            shift_name: "Tarde",
-            cashier_name: "Encargada Rescate (Vespertino)",
-            performed_by_name: "Encargada Rescate (Vespertino)",
-            opening_amount: 1500,
-            cash_sales: 90,
-            card_sales: 0,
-            total_sales: 90,
-            expected_cash: 1590,
-            counted_cash: 1590,
-            difference: 0,
-            net_sales_without_fund: 90,
-            created_at: toDateKey() + "T21:15:00.000Z"
+                "id": "cut_res_today_mat",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Rescate (Matutino)",
+                "performed_by_name": "Encargada Rescate (Matutino)",
+                "opening_amount": 1500,
+                "cash_sales": 2592,
+                "card_sales": 0,
+                "total_sales": 2592,
+                "expected_cash": 4092,
+                "counted_cash": 4092,
+                "difference": 0,
+                "net_sales_without_fund": 2592,
+                "created_at": "2026-09-17T15:10:00.000Z"
+        },
+        {
+                "id": "cut_cnop_today_mat",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada CNOP (Matutino)",
+                "performed_by_name": "Encargada CNOP (Matutino)",
+                "opening_amount": 1000,
+                "cash_sales": 790,
+                "card_sales": 200,
+                "total_sales": 990,
+                "expected_cash": 1790,
+                "counted_cash": 1790,
+                "difference": 0,
+                "net_sales_without_fund": 790,
+                "created_at": "2026-09-17T15:00:00.000Z"
+        },
+        {
+                "id": "cut_1789614825227_svl8",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino)",
+                "performed_by_name": "Encargada Tagarete 2 (Vespertino)",
+                "opening_amount": 1000,
+                "cash_sales": 1673,
+                "card_sales": 115,
+                "total_sales": 1788,
+                "expected_cash": 2673,
+                "counted_cash": 2673,
+                "difference": 0,
+                "net_sales_without_fund": 1673,
+                "created_at": "2026-09-17T03:13:45.227Z"
+        },
+        {
+                "id": "cut_1789614244422_2sg7",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada CNOP (Vespertino)",
+                "performed_by_name": "Encargada CNOP (Vespertino)",
+                "opening_amount": 500,
+                "cash_sales": 2260,
+                "card_sales": 45,
+                "total_sales": 2305,
+                "expected_cash": 2760,
+                "counted_cash": 1940,
+                "difference": -820,
+                "net_sales_without_fund": 1440,
+                "created_at": "2026-09-17T03:04:04.422Z"
+        },
+        {
+                "id": "cut_1789614010169_qvsh",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada Rescate (Vespertino)",
+                "performed_by_name": "Encargada Rescate (Vespertino)",
+                "opening_amount": 1500,
+                "cash_sales": 3100,
+                "card_sales": 75,
+                "total_sales": 3175,
+                "expected_cash": 4600,
+                "counted_cash": 4600,
+                "difference": 0,
+                "net_sales_without_fund": 3100,
+                "created_at": "2026-09-17T03:00:10.169Z"
+        },
+        {
+                "id": "cut_1789594986477_g7j6",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Rescate (Matutino)",
+                "performed_by_name": "Encargada Rescate (Matutino)",
+                "opening_amount": 1500,
+                "cash_sales": 2727,
+                "card_sales": 425,
+                "total_sales": 3152,
+                "expected_cash": 4227,
+                "counted_cash": 4092,
+                "difference": -135,
+                "net_sales_without_fund": 2592,
+                "created_at": "2026-09-16T21:43:06.477Z"
+        },
+        {
+                "id": "cut_1789594970591_k8m6",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Rescate (Matutino)",
+                "performed_by_name": "Encargada Rescate (Matutino)",
+                "opening_amount": 1500,
+                "cash_sales": 2727,
+                "card_sales": 425,
+                "total_sales": 3152,
+                "expected_cash": 4227,
+                "counted_cash": 4092,
+                "difference": -135,
+                "net_sales_without_fund": 2592,
+                "created_at": "2026-09-16T21:42:50.591Z"
+        },
+        {
+                "id": "cut_1789594859523_6kq6",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada CNOP (Matutino)",
+                "performed_by_name": "Encargada CNOP (Matutino)",
+                "opening_amount": 500,
+                "cash_sales": 755,
+                "card_sales": 0,
+                "total_sales": 755,
+                "expected_cash": 1255,
+                "counted_cash": 1255,
+                "difference": 0,
+                "net_sales_without_fund": 755,
+                "created_at": "2026-09-16T21:40:59.523Z"
+        },
+        {
+                "id": "cut_1789594481974_c5g1",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Tagarete 2 (Matutino)",
+                "performed_by_name": "Encargada Tagarete 2 (Matutino)",
+                "opening_amount": 1000,
+                "cash_sales": 1690,
+                "card_sales": 40,
+                "total_sales": 1730,
+                "expected_cash": 2690,
+                "counted_cash": 2690,
+                "difference": 0,
+                "net_sales_without_fund": 1690,
+                "created_at": "2026-09-16T21:34:41.974Z"
+        },
+        {
+                "id": "cut_1789527629564_6r0n",
+                "branch_id": "branch-6",
+                "branch_name": "CNOP",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada CNOP (Vespertino)",
+                "performed_by_name": "Encargada CNOP (Vespertino)",
+                "opening_amount": 500,
+                "cash_sales": 0,
+                "card_sales": 0,
+                "total_sales": 0,
+                "expected_cash": 500,
+                "counted_cash": 931,
+                "difference": 431,
+                "net_sales_without_fund": 431,
+                "created_at": "2026-09-16T03:00:29.564Z"
+        },
+        {
+                "id": "cut_1789527443102_0mu4",
+                "branch_id": "branch-5",
+                "branch_name": "Tagarete 2",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada Tagarete 2 (Vespertino)",
+                "performed_by_name": "Encargada Tagarete 2 (Vespertino)",
+                "opening_amount": 1000,
+                "cash_sales": 1094,
+                "card_sales": 0,
+                "total_sales": 1094,
+                "expected_cash": 2094,
+                "counted_cash": 2094,
+                "difference": 0,
+                "net_sales_without_fund": 1094,
+                "created_at": "2026-09-16T02:57:23.102Z"
+        },
+        {
+                "id": "cut_1789527018275_8obv",
+                "branch_id": "branch-2",
+                "branch_name": "Rescate",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada Rescate (Vespertino)",
+                "performed_by_name": "Encargada Rescate (Vespertino)",
+                "opening_amount": 1500,
+                "cash_sales": 2700,
+                "card_sales": 135,
+                "total_sales": 2835,
+                "expected_cash": 4200,
+                "counted_cash": 4200,
+                "difference": 0,
+                "net_sales_without_fund": 2700,
+                "created_at": "2026-09-16T02:50:18.276Z"
         }
-    ];
+];
+
 
     async function getConsolidatedSalesForChain(forceRefresh = false) {
         const nowMs = Date.now();
@@ -4339,7 +11382,7 @@
         // Filtrar ventas por sucursal seleccionada o todas si es Superusuario
         const branchSales = (S.isSU && activeBranchFilter === "all")
             ? consolidated
-            : consolidated.filter(s => matchesBranch(s, { id: activeBranchFilter, name: S.branches.find(b=>String(b.id)===String(activeBranchFilter))?.name || S.branchName }));
+            : consolidated.filter(s => matchesBranch(s, activeBranchFilter));
         
         const todayStr = toDateKey();
         const datesMap = new Map();
@@ -4905,7 +11948,8 @@
 
     async function loadCuts(silent = false) {
         const c = $("#cuts-container");
-        if (!c || !S.branchId) return;
+        if (!c) return;
+        if (!S.isSU && !S.branchId) return;
         if (!silent && !c.children.length) {
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando cortes de caja de ${esc(S.branchName)}…</p></div>`;
         }
