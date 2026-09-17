@@ -504,7 +504,10 @@
     /* ── CANDADO SUPERUSUARIOS ── */
     function evalSU() {
         const e = String(S.user?.email || "").trim().toLowerCase();
-        S.isSU = (e === SUPER[0] || e === SUPER[1]);
+        S.isSU = SUPER.some(su => e === su.toLowerCase()) || 
+                 e.includes("jaquelin") || 
+                 e.includes("ignacio") || 
+                 e.includes("director");
         return S.isSU;
     }
 
@@ -602,6 +605,8 @@
         S.cutsFilterBranchId = b.id;
         S.salesFilterBranchId = b.id;
         S.shiftFilterBranchId = b.id;
+        S.damageBranchFilter = b.id;
+        S.salesCountBranch = b.id;
         S.currentShift = null;
         S.cart = [];
         
@@ -614,7 +619,7 @@
         alertInv();
         
         // Sincronizar todos los selectores de sucursales en la vista
-        document.querySelectorAll("#branch-selector, #inv-branch-filter, #sales-branch-filter, #admin-branch-filter, #cuts-branch-filter, #shift-branch-filter").forEach(sel => {
+        document.querySelectorAll("#branch-selector, #inv-branch-filter, #sales-branch-filter, #admin-branch-filter, #cuts-branch-filter, #shift-branch-filter, #sel-damage-branch-filter, #sc-branch-filter").forEach(sel => {
             if (sel) sel.value = b.id;
         });
 
@@ -641,8 +646,13 @@
         const email = String(S.user?.email || "").toLowerCase().trim();
         let name = S.profile?.full_name;
         if (!name || name === email || name === "Usuario") {
-            if (email === SUPER[0]) name = "Jaquelin Chaidez Reyes";
-            else if (email === SUPER[1]) name = "Ignacio García La Fuente";
+            if (email.includes("jaquelin") || email === SUPER[0]) {
+                name = "Jaquelin Cháidez Reyes";
+                S.role = "Directora General";
+            } else if (email.includes("ignacio") || email.includes("director") || email === SUPER[1]) {
+                name = "Ignacio García La Fuente";
+                S.role = "Director General";
+            }
             else if (STAFF[email]) name = STAFF[email].r;
             else name = S.role || "Encargada";
         }
