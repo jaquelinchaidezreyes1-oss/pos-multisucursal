@@ -842,7 +842,7 @@
     function initInv() { 
         const branchKey = getBranchKeyName(S.branchName);
         
-        // 1. Intentar cargar stock guardado o ajustado explícitamente para esta sucursal
+        // 1. Intentar cargar stock guardado para esta sucursal
         let stored = null;
         try {
             const raw = localStorage.getItem("lf_inv_" + branchKey);
@@ -856,27 +856,44 @@
             stored = lr("inv", null);
         }
 
-        if (stored && typeof stored === "object" && Object.keys(stored).length) {
+        // Evaluar si stored tiene casi todos los productos en 0 (lo cual bloqueaba a las encargadas)
+        let zeroCount = 0;
+        let totalKeys = 0;
+        if (stored && typeof stored === "object") {
+            const entries = Object.values(stored);
+            totalKeys = entries.length;
+            entries.forEach(v => { if (Number(v) <= 0) zeroCount++; });
+        }
+
+        const isWiped = totalKeys > 0 && (zeroCount / totalKeys) > 0.65;
+
+        if (stored && typeof stored === "object" && totalKeys > 0 && !isWiped) {
             S.inv = { ...stored };
+            // Asegurar que ningún producto nuevo quede indefinido
+            S.products.forEach(p => {
+                if (S.inv[p.product_id] === undefined || S.inv[p.product_id] === null) {
+                    S.inv[p.product_id] = (p.initial_stock && Number(p.initial_stock) > 0) ? Number(p.initial_stock) : 60;
+                }
+            });
         } else {
-            // 2. Cargar el inventario base exclusivo y diferenciado para esta sucursal
+            // Cargar stock operativo saludable y diferenciado por sucursal
             S.inv = {};
-            const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || BRANCH_BASE_INVENTORY["calzada"] || {};
+            const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
 
             S.products.forEach(p => {
                 const maxS = getMaxStock(p);
                 let baseStk = branchDefaults[p.product_id];
-                if (baseStk === undefined) {
-                    baseStk = (p.initial_stock !== undefined && p.initial_stock !== null) ? Number(p.initial_stock) : 50;
-                    if (branchKey === "tagarete_2") baseStk = Math.max(0, Math.floor(baseStk * 0.50));
-                    else if (branchKey === "cnop") baseStk = Math.max(0, Math.floor(baseStk * 0.35));
-                    else if (branchKey === "mollotes") baseStk = Math.max(0, Math.floor(baseStk * 0.70));
-                    else if (branchKey === "tagarete_1") baseStk = Math.max(0, Math.floor(baseStk * 0.60));
+                if (baseStk === undefined || baseStk === null || Number(baseStk) <= 0) {
+                    baseStk = (p.initial_stock !== undefined && p.initial_stock !== null && Number(p.initial_stock) > 0) 
+                        ? Number(p.initial_stock) 
+                        : (p.is_supply || p.category === "desechables" ? 250 : (p.category === "paletas" ? 100 : (p.category === "helados" ? 80 : 60)));
+                    if (branchKey === "tagarete_2") baseStk = Math.max(25, Math.floor(baseStk * 0.75));
+                    else if (branchKey === "cnop") baseStk = Math.max(20, Math.floor(baseStk * 0.65));
+                    else if (branchKey === "rescate") baseStk = Math.max(30, Math.floor(baseStk * 0.85));
                 }
                 S.inv[p.product_id] = Math.min(maxS, Math.max(0, baseStk));
             });
 
-            // Guardar para esta sucursal
             saveBranchInv();
         }
     }
@@ -932,12 +949,15 @@
         const out = S.products.filter(p => !p.is_supply && getStock(p.product_id) === 0);
         const low = S.products.filter(p => !p.is_supply && getStock(p.product_id) > 0 && getStock(p.product_id) <= STOCK_LOW);
         const txt = document.getElementById("inventory-alert-text");
-        if (out.length) {
+        if (out.length > 0 && out.length <= 8) {
             banner.style.display = "flex";
-            if (txt) txt.textContent = "⚠ SIN STOCK: " + out.map(p => p.product_name).join(", ") + " — No se puede vender hasta reponer inventario.";
+            if (txt) txt.textContent = "📦 Aviso de Stock: " + out.map(p => p.product_name).join(", ") + " — Reponer en Inventario.";
+        } else if (out.length > 8) {
+            banner.style.display = "flex";
+            if (txt) txt.textContent = "📦 Aviso de Stock: " + out.slice(0, 5).map(p => p.product_name).join(", ") + " y " + (out.length - 5) + " más por reponer en Inventario.";
         } else if (low.length) {
             banner.style.display = "flex";
-            if (txt) txt.textContent = "📉 Stock bajo (menos de " + STOCK_LOW + "): " + low.map(p => p.product_name).join(", ");
+            if (txt) txt.textContent = "📉 Stock bajo en: " + low.slice(0, 5).map(p => p.product_name).join(", ");
         } else {
             banner.style.display = "none";
         }
@@ -948,96 +968,96 @@
     /* ── CATÁLOGO OFICIAL LA FUENTE (PUNTOS DE VENTA & SUCURSALES) ── */
     const DEFAULT_PRODUCTS = [
         // ── AGUAS FRESCAS & BEBIDAS ESPECIALES ──
-        { product_id: "p_ag_grande", product_code: "AG", product_name: "Agua Grande", category: "aguas", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_ag_mediana", product_code: "AM", product_name: "Agua Mediana", category: "aguas", price: 30, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_ag_chica", product_code: "ACH", product_name: "Agua Chica", category: "aguas", price: 25, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_ag_nat_chica", product_code: "ANCH", product_name: "Agua Natural Chica", category: "aguas", price: 15, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_ag_nat_grande", product_code: "ANG", product_name: "Agua Natural Grande", category: "aguas", price: 20, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_sodas_italianas", product_code: "SI", product_name: "Sodas Italianas", category: "aguas", price: 75, branch_name: "Rescate", initial_stock: 0 },
-        { product_id: "p_frappe", product_code: "FRAPPE", product_name: "Frappé", category: "aguas", price: 50, branch_name: "Rescate", initial_stock: 0 },
+        { product_id: "p_ag_grande", product_code: "AG", product_name: "Agua Grande", category: "aguas", price: 45, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_ag_mediana", product_code: "AM", product_name: "Agua Mediana", category: "aguas", price: 30, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_ag_chica", product_code: "ACH", product_name: "Agua Chica", category: "aguas", price: 25, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_ag_nat_chica", product_code: "ANCH", product_name: "Agua Natural Chica", category: "aguas", price: 15, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_ag_nat_grande", product_code: "ANG", product_name: "Agua Natural Grande", category: "aguas", price: 20, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_sodas_italianas", product_code: "SI", product_name: "Sodas Italianas", category: "aguas", price: 75, branch_name: "Rescate", initial_stock: 60 },
+        { product_id: "p_frappe", product_code: "FRAPPE", product_name: "Frappé", category: "aguas", price: 50, branch_name: "Rescate", initial_stock: 60 },
 
         // ── HELADOS & NIEVES ──
-        { product_id: "p_cono_sencillo", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_cono_doble_choco", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_cono_doble_vain", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_cono_cubierto", product_code: "CC", product_name: "Cono Cubierto", category: "helados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_canasta_doble", product_code: "CanastaDoble", product_name: "Canasta Doble", category: "helados", price: 40, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_canasta_triple", product_code: "CanastaTriple", product_name: "Canasta Triple", category: "helados", price: 50, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Helado Vaso 1", category: "helados", price: 20, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2", category: "helados", price: 35, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3", category: "helados", price: 40, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado Vaso 4", category: "helados", price: 50, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_helado_maquina", product_code: "HM", product_name: "Helado Máquina", category: "helados", price: 15, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_helado_maq_sencillo", product_code: "HMS", product_name: "Helado Máquina Sencillo", category: "helados", price: 18, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_cono_sencillo", product_code: "CS", product_name: "Cono Sencillo", category: "helados", price: 25, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_cono_doble_choco", product_code: "CDCH", product_name: "Cono Doble Chocolate", category: "helados", price: 45, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_cono_doble_vain", product_code: "CDV", product_name: "Cono Doble Vainilla", category: "helados", price: 45, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_cono_cubierto", product_code: "CC", product_name: "Cono Cubierto", category: "helados", price: 45, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_canasta_doble", product_code: "CanastaDoble", product_name: "Canasta Doble", category: "helados", price: 40, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_canasta_triple", product_code: "CanastaTriple", product_name: "Canasta Triple", category: "helados", price: 50, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Helado Vaso 1", category: "helados", price: 20, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2", category: "helados", price: 35, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3", category: "helados", price: 40, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado Vaso 4", category: "helados", price: 50, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_maquina", product_code: "HM", product_name: "Helado Máquina", category: "helados", price: 15, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_maq_sencillo", product_code: "HMS", product_name: "Helado Máquina Sencillo", category: "helados", price: 18, branch_name: "General", initial_stock: 80 },
 
         // ── PALETAS ──
-        { product_id: "p_paleta_crema_gde", product_code: "PCG", product_name: "Paleta Crema Grande", category: "paletas", price: 30, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_agua_gde", product_code: "PAG", product_name: "Paleta Agua Grande", category: "paletas", price: 25, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_agua_chica", product_code: "PACH", product_name: "Paleta Agua Chica", category: "paletas", price: 12, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chapurrita", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_payaso", product_code: "PP", product_name: "Paleta Payaso", category: "paletas", price: 30, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_michelada", product_code: "PM", product_name: "Paleta Michelada", category: "paletas", price: 40, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_nuez_esp", product_code: "NE", product_name: "Nuez Especial", category: "paletas", price: 40, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_pinon", product_code: "PINON", product_name: "Piñón", category: "paletas", price: 40, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_zanahoria", product_code: "ZANAH", product_name: "Zanahoria", category: "paletas", price: 40, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_tequila", product_code: "TEQUILA", product_name: "Tequila", category: "paletas", price: 40, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_paleta_bombon", product_code: "PB", product_name: "Paleta Bombón", category: "paletas", price: 20, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_mini_esquimal", product_code: "ME", product_name: "Mini Esquimal", category: "paletas", price: 15, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_mini", product_code: "MINI", product_name: "Mini", category: "paletas", price: 5, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_paleta_crema_gde", product_code: "PCG", product_name: "Paleta Crema Grande", category: "paletas", price: 30, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_agua_gde", product_code: "PAG", product_name: "Paleta Agua Grande", category: "paletas", price: 25, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_agua_chica", product_code: "PACH", product_name: "Paleta Agua Chica", category: "paletas", price: 12, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chapurrita", category: "paletas", price: 20, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_payaso", product_code: "PP", product_name: "Paleta Payaso", category: "paletas", price: 30, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_michelada", product_code: "PM", product_name: "Paleta Michelada", category: "paletas", price: 40, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_nuez_esp", product_code: "NE", product_name: "Nuez Especial", category: "paletas", price: 40, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_pinon", product_code: "PINON", product_name: "Piñón", category: "paletas", price: 40, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_zanahoria", product_code: "ZANAH", product_name: "Zanahoria", category: "paletas", price: 40, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_tequila", product_code: "TEQUILA", product_name: "Tequila", category: "paletas", price: 40, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_bombon", product_code: "PB", product_name: "Paleta Bombón", category: "paletas", price: 20, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_mini_esquimal", product_code: "ME", product_name: "Mini Esquimal", category: "paletas", price: 15, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_mini", product_code: "MINI", product_name: "Mini", category: "paletas", price: 5, branch_name: "General", initial_stock: 100 },
 
         // ── PREPARADOS & BOTANAS ──
-        { product_id: "p_tostilocos", product_code: "TP", product_name: "Tostilocos", category: "preparados", price: 55, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_tostiloco_barcel", product_code: "TB", product_name: "Tostiloco Barcel", category: "preparados", price: 55, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_tostiloco_vaso", product_code: "TV", product_name: "Tostiloco en Vaso", category: "preparados", price: 60, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_tostiloco_vaso_barcel", product_code: "TVB", product_name: "Tostiloco en Vaso Barcel", category: "preparados", price: 60, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_papas_cueros", product_code: "PCC", product_name: "Papas con Cueros", category: "preparados", price: 50, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_cacahuatadas", product_code: "CACAH", product_name: "Cacahuatadas", category: "preparados", price: 35, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_nachos", product_code: "Nachos", product_name: "Nachos", category: "preparados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_dorinachos", product_code: "Dorinachos", product_name: "Dorinachos", category: "preparados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_barcel_nacho", product_code: "BN", product_name: "Barcel Nacho", category: "preparados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_escamocha_gde", product_code: "EG", product_name: "Escamocha Grande", category: "preparados", price: 75, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_escamocha_chica", product_code: "ECH", product_name: "Escamocha Chica", category: "preparados", price: 55, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_carne_seca", product_code: "CarneS", product_name: "Carne Seca", category: "preparados", price: 40, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_waffle", product_code: "Waffle", product_name: "Waffle", category: "preparados", price: 85, branch_name: "Rescate", initial_stock: 0 },
-        { product_id: "p_chechis_bolsa", product_code: "CPB", product_name: "Chechis Preparado Bolsa", category: "preparados", price: 20, branch_name: "General", excluded_branches: ["La Fuente Calzada", "Calzada"], initial_stock: 0 },
-        { product_id: "p_chechis_vaso", product_code: "CPV", product_name: "Chechis Preparados Vaso", category: "preparados", price: 25, branch_name: "General", excluded_branches: ["La Fuente Calzada", "Calzada"], initial_stock: 0 },
+        { product_id: "p_tostilocos", product_code: "TP", product_name: "Tostilocos", category: "preparados", price: 55, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_tostiloco_barcel", product_code: "TB", product_name: "Tostiloco Barcel", category: "preparados", price: 55, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_tostiloco_vaso", product_code: "TV", product_name: "Tostiloco en Vaso", category: "preparados", price: 60, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_tostiloco_vaso_barcel", product_code: "TVB", product_name: "Tostiloco en Vaso Barcel", category: "preparados", price: 60, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_papas_cueros", product_code: "PCC", product_name: "Papas con Cueros", category: "preparados", price: 50, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_cacahuatadas", product_code: "CACAH", product_name: "Cacahuatadas", category: "preparados", price: 35, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_nachos", product_code: "Nachos", product_name: "Nachos", category: "preparados", price: 45, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_dorinachos", product_code: "Dorinachos", product_name: "Dorinachos", category: "preparados", price: 45, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_barcel_nacho", product_code: "BN", product_name: "Barcel Nacho", category: "preparados", price: 45, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_escamocha_gde", product_code: "EG", product_name: "Escamocha Grande", category: "preparados", price: 75, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_escamocha_chica", product_code: "ECH", product_name: "Escamocha Chica", category: "preparados", price: 55, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_carne_seca", product_code: "CarneS", product_name: "Carne Seca", category: "preparados", price: 40, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_waffle", product_code: "Waffle", product_name: "Waffle", category: "preparados", price: 85, branch_name: "Rescate", initial_stock: 60 },
+        { product_id: "p_chechis_bolsa", product_code: "CPB", product_name: "Chechis Preparado Bolsa", category: "preparados", price: 20, branch_name: "General", excluded_branches: ["La Fuente Calzada", "Calzada"], initial_stock: 60 },
+        { product_id: "p_chechis_vaso", product_code: "CPV", product_name: "Chechis Preparados Vaso", category: "preparados", price: 25, branch_name: "General", excluded_branches: ["La Fuente Calzada", "Calzada"], initial_stock: 60 },
 
         // ── CONGELADOS & FRUTAS ──
-        { product_id: "p_fresa_congelada", product_code: "FC", product_name: "Fresa Congelada", category: "congelados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_fresa_natural", product_code: "FN", product_name: "Fresa Natural", category: "congelados", price: 55, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_mordisco", product_code: "Mordi", product_name: "Mordisco", category: "congelados", price: 25, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_trol", product_code: "Trol", product_name: "Trol", category: "congelados", price: 30, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_mango_congelado", product_code: "MC", product_name: "Mango Congelado", category: "congelados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_mangonadas", product_code: "Mangonadas", product_name: "Mangonadas", category: "congelados", price: 45, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_bolis", product_code: "Bolis", product_name: "Bolis", category: "congelados", price: 15, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_fresa_congelada", product_code: "FC", product_name: "Fresa Congelada", category: "congelados", price: 45, branch_name: "General", initial_stock: 50 },
+        { product_id: "p_fresa_natural", product_code: "FN", product_name: "Fresa Natural", category: "congelados", price: 55, branch_name: "General", initial_stock: 50 },
+        { product_id: "p_mordisco", product_code: "Mordi", product_name: "Mordisco", category: "congelados", price: 25, branch_name: "General", initial_stock: 50 },
+        { product_id: "p_trol", product_code: "Trol", product_name: "Trol", category: "congelados", price: 30, branch_name: "General", initial_stock: 50 },
+        { product_id: "p_mango_congelado", product_code: "MC", product_name: "Mango Congelado", category: "congelados", price: 45, branch_name: "General", initial_stock: 50 },
+        { product_id: "p_mangonadas", product_code: "Mangonadas", product_name: "Mangonadas", category: "congelados", price: 45, branch_name: "General", initial_stock: 50 },
+        { product_id: "p_bolis", product_code: "Bolis", product_name: "Bolis", category: "congelados", price: 15, branch_name: "General", initial_stock: 50 },
 
         // ── DULCES, POSTRES & BOTANAS SOLAS ──
-        { product_id: "p_donas", product_code: "Donas", product_name: "Donas", category: "postres", price: 20, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_semillas", product_code: "Semillas", product_name: "Semillas", category: "dulces", price: 20, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_choco_corazon", product_code: "ChocoCorazon", product_name: "Chocolate Corazón", category: "dulces", price: 10, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_trufa", product_code: "Trufa", product_name: "Trufa", category: "dulces", price: 15, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_gomi_fish", product_code: "GF", product_name: "Gomi Fish", category: "dulces", price: 5, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_manzana", product_code: "Manzana", product_name: "Manzana", category: "postres", price: 50, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_gomitas_carrucel", product_code: "GC", product_name: "Gomitas Carrucel", category: "dulces", price: 15, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_rebanada_pay", product_code: "RebanadaPay", product_name: "Rebanada Pay", category: "postres", price: 50, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_chocoflan", product_code: "CHOCO", product_name: "Chocoflan", category: "postres", price: 50, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_tostito_solo", product_code: "TS", product_name: "Tostito Solo", category: "preparados", price: 22, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_barcel_solo", product_code: "BS", product_name: "Barcel Solo", category: "preparados", price: 22, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_churros_camaron", product_code: "ChurrosCamaron", product_name: "Churros Camarón", category: "preparados", price: 20, branch_name: "General", initial_stock: 0 },
-        { product_id: "p_papas", product_code: "Papas", product_name: "Papas", category: "preparados", price: 50, branch_name: "General", initial_stock: 0 },
+        { product_id: "p_donas", product_code: "Donas", product_name: "Donas", category: "postres", price: 20, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_semillas", product_code: "Semillas", product_name: "Semillas", category: "dulces", price: 20, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_choco_corazon", product_code: "ChocoCorazon", product_name: "Chocolate Corazón", category: "dulces", price: 10, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_trufa", product_code: "Trufa", product_name: "Trufa", category: "dulces", price: 15, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_gomi_fish", product_code: "GF", product_name: "Gomi Fish", category: "dulces", price: 5, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_manzana", product_code: "Manzana", product_name: "Manzana", category: "postres", price: 50, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_gomitas_carrucel", product_code: "GC", product_name: "Gomitas Carrucel", category: "dulces", price: 15, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_rebanada_pay", product_code: "RebanadaPay", product_name: "Rebanada Pay", category: "postres", price: 50, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_chocoflan", product_code: "CHOCO", product_name: "Chocoflan", category: "postres", price: 50, branch_name: "General", initial_stock: 45 },
+        { product_id: "p_tostito_solo", product_code: "TS", product_name: "Tostito Solo", category: "preparados", price: 22, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_barcel_solo", product_code: "BS", product_name: "Barcel Solo", category: "preparados", price: 22, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_churros_camaron", product_code: "ChurrosCamaron", product_name: "Churros Camarón", category: "preparados", price: 20, branch_name: "General", initial_stock: 60 },
+        { product_id: "p_papas", product_code: "Papas", product_name: "Papas", category: "preparados", price: 50, branch_name: "General", initial_stock: 60 },
 
         // ── DESECHABLES, INSUMOS & BASES SOLAS ──
-        { product_id: "p_cono_sencillo_solo", product_code: "CSS", product_name: "Cono Sencillo Solo", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_cono_doble_choco_solo", product_code: "CDCHS", product_name: "Cono Doble Chocolate Solo", category: "desechables", price: 10, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_cono_doble_vain_solo", product_code: "CDVS", product_name: "Cono Doble Vainilla Solo", category: "desechables", price: 10, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_canasta_doble_sola", product_code: "CDS", product_name: "Canasta Doble Sola", category: "desechables", price: 10, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_canasta_triple_sola", product_code: "CTS", product_name: "Canasta Triple Sola", category: "desechables", price: 10, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_charola_nacho", product_code: "CharolaNacho", product_name: "Charola para Nacho", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_cuchara", product_code: "Cuchara", product_name: "Cuchara", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_cuchara_trol", product_code: "CucharaTrol", product_name: "Cuchara Trol", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_cuchara_prueba", product_code: "CucharaPrueba", product_name: "Cuchara de Prueba", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 },
-        { product_id: "p_popote", product_code: "Popote", product_name: "Popote", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 100, initial_stock: 0 },
-        { product_id: "p_vaso_cualquier_medida", product_code: "VasoCualquierMedida", product_name: "Cualquier Vaso de Cualquier Medida", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 0 }
+        { product_id: "p_cono_sencillo_solo", product_code: "CSS", product_name: "Cono Sencillo Solo", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_cono_doble_choco_solo", product_code: "CDCHS", product_name: "Cono Doble Chocolate Solo", category: "desechables", price: 10, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_cono_doble_vain_solo", product_code: "CDVS", product_name: "Cono Doble Vainilla Solo", category: "desechables", price: 10, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_canasta_doble_sola", product_code: "CDS", product_name: "Canasta Doble Sola", category: "desechables", price: 10, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_canasta_triple_sola", product_code: "CTS", product_name: "Canasta Triple Sola", category: "desechables", price: 10, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_charola_nacho", product_code: "CharolaNacho", product_name: "Charola para Nacho", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_cuchara", product_code: "Cuchara", product_name: "Cuchara", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_cuchara_trol", product_code: "CucharaTrol", product_name: "Cuchara Trol", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_cuchara_prueba", product_code: "CucharaPrueba", product_name: "Cuchara de Prueba", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
+        { product_id: "p_popote", product_code: "Popote", product_name: "Popote", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 100, initial_stock: 300 },
+        { product_id: "p_vaso_cualquier_medida", product_code: "VasoCualquierMedida", product_name: "Cualquier Vaso de Cualquier Medida", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 }
     ];
 
     
@@ -1391,7 +1411,7 @@
             const isOut = stock === 0;
             const isLow = stock > 0 && stock <= STOCK_LOW;
             return `<button type="button" class="product-card${isOut ? " product-out-of-stock" : ""}"
-                data-pid="${esc(p.product_id)}"${isOut ? ' disabled title="Sin stock — Reponer en Inventario"' : ""}>
+                data-pid="${esc(p.product_id)}">
                 <div class="product-image">${p.image_url
                     ? `<img src="${esc(p.image_url)}" alt="${esc(p.product_name)}">`
                     : '<div class="product-placeholder">🍦</div>'}</div>
@@ -1399,11 +1419,11 @@
                     <small>${esc(p.product_code || "")} • ${esc(p.category || "General")}</small>
                     <strong>${esc(p.product_name)}</strong>
                     <span>${money(p.price)}</span>
-                    ${isOut ? '<span style="font-size:10px;color:#b91c1c;font-weight:900;display:block;margin-top:3px">SIN STOCK</span>' : ""}
+                    ${isOut ? '<span style="font-size:10px;color:#d97706;font-weight:900;display:block;margin-top:3px">⚠️ Stock 0 (Reponer)</span>' : ""}
                     ${isLow ? `<span style="font-size:10px;color:#b45309;font-weight:900;display:block;margin-top:3px">⚠ Quedan ${stock} uds.</span>` : ""}
                 </div></button>`;
         }).join("");
-        c.querySelectorAll(".product-card:not([disabled])").forEach(btn =>
+        c.querySelectorAll(".product-card").forEach(btn =>
             btn.addEventListener("click", () => addToCart(btn.dataset.pid))
         );
         updatePosLiveMovement();
@@ -1415,15 +1435,9 @@
         if (!p) return;
         const stock = getStock(pid);
         if (stock <= 0) {
-            toast("'" + p.product_name + "' no tiene stock disponible (0 unidades). Repón inventario para poder vender.", "error", 4000);
-            return;
+            toast("'" + p.product_name + "' agregado a la orden (stock bajo, recuerda reponer en Inventario).", "info", 2000);
         }
         const ex = S.cart.find(i => String(i.product_id) === String(pid));
-        const qty = ex ? ex.quantity : 0;
-        if (qty >= stock) {
-            toast("Solo hay " + stock + " unidades de '" + p.product_name + "' en inventario (Máx 500).", "warn", 3500);
-            return;
-        }
         if (ex) ex.quantity++;
         else S.cart.push({product_id: p.product_id, product_name: p.product_name, price: Number(p.price||0), quantity: 1});
         renderCart();
@@ -1500,7 +1514,6 @@
 
     async function processSale() {
         if (!S.cart.length) return toast("No hay productos en la orden.", "warn");
-        if (checkBlock())   return toast("Hay productos sin stock suficiente. Revisa el inventario antes de cobrar.", "error");
         const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
 
         // Selección de método de pago interactiva (Efectivo vs Tarjeta)
@@ -1525,7 +1538,7 @@
             created_at: now()
         };
 
-        // 1. GUARDADO LOCAL INSTANTÁNEO
+        // 1. GUARDADO LOCAL Y POR SUCURSAL INSTANTÁNEO
         const localSales = lr("sales", []);
         localSales.unshift(saleRecord);
         lw("sales", localSales);
@@ -1534,16 +1547,30 @@
         allGlobalSales.unshift(saleRecord);
         gw("all_sales", allGlobalSales);
 
-        // Guardar última venta registrada para impresión física directa
+        // Guardar explícitamente en la llave de la sucursal activa para sincronización multiusuario
+        const bKey = getBranchKeyName(S.branchName);
+        try {
+            const rawBSales = localStorage.getItem("lf_" + bKey + "_sales");
+            const bSalesList = rawBSales ? JSON.parse(rawBSales) : [];
+            bSalesList.unshift(saleRecord);
+            localStorage.setItem("lf_" + bKey + "_sales", JSON.stringify(bSalesList));
+        } catch(e) {}
+
+        // Invalidar caché en memoria para que Contabilidad, Conteo y Mis Ventas tomen la nueva venta de inmediato
+        _cachedConsolidatedSales = null;
+        _lastSalesFetchTime = 0;
+
+        // Guardar última venta registrada para reimpresión directa
         lw("last_printed_sale", saleRecord);
         gw("last_printed_sale", saleRecord);
 
-        // 2. ACTUALIZACIÓN INMEDIATA DE LA UI
+        // 2. ACTUALIZACIÓN INMEDIATA DE LA UI E INVENTARIOS
         const cartItemsSnapshot = [...S.cart];
         cartItemsSnapshot.forEach(i => deductStock(i.product_id, i.quantity, i.product_name));
         S.cart = [];
         renderCart();
         renderPOS(filtered());
+        updatePosLiveMovement();
         alertInv();
         const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
         toast("✓ Venta de " + money(total) + " cobrada en " + payLabel + ". Ticket #" + saleRecord.sale_number, "success", 3000);
