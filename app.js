@@ -3346,81 +3346,33 @@
         // ═══════════════════════════════════════════════════════════════════
         // 1. SUCURSAL TAGARETE 2 (ACTIVA)
         // ═══════════════════════════════════════════════════════════════════
-        // ── TAGARETE 2 (MATUTINO: Total $1,730 | Efectivo $1,690 | Tarjeta $40) — Encargada 9 ──
+        // ── TAGARETE 2: CORTE Y VENTAS MATUTINAS ($1,730.00) ──
         {
-            id: "sale_t2_today_01",
-            sale_number: "TICK-T2-201",
+            id: "sale_t2_675618",
+            sale_number: "TICK-675618",
             branch_id: "branch-5",
             branch_name: "Tagarete 2",
             shift_name: "Mañana",
             cashier_id: "encargado9lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 580,
+            total: 1690,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
                 { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 10, subtotal: 250 },
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 6, subtotal: 210 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 6, subtotal: 120 }
+                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 10, subtotal: 450 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 12, subtotal: 216 },
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 8, subtotal: 360 },
+                { product_id: "p_paleta_crema_gde", product_name: "Paleta Crema Grande", product_code: "PCG", category: "paletas", price: 30, quantity: 6, subtotal: 180 },
+                { product_id: "p_fresas_crema", product_name: "Fresas Congeladas", product_code: "FC", category: "preparados", price: 45, quantity: 4, subtotal: 180 },
+                { product_id: "prod_escamocha_gde", product_name: "Escamocha Grande", product_code: "ESC-G", category: "preparados", price: 75, quantity: 1, subtotal: 75 },
+                { product_id: "prod_canasta_doble", product_name: "Canasta Doble", product_code: "CAN-D", category: "helados", price: 40, quantity: 1, subtotal: 40 }
             ],
             created_at: toDateKey() + "T10:15:00.000Z"
         },
         {
-            id: "sale_t2_today_02",
-            sale_number: "TICK-T2-202",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Mañana",
-            cashier_id: "encargado9lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 490,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 6, subtotal: 270 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 10, subtotal: 180 },
-                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 4, subtotal: 40 }
-            ],
-            created_at: toDateKey() + "T11:45:00.000Z"
-        },
-        {
-            id: "sale_t2_today_03",
-            sale_number: "TICK-T2-203",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Mañana",
-            cashier_id: "encargado9lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 380,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 8, subtotal: 200 },
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 2, subtotal: 40 }
-            ],
-            created_at: toDateKey() + "T13:20:00.000Z"
-        },
-        {
-            id: "sale_t2_today_04",
-            sale_number: "TICK-T2-204",
-            branch_id: "branch-5",
-            branch_name: "Tagarete 2",
-            shift_name: "Mañana",
-            cashier_id: "encargado9lafuente@gmail.com",
-            cashier_name: "Encargada Tagarete 2 (Matutino)",
-            total: 240,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 4, subtotal: 180 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 3, subtotal: 60 }
-            ],
-            created_at: toDateKey() + "T14:40:00.000Z"
-        },
-        {
-            id: "sale_t2_today_05",
-            sale_number: "TICK-T2-205",
+            id: "sale_t2_card_mat",
+            sale_number: "TICK-767105",
             branch_id: "branch-5",
             branch_name: "Tagarete 2",
             shift_name: "Mañana",
@@ -3430,275 +3382,621 @@
             payment_method: "card",
             status: "COMPLETED",
             items: [
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 2, subtotal: 40 }
+                { product_id: "p_paleta_agua_chica", product_name: "Paleta Agua Chica", product_code: "PAC", category: "paletas", price: 12, quantity: 2, subtotal: 24 },
+                { product_id: "p_bolis", product_name: "Paleta Mini", product_code: "MINI", category: "paletas", price: 8, quantity: 2, subtotal: 16 }
             ],
-            created_at: toDateKey() + "T15:10:00.000Z"
+            created_at: toDateKey() + "T13:45:00.000Z"
         },
-        // ── TAGARETE 2 (VESPERTINO: Total $2,280 | Efectivo $2,205 | Tarjeta $75) — Encargada 10 ──
+
+        // ── TAGARETE 2: VENTAS VESPERTINAS EN VIVO ($2,280.00) ──
         {
-            id: "sale_t2_today_06",
-            sale_number: "TICK-T2-206",
+            id: "sale_t2_532111",
+            sale_number: "TICK-532111",
             branch_id: "branch-5",
             branch_name: "Tagarete 2",
             shift_name: "Tarde",
             cashier_id: "encargado10lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 735,
+            total: 50,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 7, subtotal: 315 },
-                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 6, subtotal: 270 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 5, subtotal: 100 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono sensillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 25, quantity: 1, subtotal: 25 }
             ],
-            created_at: toDateKey() + "T16:15:00.000Z"
+            created_at: toDateKey() + "T16:20:00.000Z"
         },
         {
-            id: "sale_t2_today_07",
-            sale_number: "TICK-T2-207",
+            id: "sale_t2_127740",
+            sale_number: "TICK-127740",
             branch_id: "branch-5",
             branch_name: "Tagarete 2",
             shift_name: "Tarde",
             cashier_id: "encargado10lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 810,
+            total: 50,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 10, subtotal: 350 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 10, subtotal: 250 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 10, subtotal: 180 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 },
-                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 1, subtotal: 10 }
+                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 1, subtotal: 30 },
+                { product_id: "p_helado_vaso1", product_name: "VASO 1 BOLITA", product_code: "V-1B", category: "helados", price: 20, quantity: 1, subtotal: 20 }
             ],
-            created_at: toDateKey() + "T18:00:00.000Z"
+            created_at: toDateKey() + "T16:35:00.000Z"
         },
         {
-            id: "sale_t2_today_08",
-            sale_number: "TICK-T2-208",
+            id: "sale_t2_505850",
+            sale_number: "TICK-505850",
             branch_id: "branch-5",
             branch_name: "Tagarete 2",
             shift_name: "Tarde",
             cashier_id: "encargado10lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 660,
+            total: 180,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "adef0123-f92d-46ed-8797-2dfb46fb5b6d", product_name: "Cono Doble Chocolate", product_code: "CDCH", category: "helados", price: 45, quantity: 8, subtotal: 360 },
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 6, subtotal: 210 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 5, subtotal: 90 }
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 2, subtotal: 90 },
+                { product_id: "p_fresas_crema", product_name: "Fresas Congeladas", product_code: "FC", category: "preparados", price: 45, quantity: 2, subtotal: 90 }
             ],
-            created_at: toDateKey() + "T19:30:00.000Z"
+            created_at: toDateKey() + "T17:05:00.000Z"
         },
         {
-            id: "sale_t2_today_09",
-            sale_number: "TICK-T2-209",
+            id: "sale_t2_756668",
+            sale_number: "TICK-756668",
             branch_id: "branch-5",
             branch_name: "Tagarete 2",
             shift_name: "Tarde",
             cashier_id: "encargado10lafuente@gmail.com",
             cashier_name: "Encargada Tagarete 2 (Vespertino)",
-            total: 75,
-            payment_method: "card",
+            total: 255,
+            payment_method: "cash",
             status: "COMPLETED",
             items: [
+                { product_id: "prod_vaso_bolitas_2", product_name: "Vaso bolitas 2", product_code: "VB-2", category: "helados", price: 35, quantity: 6, subtotal: 210 },
+                { product_id: "p_fresas_crema", product_name: "Fresa Congelada", product_code: "FC", category: "preparados", price: 45, quantity: 1, subtotal: 45 }
+            ],
+            created_at: toDateKey() + "T17:40:00.000Z"
+        },
+        {
+            id: "sale_t2_574609",
+            sale_number: "TICK-574609",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 235,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono doble vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 2, subtotal: 90 },
+                { product_id: "prod_paleta_pinon", product_name: "Paleta de piñón", product_code: "PP", category: "paletas", price: 40, quantity: 1, subtotal: 40 },
+                { product_id: "prod_canasta_doble", product_name: "Canasta Doble", product_code: "CAN-D", category: "helados", price: 80, quantity: 1, subtotal: 80 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono sensillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 }
+            ],
+            created_at: toDateKey() + "T18:15:00.000Z"
+        },
+        {
+            id: "sale_t2_163600",
+            sale_number: "TICK-163600",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 30,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 1, subtotal: 30 }
+            ],
+            created_at: toDateKey() + "T18:30:00.000Z"
+        },
+        {
+            id: "sale_t2_280429",
+            sale_number: "TICK-280429",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 50,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 },
+                { product_id: "prod_mordisco", product_name: "Mordisco", product_code: "MOR", category: "helados", price: 25, quantity: 1, subtotal: 25 }
+            ],
+            created_at: toDateKey() + "T18:50:00.000Z"
+        },
+        {
+            id: "sale_t2_945692",
+            sale_number: "TICK-945692",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 510,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "prod_escamocha_gde", product_name: "Escamocha Grande", product_code: "ESC-G", category: "preparados", price: 75, quantity: 1, subtotal: 75 },
+                { product_id: "prod_escamocha_chica", product_name: "Escamocha Chica", product_code: "ESC-C", category: "preparados", price: 55, quantity: 1, subtotal: 55 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono sensillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 },
+                { product_id: "prod_cono_doble_choco", product_name: "Cono doble chocolate", product_code: "CDC", category: "helados", price: 45, quantity: 1, subtotal: 45 },
+                { product_id: "prod_paleta_pinon", product_name: "Paleta de piñon", product_code: "PP", category: "paletas", price: 40, quantity: 1, subtotal: 40 },
+                { product_id: "p_fresas_crema", product_name: "Fresas Congeladas", product_code: "FC", category: "preparados", price: 45, quantity: 1, subtotal: 45 },
+                { product_id: "prod_dorinachos", product_name: "Dorinachos", product_code: "DORI", category: "preparados", price: 45, quantity: 1, subtotal: 45 },
+                { product_id: "prod_agua_chica", product_name: "Agua Chica", product_code: "AC", category: "aguas", price: 25, quantity: 1, subtotal: 25 },
+                { product_id: "p_cacahuatadas", product_name: "Cacahuatadas", product_code: "CACAH", category: "preparados", price: 35, quantity: 1, subtotal: 35 },
+                { product_id: "p_helado_vaso1", product_name: "Helado una bolita", product_code: "H1B", category: "helados", price: 20, quantity: 1, subtotal: 20 },
+                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 1, subtotal: 30 },
+                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 1, subtotal: 45 }
+            ],
+            created_at: toDateKey() + "T19:15:00.000Z"
+        },
+        {
+            id: "sale_t2_421049",
+            sale_number: "TICK-421049",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 510,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 5, subtotal: 225 },
+                { product_id: "p_papas_cueros", product_name: "Papas Con Cueros", product_code: "PC", category: "preparados", price: 50, quantity: 4, subtotal: 200 },
+                { product_id: "p_bolis", product_name: "Paleta Mini", product_code: "MINI", category: "paletas", price: 5, quantity: 2, subtotal: 10 },
                 { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 3, subtotal: 75 }
             ],
-            created_at: toDateKey() + "T20:15:00.000Z"
+            created_at: toDateKey() + "T19:45:00.000Z"
+        },
+        {
+            id: "sale_t2_vesp_pack",
+            sale_number: "TICK-674349",
+            branch_id: "branch-5",
+            branch_name: "Tagarete 2",
+            shift_name: "Tarde",
+            cashier_id: "encargado10lafuente@gmail.com",
+            cashier_name: "Encargada Tagarete 2 (Vespertino)",
+            total: 360,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 3, subtotal: 135 },
+                { product_id: "p_tostilocos", product_name: "Tostilocos", product_code: "TL", category: "preparados", price: 55, quantity: 1, subtotal: 55 },
+                { product_id: "p_paleta_agua", product_name: "Paleta Chaparrita", product_code: "CHIC", category: "paletas", price: 20, quantity: 3, subtotal: 60 },
+                { product_id: "prod_escamocha_gde", product_name: "Escamocha Grande", product_code: "ESC-G", category: "preparados", price: 75, quantity: 1, subtotal: 75 },
+                { product_id: "p_helado_vaso2", product_name: "Helado dos bolitas", product_code: "H2B", category: "helados", price: 35, quantity: 1, subtotal: 35 }
+            ],
+            created_at: toDateKey() + "T20:10:00.000Z"
         },
 
         // ═══════════════════════════════════════════════════════════════════
         // 2. SUCURSAL CNOP (ACTIVA)
         // ═══════════════════════════════════════════════════════════════════
-        // ── CNOP (MATUTINO: Total $990 | Efectivo $790 | Tarjeta $200) — Encargada 11 ──
+        // ── CNOP: VENTAS MATUTINAS ($990.00) ──
         {
-            id: "sale_cnop_today_01",
-            sale_number: "TICK-CNOP-101",
+            id: "sale_cnop_753094",
+            sale_number: "TICK-753094",
             branch_id: "branch-6",
             branch_name: "CNOP",
             shift_name: "Mañana",
             cashier_id: "encargado11lafuente@gmail.com",
             cashier_name: "Encargada CNOP (Matutino)",
-            total: 390,
+            total: 492,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 6, subtotal: 150 },
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 5, subtotal: 100 }
+                { product_id: "p_esquimal", product_name: "Esquimal Gde", product_code: "ESQ-G", category: "paletas", price: 45, quantity: 1, subtotal: 45 },
+                { product_id: "p_agua_half", product_name: "Agua Mediana", product_code: "AG-MED", category: "aguas", price: 30, quantity: 1, subtotal: 30 },
+                { product_id: "p_bolis", product_name: "Paleta mini", product_code: "MINI", category: "paletas", price: 5, quantity: 2, subtotal: 10 },
+                { product_id: "p_chechis_bolsa", product_name: "Chechis Preparados en Bolsa", product_code: "CHPB", category: "preparados", price: 20, quantity: 1, subtotal: 20 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 },
+                { product_id: "p_nieve_1lt", product_name: "Litro de Nieve", product_code: "NV-1L", category: "helados", price: 120, quantity: 1, subtotal: 120 },
+                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 1, subtotal: 30 },
+                { product_id: "p_paleta_crema_gde", product_name: "Paleta Crema Grande", product_code: "PCG", category: "paletas", price: 30, quantity: 1, subtotal: 30 },
+                { product_id: "p_tostilocos", product_name: "Tostiloco", product_code: "TL", category: "preparados", price: 55, quantity: 1, subtotal: 55 },
+                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 1, subtotal: 45 },
+                { product_id: "prod_cono_doble_choco", product_name: "Cono Doble Chocolate", product_code: "CDC", category: "helados", price: 45, quantity: 1, subtotal: 45 },
+                { product_id: "p_paleta_agua_chica", product_name: "Paleta Agua Chica", product_code: "PAC", category: "paletas", price: 12, quantity: 1, subtotal: 12 }
             ],
-            created_at: toDateKey() + "T10:30:00.000Z"
+            created_at: toDateKey() + "T10:45:00.000Z"
         },
         {
-            id: "sale_cnop_today_02",
-            sale_number: "TICK-CNOP-102",
+            id: "sale_cnop_647303",
+            sale_number: "TICK-647303",
             branch_id: "branch-6",
             branch_name: "CNOP",
             shift_name: "Mañana",
             cashier_id: "encargado11lafuente@gmail.com",
             cashier_name: "Encargada CNOP (Matutino)",
-            total: 400,
-            payment_method: "cash",
-            status: "COMPLETED",
-            items: [
-                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 4, subtotal: 180 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 10, subtotal: 180 },
-                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 4, subtotal: 40 }
-            ],
-            created_at: toDateKey() + "T12:00:00.000Z"
-        },
-        {
-            id: "sale_cnop_today_03",
-            sale_number: "TICK-CNOP-103",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Mañana",
-            cashier_id: "encargado11lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Matutino)",
-            total: 200,
-            payment_method: "card",
-            status: "COMPLETED",
-            items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 4, subtotal: 180 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 }
-            ],
-            created_at: toDateKey() + "T14:15:00.000Z"
-        },
-        // ── CNOP (VESPERTINO: Total $956 | Efectivo $906 | Tarjeta $50) — Encargada 12 ──
-        {
-            id: "sale_cnop_today_04",
-            sale_number: "TICK-6473039",
-            branch_id: "branch-6",
-            branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
             total: 90,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
                 { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 2, subtotal: 90 }
             ],
-            created_at: toDateKey() + "T16:30:00.000Z"
+            created_at: toDateKey() + "T11:20:00.000Z"
         },
         {
-            id: "sale_cnop_today_05",
-            sale_number: "TICK-CNOP-202",
+            id: "sale_cnop_172702",
+            sale_number: "TICK-172702",
             branch_id: "branch-6",
             branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 375,
+            shift_name: "Mañana",
+            cashier_id: "encargado11lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Matutino)",
+            total: 135,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "p_tostilocos", product_name: "Tostilocos Preparados", product_code: "TOSTI-PREP", category: "preparados", price: 85, quantity: 2, subtotal: 170 },
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 3, subtotal: 105 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 5, subtotal: 100 }
+                { product_id: "prod_canasta_triple", product_name: "CANASTA TRIPLE", product_code: "CAN-T", category: "helados", price: 50, quantity: 1, subtotal: 50 },
+                { product_id: "prod_canasta_doble", product_name: "CANASTA DOBLE", product_code: "CAN-D", category: "helados", price: 40, quantity: 1, subtotal: 40 },
+                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 1, subtotal: 45 }
             ],
-            created_at: toDateKey() + "T17:45:00.000Z"
+            created_at: toDateKey() + "T12:05:00.000Z"
         },
         {
-            id: "sale_cnop_today_06",
-            sale_number: "TICK-CNOP-203",
+            id: "sale_cnop_813544",
+            sale_number: "TICK-813544",
             branch_id: "branch-6",
             branch_name: "CNOP",
-            shift_name: "Tarde",
-            cashier_id: "encargado12lafuente@gmail.com",
-            cashier_name: "Encargada CNOP (Vespertino)",
-            total: 298,
+            shift_name: "Mañana",
+            cashier_id: "encargado11lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Matutino)",
+            total: 120,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "p_paleta_chaparrita", product_name: "Paleta Chaparrita", product_code: "PAL-CHAP", category: "paletas", price: 18, quantity: 6, subtotal: 108 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 4, subtotal: 100 },
-                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 2, subtotal: 90 }
+                { product_id: "p_agua_half", product_name: "Agua Mediana", product_code: "AG-MED", category: "aguas", price: 30, quantity: 2, subtotal: 60 },
+                { product_id: "p_paleta_crema_gde", product_name: "Paleta Crema Grande", product_code: "PCG", category: "paletas", price: 30, quantity: 2, subtotal: 60 }
             ],
-            created_at: toDateKey() + "T19:15:00.000Z"
+            created_at: toDateKey() + "T12:55:00.000Z"
         },
         {
-            id: "sale_cnop_today_07",
-            sale_number: "TICK-CNOP-204",
+            id: "sale_cnop_mat_extras",
+            sale_number: "TICK-553338",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Mañana",
+            cashier_id: "encargado11lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Matutino)",
+            total: 153,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 3, subtotal: 75 },
+                { product_id: "p_helado_vaso1", product_name: "Helado Vaso 1 Bolita", product_code: "V1B", category: "helados", price: 20, quantity: 2, subtotal: 40 },
+                { product_id: "p_paleta_agua_chica", product_name: "Paleta Agua Chica", product_code: "PAC", category: "paletas", price: 12, quantity: 1, subtotal: 12 },
+                { product_id: "p_paleta_agua_chica", product_name: "Paleta mini", product_code: "PM", category: "paletas", price: 5, quantity: 2, subtotal: 10 },
+                { product_id: "p_chicle", product_name: "Dulces varios", product_code: "DV", category: "dulces", price: 16, quantity: 1, subtotal: 16 }
+            ],
+            created_at: toDateKey() + "T13:40:00.000Z"
+        },
+
+        // ── CNOP: VENTAS VESPERTINAS EN VIVO ($956.00) ──
+        {
+            id: "sale_cnop_283913",
+            sale_number: "TICK-283913",
             branch_id: "branch-6",
             branch_name: "CNOP",
             shift_name: "Tarde",
             cashier_id: "encargado12lafuente@gmail.com",
             cashier_name: "Encargada CNOP (Vespertino)",
-            total: 193,
+            total: 302,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "p_paleta_agua_gd", product_name: "Paleta de Agua Grande", product_code: "PAL-AGD", category: "paletas", price: 22, quantity: 4, subtotal: 88 },
+                { product_id: "p_ag_grande", product_name: "AGUA GRANDE", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 2, subtotal: 90 },
+                { product_id: "p_paleta_agua_gde", product_name: "Paleta Agua Grande", product_code: "PAG", category: "paletas", price: 22, quantity: 6, subtotal: 132 },
+                { product_id: "prod_paleta_chaparrita", product_name: "Paleta Chaparrita", product_code: "P-CHAP", category: "paletas", price: 20, quantity: 4, subtotal: 80 }
+            ],
+            created_at: toDateKey() + "T16:15:00.000Z"
+        },
+        {
+            id: "sale_cnop_404966",
+            sale_number: "TICK-404966",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 90,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 },
+                { product_id: "p_helado_vaso2", product_name: "Helado Vaso", product_code: "HV", category: "helados", price: 32, quantity: 1, subtotal: 32 },
+                { product_id: "prod_trufa", product_name: "Trufa", product_code: "TRUF", category: "dulces", price: 12, quantity: 1, subtotal: 12 },
+                { product_id: "prod_gomitas_carrucel", product_name: "Gomitas Carrucel", product_code: "GC", category: "dulces", price: 21, quantity: 1, subtotal: 21 }
+            ],
+            created_at: toDateKey() + "T17:10:00.000Z"
+        },
+        {
+            id: "sale_cnop_488867",
+            sale_number: "TICK-488867",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 50,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
+            ],
+            created_at: toDateKey() + "T17:50:00.000Z"
+        },
+        {
+            id: "sale_cnop_122032",
+            sale_number: "TICK-122032",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 50,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
+            ],
+            created_at: toDateKey() + "T18:25:00.000Z"
+        },
+        {
+            id: "sale_cnop_97570",
+            sale_number: "TICK-97570",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 135,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_fresas_crema", product_name: "Fresa Congelada", product_code: "FC", category: "preparados", price: 45, quantity: 3, subtotal: 135 }
+            ],
+            created_at: toDateKey() + "T19:05:00.000Z"
+        },
+        {
+            id: "sale_cnop_76003",
+            sale_number: "TICK-76003",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 90,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_esquimal", product_name: "Esquimal Gde", product_code: "ESQ-G", category: "paletas", price: 45, quantity: 2, subtotal: 90 }
+            ],
+            created_at: toDateKey() + "T19:35:00.000Z"
+        },
+        {
+            id: "sale_cnop_802781",
+            sale_number: "TICK-802781",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 60,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "prod_trol", product_name: "Trol", product_code: "TROL", category: "preparados", price: 30, quantity: 2, subtotal: 60 }
+            ],
+            created_at: toDateKey() + "T20:00:00.000Z"
+        },
+        {
+            id: "sale_cnop_vesp_pack",
+            sale_number: "TICK-401334",
+            branch_id: "branch-6",
+            branch_name: "CNOP",
+            shift_name: "Tarde",
+            cashier_id: "encargado12lafuente@gmail.com",
+            cashier_name: "Encargada CNOP (Vespertino)",
+            total: 179,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_ag_grande", product_name: "Agua Grande", product_code: "AG-GDE", category: "aguas", price: 45, quantity: 1, subtotal: 45 },
+                { product_id: "p_paleta_agua_gde", product_name: "Paleta Agua Grande", product_code: "PAG", category: "paletas", price: 22, quantity: 2, subtotal: 44 },
                 { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 1, subtotal: 45 },
-                { product_id: "sup_agua_med", product_name: "Agua Mediana", product_code: "AG-MED", category: "aguas", price: 30, quantity: 1, subtotal: 30 },
-                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 3, subtotal: 30 }
+                { product_id: "p_paleta_agua_chica", product_name: "Paleta de Agua Chica", product_code: "PAC", category: "paletas", price: 25, quantity: 1, subtotal: 25 },
+                { product_id: "p_bolis", product_name: "Paleta mini", product_code: "MINI", category: "paletas", price: 5, quantity: 4, subtotal: 20 }
             ],
-            created_at: toDateKey() + "T20:10:00.000Z"
+            created_at: toDateKey() + "T20:25:00.000Z"
         },
 
         // ═══════════════════════════════════════════════════════════════════
-        // 3. SUCURSAL RESCATE (ACTIVA: Total $2,250 | Matutino $2,160 | Vespertino $90)
+        // 3. SUCURSAL EL RESCATE (ACTIVA)
         // ═══════════════════════════════════════════════════════════════════
-        // ── RESCATE (MATUTINO: Total exacto $2,592.00 | Efectivo $2,592 | Tarjeta $0) — Encargada 3 ──
+        // ── EL RESCATE: VENTAS MATUTINAS ($2,592.00) ──
         {
-            id: "sale_res_today_01",
-            sale_number: "TICK-RES-101",
+            id: "sale_res_391943",
+            sale_number: "TICK-391943",
             branch_id: "branch-2",
             branch_name: "Rescate",
             shift_name: "Mañana",
             cashier_id: "encargado3lafuente@gmail.com",
             cashier_name: "Encargada Rescate (Matutino)",
-            total: 1400,
-            payment_method: "cash",
+            total: 22,
+            payment_method: "card",
             status: "COMPLETED",
             items: [
-                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 16, subtotal: 720 },
-                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 12, subtotal: 420 },
-                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 13, subtotal: 260 }
+                { product_id: "p_sabrita_sola", product_name: "Sabrita Sola", product_code: "SAB-S", category: "desechables", price: 22, quantity: 1, subtotal: 22 }
             ],
-            created_at: toDateKey() + "T10:20:00.000Z"
+            created_at: toDateKey() + "T11:00:00.000Z"
         },
         {
-            id: "sale_res_today_02",
-            sale_number: "TICK-RES-102",
+            id: "sale_res_431167",
+            sale_number: "TICK-431167",
             branch_id: "branch-2",
             branch_name: "Rescate",
             shift_name: "Mañana",
             cashier_id: "encargado3lafuente@gmail.com",
             cashier_name: "Encargada Rescate (Matutino)",
-            total: 1192,
+            total: 35,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 12, subtotal: 540 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 14, subtotal: 350 },
-                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 15, subtotal: 270 },
-                { product_id: "p_chicle", product_name: "Chicle", product_code: "CHIC", category: "dulces", price: 10, quantity: 3, subtotal: 32 }
+                { product_id: "p_helado_vaso1", product_name: "Helado Vaso 1", product_code: "HV1", category: "helados", price: 20, quantity: 1, subtotal: 20 },
+                { product_id: "prod_gomitas_carrucel", product_name: "Gomitas carrucel", product_code: "GC", category: "dulces", price: 15, quantity: 1, subtotal: 15 }
+            ],
+            created_at: toDateKey() + "T11:30:00.000Z"
+        },
+        {
+            id: "sale_res_21198",
+            sale_number: "TICK-21198",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 90,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_paleta_agua_gde", product_name: "Paleta agua grande", product_code: "PAG", category: "paletas", price: 25, quantity: 1, subtotal: 25 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 },
+                { product_id: "p_bolis", product_name: "Helado", product_code: "H", category: "helados", price: 15, quantity: 1, subtotal: 15 }
+            ],
+            created_at: toDateKey() + "T12:15:00.000Z"
+        },
+        {
+            id: "sale_res_972178",
+            sale_number: "TICK-972178",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 75,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 3, subtotal: 75 }
+            ],
+            created_at: toDateKey() + "T12:45:00.000Z"
+        },
+        {
+            id: "sale_res_291111",
+            sale_number: "TICK-291111",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 50,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 2, subtotal: 50 }
+            ],
+            created_at: toDateKey() + "T13:15:00.000Z"
+        },
+        {
+            id: "sale_res_bulk_01",
+            sale_number: "TICK-RES-206",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 800,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 10, subtotal: 350 },
+                { product_id: "prod_cono_doble_choco", product_name: "Cono Doble Chocolate", product_code: "CDC", category: "helados", price: 45, quantity: 6, subtotal: 270 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 9, subtotal: 180 }
+            ],
+            created_at: toDateKey() + "T13:30:00.000Z"
+        },
+        {
+            id: "sale_res_bulk_02",
+            sale_number: "TICK-RES-205",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 900,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "p_nieve_vaso12", product_name: "Nieve Vaso #12", product_code: "NV-12", category: "helados", price: 45, quantity: 10, subtotal: 450 },
+                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono Sencillo", product_code: "CS", category: "helados", price: 25, quantity: 10, subtotal: 250 },
+                { product_id: "p_paleta_agua", product_name: "Paleta de Agua", product_code: "PAL-AGUA", category: "paletas", price: 18, quantity: 10, subtotal: 180 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 1, subtotal: 20 }
             ],
             created_at: toDateKey() + "T13:45:00.000Z"
         },
-        // ── RESCATE (VESPERTINO: Total $90 | Efectivo $90 | Tarjeta $0) — Encargada 4 ──
         {
-            id: "sale_res_today_03",
-            sale_number: "TICK-690171",
+            id: "sale_res_bulk_03",
+            sale_number: "TICK-RES-204",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Mañana",
+            cashier_id: "encargado3lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Matutino)",
+            total: 620,
+            payment_method: "cash",
+            status: "COMPLETED",
+            items: [
+                { product_id: "a5c3b67a-c276-42f2-863f-a01c6f9294ed", product_name: "Cono Doble Vainilla", product_code: "CDV", category: "helados", price: 45, quantity: 8, subtotal: 360 },
+                { product_id: "sup_agua_1l", product_name: "Agua 1 Lt", product_code: "AG-1L", category: "aguas", price: 35, quantity: 4, subtotal: 140 },
+                { product_id: "p_paleta_leche", product_name: "Paleta de Leche", product_code: "PAL-LECHE", category: "paletas", price: 20, quantity: 6, subtotal: 120 }
+            ],
+            created_at: toDateKey() + "T14:00:00.000Z"
+        },
+
+        // ── EL RESCATE: VENTAS VESPERTINAS EN VIVO ($110.00) ──
+        {
+            id: "sale_res_940207",
+            sale_number: "TICK-940207",
             branch_id: "branch-2",
             branch_name: "Rescate",
             shift_name: "Tarde",
             cashier_id: "encargado4lafuente@gmail.com",
             cashier_name: "Encargada Rescate (Vespertino)",
-            total: 90,
+            total: 110,
             payment_method: "cash",
             status: "COMPLETED",
             items: [
-                { product_id: "sup_agua_1l", product_name: "Agua Mediana", product_code: "AG-MED", category: "aguas", price: 30, quantity: 1, subtotal: 30 },
-                { product_id: "adbc5511-68a8-4525-97a3-ac7972856e89", product_name: "Cono sencillo", product_code: "CS", category: "helados", price: 25, quantity: 1, subtotal: 25 },
-                { product_id: "p_nieve_vaso", product_name: "Vaso 1 bolita", product_code: "NV-1", category: "helados", price: 20, quantity: 1, subtotal: 20 },
-                { product_id: "p_carrucel", product_name: "Carrucel", product_code: "CARR", category: "dulces", price: 15, quantity: 1, subtotal: 15 }
+                { product_id: "p_fresas_crema", product_name: "Fresa Congelada", product_code: "FC", category: "preparados", price: 45, quantity: 1, subtotal: 45 },
+                { product_id: "prod_choco_corazon", product_name: "Chocolate Corazón", product_code: "CH-COR", category: "dulces", price: 65, quantity: 1, subtotal: 65 }
             ],
-            created_at: toDateKey() + "T18:20:00.000Z"
+            created_at: toDateKey() + "T16:45:00.000Z"
+        },
+        {
+            id: "sale_res_725473",
+            sale_number: "TICK-725473",
+            branch_id: "branch-2",
+            branch_name: "Rescate",
+            shift_name: "Tarde",
+            cashier_id: "encargado4lafuente@gmail.com",
+            cashier_name: "Encargada Rescate (Vespertino)",
+            total: 50,
+            payment_method: "cash",
+            status: "CANCELLED",
+            cancelled_reason: "Prueba",
+            cancelled_by: "Encargada Rescate (Vespertino)",
+            cancelled_at: toDateKey() + "T16:50:00.000Z",
+            items: [
+                { product_id: "p_papas_cueros", product_name: "Papas Con Cueros", product_code: "PC", category: "preparados", price: 50, quantity: 1, subtotal: 50 }
+            ],
+            created_at: toDateKey() + "T16:48:00.000Z"
         }
     ];
 
@@ -4029,7 +4327,8 @@
 
     async function loadSales(silent = false) {
         const c = $("#sales-container");
-        if (!c || !S.branchId) return;
+        if (!c) return;
+        if (!S.isSU && !S.branchId) return;
         if (!silent && !c.children.length) {
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
         }
