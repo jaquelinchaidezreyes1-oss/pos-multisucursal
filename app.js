@@ -154,8 +154,8 @@
         try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
 
         const sn = String(obs.shift_name || s.shift_name || s.shift || "").toLowerCase();
-        // 1. Detección prioritaria por nombre explícito de turno (ej: 'Mañana' o 'Corte Tagarete 2 (Mañana)')
-        if (sn.includes("mañana") || sn.includes("mat") || sn.includes("dia")) return "matutino";
+        // 1. Detección prioritaria por nombre explícito de turno (ej: 'Mañana', 'Maana', 'Corte Tagarete 1 (Mañana)')
+        if (sn.includes("mañana") || sn.includes("maana") || sn.includes("mat") || sn.includes("dia")) return "matutino";
         if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
 
         // 2. Mapeo prioritario oficial por encargada:
@@ -163,7 +163,7 @@
         if (cashier.includes("encargado12") || cashier.includes("encargado10") || cashier.includes("encargado8") || cashier.includes("encargado6") || cashier.includes("encargado4") || cashier.includes("encargado2") || cashier.includes("vespertino") || cashier.includes("tarde") || cashier.includes("noche")) {
             return "vespertino";
         }
-        if (cashier.includes("encargado11") || cashier.includes("encargado9") || cashier.includes("encargado7") || cashier.includes("encargado5") || cashier.includes("encargado3") || cashier.includes("encargado1") || cashier.includes("matutino") || cashier.includes("mañana")) {
+        if (cashier.includes("encargado11") || cashier.includes("encargado9") || cashier.includes("encargado7") || cashier.includes("encargado5") || cashier.includes("encargado3") || cashier.includes("encargado1") || cashier.includes("matutino") || cashier.includes("mañana") || cashier.includes("maana")) {
             return "matutino";
         }
 
@@ -188,10 +188,7 @@
             .toLowerCase()
             .replace(/la fuente/g, "")
             .replace(/sucursal/g, "")
-            .replace(/paleteria|paletería/g, "")
-            .replace(/el rescate/g, "rescate")
-            .replace(/matutino|vespertino|mañana|tarde/g, "")
-            .replace(/[()_-]/g, " ")
+            .replace(/[-_]/g, " ")
             .replace(/\s+/g, " ")
             .trim();
     }
@@ -199,23 +196,51 @@
     /* ── RESOLVEDOR INEQUÍVOCO DE SUCURSAL CANÓNICA ── */
     function resolveCanonicalBranch(ref) {
         if (!ref) return "";
-        let str = "";
         if (typeof ref === "string") {
-            str = ref;
-        } else if (typeof ref === "object") {
-            str = `${ref.name || ""} ${ref.branch_name || ""} ${ref.id || ""} ${ref.branch_id || ""} ${ref.cashier_name || ""} ${ref.cashier_id || ""} ${ref.user_name || ""} ${ref.user_email || ""}`;
-            let obs = {};
-            try { obs = typeof ref.observations === "string" ? JSON.parse(ref.observations) : (ref.observations || {}); } catch(e) {}
-            str += ` ${obs.branch_name || ""} ${obs.cashier_name || ""} ${obs.user_email || ""}`;
+            const s = ref.toLowerCase().trim();
+            if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargado12")) return "CNOP";
+            if (s === "branch-4" || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || s.includes("encargado7") || s.includes("encargado8")) return "Tagarete 1";
+            if (s === "branch-5" || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || s.includes("encargado9") || s.includes("encargado10")) return "Tagarete 2";
+            if (s === "branch-3" || s.includes("mollotes") || s.includes("encargado5") || s.includes("encargado6")) return "Mollotes";
+            if (s === "branch-2" || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4")) return "Rescate";
+            if (s === "branch-1" || s.includes("calzada") || s.includes("encargado1") || s.includes("encargado2")) return "La Fuente Calzada";
+            return ref.trim();
         }
+
+        // 1. Identificación directa por ID prioritario de sucursal
+        const bId = String(ref.branch_id || ref.id || "").toLowerCase().trim();
+        if (bId === "branch-6") return "CNOP";
+        if (bId === "branch-4") return "Tagarete 1";
+        if (bId === "branch-5") return "Tagarete 2";
+        if (bId === "branch-3") return "Mollotes";
+        if (bId === "branch-2") return "Rescate";
+        if (bId === "branch-1") return "La Fuente Calzada";
+
+        // 2. Identificación por correo / ID de encargada oficial asignada
+        const cInfo = (String(ref.cashier_id || "") + " " + String(ref.cashier_name || "") + " " + String(ref.user_email || "")).toLowerCase();
+        if (cInfo.includes("encargado11") || cInfo.includes("encargado12")) return "CNOP";
+        if (cInfo.includes("encargado7") || cInfo.includes("encargado8")) return "Tagarete 1";
+        if (cInfo.includes("encargado9") || cInfo.includes("encargado10")) return "Tagarete 2";
+        if (cInfo.includes("encargado5") || cInfo.includes("encargado6")) return "Mollotes";
+        if (cInfo.includes("encargado3") || cInfo.includes("encargado4")) return "Rescate";
+        if (cInfo.includes("encargado1") || cInfo.includes("encargado2")) return "La Fuente Calzada";
+
+        // 3. Extracción de observaciones y metadatos con Tagarete 1 prioritario
+        let obs = {};
+        try { obs = typeof ref.observations === "string" ? JSON.parse(ref.observations) : (ref.observations || {}); } catch(e) {}
+        let str = `${ref.name || ""} ${ref.branch_name || ""} ${ref.id || ""} ${ref.branch_id || ""} ${cInfo} ${obs.branch_name || ""} ${obs.cashier_name || ""} ${obs.user_email || ""}`;
         const s = String(str).toLowerCase().trim();
 
-        if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargado12")) return "CNOP";
-        if (s.includes("branch-5") || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || s.includes("encargado9") || s.includes("encargado10")) return "Tagarete 2";
-        if (s.includes("branch-4") || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || s.includes("encargado7") || s.includes("encargado8")) return "Tagarete 1";
-        if (s.includes("branch-3") || s.includes("mollotes") || s.includes("encargado5") || s.includes("encargado6")) return "Mollotes";
-        if (s.includes("branch-2") || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4")) return "Rescate";
-        if (s.includes("branch-1") || s.includes("calzada") || s.includes("encargado1") || s.includes("encargado2")) return "La Fuente Calzada";
+        if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop")) return "CNOP";
+        if (s.includes("branch-4") || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno")))) return "Tagarete 1";
+        if (s.includes("branch-5") || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos")))) return "Tagarete 2";
+        if (s.includes("branch-3") || s.includes("mollotes")) return "Mollotes";
+        if (s.includes("branch-2") || s.includes("rescate")) return "Rescate";
+        if (s.includes("branch-1") || s.includes("calzada")) return "La Fuente Calzada";
+
+        // 4. Soporte dinámico para cualquier sucursal futura que se habilite
+        if (ref.name && String(ref.name).trim()) return String(ref.name).trim();
+        if (ref.branch_name && String(ref.branch_name).trim()) return String(ref.branch_name).trim();
 
         return "";
     }
@@ -3430,6 +3455,94 @@
 
     // Ventas y cortes de respaldo activo de la jornada para turnos matutinos y vespertinos
     const BASE_ACTIVE_SALES = [
+        {
+                "id": "sale_1789700424873_us2j8",
+                "sale_number": "TICK-328180",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado8lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 1 (Vespertino) (encargado8lafuente@gmail.com)",
+                "total": 45,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789700411818_dozi",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        }
+                ],
+                "created_at": "2026-09-18T03:00:24.874Z"
+        },
+        {
+                "id": "sale_1789698534264_262xu",
+                "sale_number": "TICK-818895",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado8lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 1 (Vespertino) (encargado8lafuente@gmail.com)",
+                "total": 5,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789698424044_shdx",
+                                "product_name": "Mini",
+                                "quantity": 1,
+                                "price": 5,
+                                "subtotal": 5
+                        }
+                ],
+                "created_at": "2026-09-18T02:28:54.265Z"
+        },
+        {
+                "id": "sale_1789698176424_b1t92",
+                "sale_number": "TICK-610565",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado8lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 1 (Vespertino) (encargado8lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789697863281_0x5g",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-18T02:22:56.424Z"
+        },
+        {
+                "id": "sale_1789697935288_v6drr",
+                "sale_number": "TICK-908438",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado8lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 1 (Vespertino) (encargado8lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789697863281_0x5g",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-18T02:18:55.288Z"
+        },
         {
                 "id": "sale_1789603197413_w4lhw",
                 "sale_number": "TICK-491579",
@@ -11877,17 +11990,20 @@
             let bId = ct.branch_id || "";
             const pLow = String(obs.performed_by_name || obs.cashier_name || ct.performed_by_name || ct.cashier_name || "").toLowerCase();
 
-            if (pLow.includes("cnop") || pLow.includes("cenop") || pLow.includes("encargado11") || pLow.includes("encargado12")) {
-                bName = "CNOP";
-            } else if (pLow.includes("tagarete 2") || pLow.includes("tagarete2") || pLow.includes("encargado9") || pLow.includes("encargado10")) {
-                bName = "Tagarete 2";
-            } else if (pLow.includes("tagarete 1") || pLow.includes("tagarete1") || pLow.includes("encargado7") || pLow.includes("encargado8")) {
+            const canonicalB = resolveCanonicalBranch(ct);
+            if (canonicalB) {
+                bName = canonicalB;
+            } else if (bId === "branch-4" || pLow.includes("tagarete 1") || pLow.includes("tagarete1") || pLow.includes("encargado7") || pLow.includes("encargado8")) {
                 bName = "Tagarete 1";
-            } else if (pLow.includes("rescate") || pLow.includes("encargado3") || pLow.includes("encargado4")) {
+            } else if (bId === "branch-5" || pLow.includes("tagarete 2") || pLow.includes("tagarete2") || pLow.includes("encargado9") || pLow.includes("encargado10")) {
+                bName = "Tagarete 2";
+            } else if (bId === "branch-6" || pLow.includes("cnop") || pLow.includes("cenop") || pLow.includes("encargado11") || pLow.includes("encargado12")) {
+                bName = "CNOP";
+            } else if (bId === "branch-2" || pLow.includes("rescate") || pLow.includes("encargado3") || pLow.includes("encargado4")) {
                 bName = "Rescate";
-            } else if (pLow.includes("mollotes") || pLow.includes("encargado5") || pLow.includes("encargado6")) {
+            } else if (bId === "branch-3" || pLow.includes("mollotes") || pLow.includes("encargado5") || pLow.includes("encargado6")) {
                 bName = "Mollotes";
-            } else if (pLow.includes("calzada") || pLow.includes("encargado1") || pLow.includes("encargado2")) {
+            } else if (bId === "branch-1" || pLow.includes("calzada") || pLow.includes("encargado1") || pLow.includes("encargado2")) {
                 bName = "La Fuente Calzada";
             }
 
