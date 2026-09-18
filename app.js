@@ -932,19 +932,55 @@
         return S.inv[id]; 
     }
 
-    function deductStock(id, qty = 1, name = "") { 
+    function deductStock(id, qty = 1, name = "", dynamicComponents = null) { 
         // 1. Descontar el producto base
         const cur = getStock(id);
         S.inv[id] = Math.max(0, cur - qty); 
 
-        // 2. Si es un Producto Compuesto, descontar automáticamente todos sus insumos/desechables asociados
-        const prod = S.products.find(p => String(p.product_id) === String(id));
-        if (prod && prod.is_composite && Array.isArray(prod.components) && prod.components.length) {
-            prod.components.forEach(comp => {
-                if (comp.supply_id) {
-                    const compReq = (Number(comp.qty) || 1) * qty;
-                    const compCur = getStock(comp.supply_id);
-                    S.inv[comp.supply_id] = Math.max(0, compCur - compReq);
+        // 2. Resolver el producto en catálogo para verificar si es compuesto
+        let prod = S.products.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+        if (!prod && typeof DEFAULT_PRODUCTS !== "undefined") {
+            prod = DEFAULT_PRODUCTS.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+        }
+        if (!prod) {
+            const customs = gr("custom_products", []);
+            prod = customs.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+        }
+
+        // 3. Descontar automáticamente todos sus insumos/desechables/ingredientes asociados
+        const componentsToDeduct = (dynamicComponents && Array.isArray(dynamicComponents) && dynamicComponents.length)
+            ? dynamicComponents
+            : (prod && (prod.is_composite || (Array.isArray(prod.components) && prod.components.length > 0)) ? prod.components : []);
+
+        if (Array.isArray(componentsToDeduct) && componentsToDeduct.length > 0) {
+            componentsToDeduct.forEach(comp => {
+                const reqPerUnit = Number(comp.qty || comp.quantity || 1);
+                const totalReq = reqPerUnit * qty;
+
+                // Resolver ID exacto del insumo/componente por supply_id, product_id, id o nombre
+                const rawSupplyId = comp.supply_id || comp.product_id || comp.id;
+                let supplyProd = null;
+                if (rawSupplyId) {
+                    supplyProd = S.products.find(p => String(p.product_id) === String(rawSupplyId) || String(p.id) === String(rawSupplyId));
+                    if (!supplyProd && typeof DEFAULT_PRODUCTS !== "undefined") {
+                        supplyProd = DEFAULT_PRODUCTS.find(p => String(p.product_id) === String(rawSupplyId) || String(p.id) === String(rawSupplyId));
+                    }
+                }
+                if (!supplyProd && (comp.supply_name || comp.name || comp.product_name)) {
+                    const targetName = String(comp.supply_name || comp.name || comp.product_name).toLowerCase().trim();
+                    supplyProd = S.products.find(p => String(p.product_name || "").toLowerCase().trim() === targetName);
+                    if (!supplyProd && typeof DEFAULT_PRODUCTS !== "undefined") {
+                        supplyProd = DEFAULT_PRODUCTS.find(p => String(p.product_name || "").toLowerCase().trim() === targetName);
+                    }
+                }
+
+                const finalSupplyId = supplyProd ? supplyProd.product_id : rawSupplyId;
+                if (finalSupplyId) {
+                    const compCur = getStock(finalSupplyId);
+                    S.inv[finalSupplyId] = Math.max(0, compCur - totalReq);
+                    if (rawSupplyId && rawSupplyId !== finalSupplyId) {
+                        S.inv[rawSupplyId] = Math.max(0, (S.inv[rawSupplyId] != null ? S.inv[rawSupplyId] : compCur) - totalReq);
+                    }
                 }
             });
         }
@@ -953,9 +989,53 @@
         alertInv(); 
     }
 
-    function addStock(id, qty = 1) { 
+    function addStock(id, qty = 1, name = "") { 
+        // 1. Reintegrar el producto base
         const maxS = getMaxStock(id);
         S.inv[id] = Math.min(maxS, getStock(id) + qty); 
+
+        // 2. Si es un Producto Compuesto, reintegrar también todos sus insumos/desechables al inventario
+        let prod = S.products.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+        if (!prod && typeof DEFAULT_PRODUCTS !== "undefined") {
+            prod = DEFAULT_PRODUCTS.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+        }
+        if (!prod) {
+            const customs = gr("custom_products", []);
+            prod = customs.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+        }
+
+        if (prod && (prod.is_composite || (Array.isArray(prod.components) && prod.components.length > 0))) {
+            const comps = prod.components || [];
+            comps.forEach(comp => {
+                const reqPerUnit = Number(comp.qty || comp.quantity || 1);
+                const totalReq = reqPerUnit * qty;
+                const rawSupplyId = comp.supply_id || comp.product_id || comp.id;
+                let supplyProd = null;
+                if (rawSupplyId) {
+                    supplyProd = S.products.find(p => String(p.product_id) === String(rawSupplyId) || String(p.id) === String(rawSupplyId));
+                    if (!supplyProd && typeof DEFAULT_PRODUCTS !== "undefined") {
+                        supplyProd = DEFAULT_PRODUCTS.find(p => String(p.product_id) === String(rawSupplyId) || String(p.id) === String(rawSupplyId));
+                    }
+                }
+                if (!supplyProd && (comp.supply_name || comp.name || comp.product_name)) {
+                    const targetName = String(comp.supply_name || comp.name || comp.product_name).toLowerCase().trim();
+                    supplyProd = S.products.find(p => String(p.product_name || "").toLowerCase().trim() === targetName);
+                    if (!supplyProd && typeof DEFAULT_PRODUCTS !== "undefined") {
+                        supplyProd = DEFAULT_PRODUCTS.find(p => String(p.product_name || "").toLowerCase().trim() === targetName);
+                    }
+                }
+
+                const finalSupplyId = supplyProd ? supplyProd.product_id : rawSupplyId;
+                if (finalSupplyId) {
+                    const maxCompStock = getMaxStock(finalSupplyId);
+                    S.inv[finalSupplyId] = Math.min(maxCompStock, getStock(finalSupplyId) + totalReq);
+                    if (rawSupplyId && rawSupplyId !== finalSupplyId) {
+                        S.inv[rawSupplyId] = Math.min(maxCompStock, (S.inv[rawSupplyId] || 0) + totalReq);
+                    }
+                }
+            });
+        }
+
         saveBranchInv(); 
         alertInv(); 
     }
@@ -1583,7 +1663,7 @@
 
         // 2. ACTUALIZACIÓN INMEDIATA DE LA UI E INVENTARIOS
         const cartItemsSnapshot = [...S.cart];
-        cartItemsSnapshot.forEach(i => deductStock(i.product_id, i.quantity, i.product_name));
+        cartItemsSnapshot.forEach(i => deductStock(i.product_id, i.quantity, i.product_name, i.components || i.extras || null));
         S.cart = [];
         renderCart();
         renderPOS(filtered());
@@ -11685,6 +11765,14 @@
                 lTarget.cancelled_by = cashierCancelling;
                 lTarget.cancelled_at = now();
                 lw("sales", lSales);
+            }
+
+            // Reintegrar automáticamente productos e insumos compuestos al cancelar ticket
+            const targetSale = target || lTarget;
+            if (targetSale && Array.isArray(targetSale.items)) {
+                targetSale.items.forEach(it => {
+                    addStock(it.product_id, Number(it.quantity || 1), it.product_name);
+                });
             }
 
             // Devolver existencias al inventario local
