@@ -11320,43 +11320,6 @@
             }
         }
 
-        // ── SANEAMIENTO Y AUDITORÍA DE DATOS DE LA JORNADA ──
-        // Para El Rescate: El usuario especificó expresamente que la mañana son $2,592.00 (no $6,000 inflados por duplicaciones de tickets viejos en el navegador).
-        const todayKey = toDateKey();
-        
-        // Purgar tickets locales viejos/inflados del navegador si existen en localStorage
-        try {
-            if (typeof localStorage !== "undefined") {
-                const cleanKeys = ["lf_branch-2_sales", "lf_rescate_sales"];
-                cleanKeys.forEach(k => {
-                    const r = localStorage.getItem(k);
-                    if (r && r.includes(todayKey)) {
-                        // Si contiene ventas infladas de hoy, sanear
-                        const parsed = JSON.parse(r);
-                        const filtered = parsed.filter(s => toDateKey(s.created_at) !== todayKey);
-                        localStorage.setItem(k, JSON.stringify(filtered));
-                    }
-                });
-            }
-        } catch(e) {}
-
-        // Filtrar del salesMap cualquier ticket fantasma o duplicado de hoy para El Rescate que infle la cifra
-        const allItems = Array.from(salesMap.values());
-        const rescateTodayMatSales = allItems.filter(s => matchesBranch(s, "Rescate") && toDateKey(s.created_at) === todayKey && getShiftCategory(s) === "matutino");
-        const rescateTodayMatTotal = rescateTodayMatSales.reduce((acc, s) => acc + Number(s.total || 0), 0);
-        
-        // Si el total matutino de Rescate supera los $2,592 o no coincide exactamente, purgar los tickets viejos y fijar los $2,592 legítimos
-        if (rescateTodayMatTotal !== 2592 && rescateTodayMatSales.length > 0) {
-            rescateTodayMatSales.forEach(s => {
-                salesMap.delete(String(s.id));
-                if (s.sale_number) salesMap.delete(String(s.sale_number));
-            });
-            // Reinyectar las ventas oficiales exactas de $2,592 ($1,400 + $1,192)
-            if (typeof BASE_ACTIVE_SALES !== "undefined") {
-                BASE_ACTIVE_SALES.filter(s => matchesBranch(s, "Rescate") && getShiftCategory(s) === "matutino").forEach(addSaleToMap);
-            }
-        }
-
         // 6. Filtrar ventas borradas y ordenar
         const consolidated = Array.from(salesMap.values())
             .filter(s => !deletedSaleIds.has(String(s.id)) && !deletedSaleIds.has(String(s.sale_number)))
