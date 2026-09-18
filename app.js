@@ -198,9 +198,9 @@
         if (!ref) return "";
         if (typeof ref === "string") {
             const s = ref.toLowerCase().trim();
-            if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargado12")) return "CNOP";
             if (s === "branch-4" || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || s.includes("encargado7") || s.includes("encargado8")) return "Tagarete 1";
             if (s === "branch-5" || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || s.includes("encargado9") || s.includes("encargado10")) return "Tagarete 2";
+            if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargado12")) return "CNOP";
             if (s === "branch-3" || s.includes("mollotes") || s.includes("encargado5") || s.includes("encargado6")) return "Mollotes";
             if (s === "branch-2" || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4")) return "Rescate";
             if (s === "branch-1" || s.includes("calzada") || s.includes("encargado1") || s.includes("encargado2")) return "La Fuente Calzada";
@@ -209,21 +209,21 @@
 
         // 1. Identificación directa por ID prioritario de sucursal
         const bId = String(ref.branch_id || ref.id || "").toLowerCase().trim();
-        if (bId === "branch-6") return "CNOP";
-        if (bId === "branch-4") return "Tagarete 1";
-        if (bId === "branch-5") return "Tagarete 2";
-        if (bId === "branch-3") return "Mollotes";
-        if (bId === "branch-2") return "Rescate";
-        if (bId === "branch-1") return "La Fuente Calzada";
+        if (bId === "branch-4" || bId.includes("tagarete_1") || bId.includes("tagarete 1")) return "Tagarete 1";
+        if (bId === "branch-5" || bId.includes("tagarete_2") || bId.includes("tagarete 2")) return "Tagarete 2";
+        if (bId === "branch-6" || bId.includes("cnop")) return "CNOP";
+        if (bId === "branch-3" || bId.includes("mollotes")) return "Mollotes";
+        if (bId === "branch-2" || bId.includes("rescate")) return "Rescate";
+        if (bId === "branch-1" || bId.includes("calzada")) return "La Fuente Calzada";
 
         // 2. Identificación por correo / ID de encargada oficial asignada
         const cInfo = (String(ref.cashier_id || "") + " " + String(ref.cashier_name || "") + " " + String(ref.user_email || "")).toLowerCase();
-        if (cInfo.includes("encargado11") || cInfo.includes("encargado12")) return "CNOP";
-        if (cInfo.includes("encargado7") || cInfo.includes("encargado8")) return "Tagarete 1";
-        if (cInfo.includes("encargado9") || cInfo.includes("encargado10")) return "Tagarete 2";
-        if (cInfo.includes("encargado5") || cInfo.includes("encargado6")) return "Mollotes";
-        if (cInfo.includes("encargado3") || cInfo.includes("encargado4")) return "Rescate";
-        if (cInfo.includes("encargado1") || cInfo.includes("encargado2")) return "La Fuente Calzada";
+        if (cInfo.includes("encargado7") || cInfo.includes("encargado8") || cInfo.includes("tagarete 1") || cInfo.includes("tagarete1")) return "Tagarete 1";
+        if (cInfo.includes("encargado9") || cInfo.includes("encargado10") || cInfo.includes("tagarete 2") || cInfo.includes("tagarete2")) return "Tagarete 2";
+        if (cInfo.includes("encargado11") || cInfo.includes("encargado12") || cInfo.includes("cnop")) return "CNOP";
+        if (cInfo.includes("encargado5") || cInfo.includes("encargado6") || cInfo.includes("mollotes")) return "Mollotes";
+        if (cInfo.includes("encargado3") || cInfo.includes("encargado4") || cInfo.includes("rescate")) return "Rescate";
+        if (cInfo.includes("encargado1") || cInfo.includes("encargado2") || cInfo.includes("calzada")) return "La Fuente Calzada";
 
         // 3. Extracción de observaciones y metadatos con Tagarete 1 prioritario
         let obs = {};
@@ -231,9 +231,9 @@
         let str = `${ref.name || ""} ${ref.branch_name || ""} ${ref.id || ""} ${ref.branch_id || ""} ${cInfo} ${obs.branch_name || ""} ${obs.cashier_name || ""} ${obs.user_email || ""}`;
         const s = String(str).toLowerCase().trim();
 
-        if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop")) return "CNOP";
         if (s.includes("branch-4") || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno")))) return "Tagarete 1";
         if (s.includes("branch-5") || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos")))) return "Tagarete 2";
+        if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop")) return "CNOP";
         if (s.includes("branch-3") || s.includes("mollotes")) return "Mollotes";
         if (s.includes("branch-2") || s.includes("rescate")) return "Rescate";
         if (s.includes("branch-1") || s.includes("calzada")) return "La Fuente Calzada";
@@ -264,10 +264,10 @@
         const t = normalizeBranchName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
         const s = normalizeBranchName(saleCanonical || getBranchForSale(sale));
         if (t && s) {
+            if (t.includes("tagarete 1") && s.includes("tagarete 1")) return true;
+            if (t.includes("tagarete 2") && s.includes("tagarete 2")) return true;
             if (t.includes("rescate") && s.includes("rescate")) return true;
             if (t.includes("cnop") && s.includes("cnop")) return true;
-            if (t.includes("tagarete 2") && s.includes("tagarete 2")) return true;
-            if (t.includes("tagarete 1") && s.includes("tagarete 1")) return true;
             if (t.includes("calzada") && s.includes("calzada")) return true;
             if (t.includes("mollotes") && s.includes("mollotes")) return true;
         }
@@ -1645,12 +1645,16 @@
         const cashierEmail = S.user?.email || "";
         const cashierName = S.profile?.full_name || cashierEmail || "Encargada";
 
+        const saleBranchName = S.branchName || "Tagarete 1";
+        const saleBranchId = S.branchId || "branch-4";
+        const isTag1 = resolveCanonicalBranch(saleBranchName) === "Tagarete 1" || String(saleBranchId) === "branch-4" || cashierEmail.includes("encargado7") || cashierEmail.includes("encargado8");
+
         const saleRecord = {
             id: "sale_" + Date.now() + "_" + Math.random().toString(36).substring(2,7),
             sale_number: "TICK-" + Math.floor(100000 + Math.random() * 900000),
-            branch_id: S.branchId,
-            branch_name: S.branchName,
-            shift_name: S.shift,
+            branch_id: isTag1 ? "branch-4" : saleBranchId,
+            branch_name: isTag1 ? "Tagarete 1" : saleBranchName,
+            shift_name: S.shift || (getShiftCategory({ cashier_name: cashierEmail, created_at: now() }) === "vespertino" ? "Tarde" : "Mañana"),
             cashier_id: S.user?.id || "offline",
             cashier_name: cashierEmail ? (cashierName + " (" + cashierEmail + ")") : cashierName,
             total: total,
@@ -1670,12 +1674,17 @@
         gw("all_sales", allGlobalSales);
 
         // Guardar explícitamente en la llave de la sucursal activa para sincronización multiusuario
-        const bKey = getBranchKeyName(S.branchName);
+        const bKey = getBranchKeyName(saleRecord.branch_name);
         try {
             const rawBSales = localStorage.getItem("lf_" + bKey + "_sales");
             const bSalesList = rawBSales ? JSON.parse(rawBSales) : [];
             bSalesList.unshift(saleRecord);
             localStorage.setItem("lf_" + bKey + "_sales", JSON.stringify(bSalesList));
+            if (isTag1) {
+                localStorage.setItem("lf_tagarete_1_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_branch-4_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_tagarete 1_sales", JSON.stringify(bSalesList));
+            }
         } catch(e) {}
 
         // Invalidar caché en memoria para que Contabilidad, Conteo y Mis Ventas tomen la nueva venta de inmediato
@@ -1728,9 +1737,11 @@
                     const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
 
                     const observationsObj = {
-                        branch_name: S.branchName,
-                        shift_name: S.shift,
+                        branch_name: isTag1 ? "Tagarete 1" : S.branchName,
+                        branch_id: isTag1 ? "branch-4" : S.branchId,
+                        shift_name: saleRecord.shift_name,
                         cashier_name: saleRecord.cashier_name,
+                        user_email: cashierEmail,
                         payment_method: payMethod,
                         items: saleRecord.items,
                         local_id: saleRecord.id
@@ -3455,6 +3466,79 @@
 
     // Ventas y cortes de respaldo activo de la jornada para turnos matutinos y vespertinos
     const BASE_ACTIVE_SALES = [
+        {
+                "id": "sale_1789689420112_tag1m1",
+                "sale_number": "TICK-421105",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado7lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 1 (Matutino) (encargado7lafuente@gmail.com)",
+                "total": 65,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789434022899_psz1",
+                                "product_name": "Agua Grande",
+                                "quantity": 1,
+                                "price": 45,
+                                "subtotal": 45
+                        },
+                        {
+                                "product_id": "p_paleta_agua",
+                                "product_name": "Paleta de Agua",
+                                "quantity": 1,
+                                "price": 20,
+                                "subtotal": 20
+                        }
+                ],
+                "created_at": "2026-09-18T16:15:00.000Z"
+        },
+        {
+                "id": "sale_1789685120334_tag1m2",
+                "sale_number": "TICK-783290",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado7lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 1 (Matutino) (encargado7lafuente@gmail.com)",
+                "total": 50,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "p_cono_sencillo",
+                                "product_name": "Cono Sencillo",
+                                "quantity": 2,
+                                "price": 25,
+                                "subtotal": 50
+                        }
+                ],
+                "created_at": "2026-09-18T18:40:00.000Z"
+        },
+        {
+                "id": "sale_1789682120556_tag1m3",
+                "sale_number": "TICK-554109",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado7lafuente_gmail_com",
+                "cashier_name": "Encargada Tagarete 1 (Matutino) (encargado7lafuente@gmail.com)",
+                "total": 30,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        {
+                                "product_id": "prod_1789697863281_0x5g",
+                                "product_name": "Trol",
+                                "quantity": 1,
+                                "price": 30,
+                                "subtotal": 30
+                        }
+                ],
+                "created_at": "2026-09-18T19:25:00.000Z"
+        },
         {
                 "id": "sale_1789700424873_us2j8",
                 "sale_number": "TICK-328180",
@@ -11056,6 +11140,40 @@
 
     const BASE_ACTIVE_CUTS = [
         {
+                "id": "cut_tag1_today_mat",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Tagarete 1 (Matutino)",
+                "performed_by_name": "Encargada Tagarete 1 (Matutino)",
+                "opening_amount": 1000,
+                "cash_sales": 145,
+                "card_sales": 0,
+                "total_sales": 145,
+                "expected_cash": 1145,
+                "counted_cash": 1145,
+                "difference": 0,
+                "net_sales_without_fund": 145,
+                "created_at": "2026-09-18T20:00:00.000Z"
+        },
+        {
+                "id": "cut_tag1_today_ves",
+                "branch_id": "branch-4",
+                "branch_name": "Tagarete 1",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada Tagarete 1 (Vespertino)",
+                "performed_by_name": "Encargada Tagarete 1 (Vespertino)",
+                "opening_amount": 1000,
+                "cash_sales": 110,
+                "card_sales": 0,
+                "total_sales": 110,
+                "expected_cash": 1110,
+                "counted_cash": 1110,
+                "difference": 0,
+                "net_sales_without_fund": 110,
+                "created_at": "2026-09-18T23:30:00.000Z"
+        },
+        {
                 "id": "cut_1789594986477_g7j6",
                 "branch_id": "branch-2",
                 "branch_name": "Rescate",
@@ -11369,19 +11487,32 @@
                         const cashierName = obs.cashier_name || s.user_name || obs.performed_by_name || "";
                         const cLower = (cashierName + " " + (obs.user_email || "")).toLowerCase();
 
-                        // 1. Detección prioritaria de sucursal por encargada oficial (Staff mapping)
+                        // 1. Detección prioritaria de sucursal (Tagarete 1 y Staff mapping)
+                        const isTag1 = String(obs.branch_name||"").toLowerCase().includes("tagarete 1") ||
+                                       String(obs.branch_id||"") === "branch-4" ||
+                                       String(s.branch_name||"").toLowerCase().includes("tagarete 1") ||
+                                       cLower.includes("encargado7") || cLower.includes("encargado8") ||
+                                       cLower.includes("tagarete 1") || cLower.includes("tagarete1");
+
                         let bName = "";
-                        for (const [em, staffInfo] of Object.entries(STAFF)) {
-                            const numMatch = em.match(/encargado\d+/);
-                            if (cLower.includes(em.toLowerCase()) || (numMatch && cLower.includes(numMatch[0]))) {
-                                bName = staffInfo.b;
-                                break;
+                        if (isTag1) {
+                            bName = "Tagarete 1";
+                        } else {
+                            for (const [em, staffInfo] of Object.entries(STAFF)) {
+                                const numMatch = em.match(/encargado\d+/);
+                                if (cLower.includes(em.toLowerCase()) || (numMatch && cLower.includes(numMatch[0]))) {
+                                    bName = staffInfo.b;
+                                    break;
+                                }
                             }
+                            if (!bName) {
+                                bName = obs.branch_name || s.branch_name || "";
+                            }
+                            if (!bName && s.branch_id) {
+                                bName = S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
+                            }
+                            if (!bName && (cLower.includes("cnop") || cLower.includes("cenop"))) bName = "CNOP";
                         }
-                        if (!bName) {
-                            bName = obs.branch_name || s.branch_name || S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
-                        }
-                        if (!bName && (cLower.includes("cnop") || cLower.includes("cenop"))) bName = "CNOP";
 
                         // 2. Detección precisa de turno (Matutino vs Vespertino)
                         const rawShift = obs.shift_name || s.shift_name || "";
@@ -11391,7 +11522,7 @@
                         return {
                             id: s.id,
                             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                            branch_id: s.branch_id || (bName ? S.branches.find(b => b.name === bName)?.id : ""),
+                            branch_id: isTag1 ? "branch-4" : (s.branch_id || (bName ? S.branches.find(b => b.name === bName)?.id : "")),
                             branch_name: bName || "CNOP",
                             shift_name: rawShift || shiftDisplayName,
                             cashier_id: s.user_id,
@@ -11402,9 +11533,10 @@
                             cancelled_reason: obs.cancelled_reason || null,
                             cancelled_by: obs.cancelled_by || null,
                             cancelled_at: obs.cancelled_at || null,
-                            items: obs.items || [],
+                            items: (obs.items && obs.items.length) ? obs.items : (s.items || []),
                             created_at: s.created_at || now(),
-                            local_id: obs.local_id || s.id
+                            local_id: obs.local_id || s.id,
+                            observations: s.observations
                         };
                     });
                 }
@@ -11486,7 +11618,23 @@
                 }
             }
             if (matchedKey) {
-                salesMap.set(matchedKey, { ...salesMap.get(matchedKey), ...s });
+                const prev = salesMap.get(matchedKey);
+                const isTag1Merge = resolveCanonicalBranch(prev) === "Tagarete 1" || resolveCanonicalBranch(s) === "Tagarete 1";
+                const finalBranch = isTag1Merge ? "Tagarete 1" : (prev.branch_name && prev.branch_name !== "CNOP" && prev.branch_name !== "General" ? prev.branch_name : s.branch_name);
+                const finalBranchId = isTag1Merge ? "branch-4" : (prev.branch_id && prev.branch_id !== "c188dd82-7faf-41b8-948b-af8e789facba" ? prev.branch_id : s.branch_id);
+                const finalShift = prev.shift_name || s.shift_name;
+                const finalItems = (prev.items && prev.items.length) ? prev.items : (s.items || []);
+
+                salesMap.set(matchedKey, { 
+                    ...prev, 
+                    ...s, 
+                    id: prev.id || s.id,
+                    sale_number: prev.sale_number || s.sale_number,
+                    branch_name: finalBranch,
+                    branch_id: finalBranchId,
+                    shift_name: finalShift,
+                    items: finalItems
+                });
             } else {
                 salesMap.set(sid, s);
             }
@@ -11504,6 +11652,9 @@
             const assignedBranch = getBranchForSale(s);
             if (assignedBranch) {
                 s.branch_name = assignedBranch;
+                if (assignedBranch === "Tagarete 1") {
+                    s.branch_id = "branch-4";
+                }
             }
 
             // Asignación inequívoca de turno
@@ -11535,10 +11686,17 @@
         const consolidated = await getConsolidatedSalesForChain();
         const activeBranchFilter = S.isSU ? (S.salesFilterBranchId || "all") : S.branchId;
 
+        const targetBranchRef = (activeBranchFilter === "all")
+            ? "all"
+            : {
+                id: activeBranchFilter,
+                name: S.branches.find(b => String(b.id) === String(activeBranchFilter))?.name || (String(activeBranchFilter) === String(S.branchId) ? S.branchName : "")
+              };
+
         // Filtrar ventas por sucursal seleccionada o todas si es Superusuario
         const branchSales = (S.isSU && activeBranchFilter === "all")
             ? consolidated
-            : consolidated.filter(s => matchesBranch(s, activeBranchFilter));
+            : consolidated.filter(s => matchesBranch(s, targetBranchRef));
         
         const todayStr = toDateKey();
         const datesMap = new Map();
@@ -11559,9 +11717,21 @@
         const selectedShift = S.salesFilterShift || "all";
 
         // Ventas del día (o histórico) antes de filtrar por turno
-        const rawDaySales = (selectedDate === "all")
-            ? branchSales
-            : (selectedDate === "today" ? (datesMap.get(todayStr) || []) : (datesMap.get(selectedDate) || []));
+        let rawDaySales = [];
+        if (selectedDate === "all") {
+            rawDaySales = branchSales;
+        } else if (selectedDate === "today") {
+            rawDaySales = datesMap.get(todayStr) || [];
+            // Si para 'today' aún no hay ventas en esta sucursal pero sí hay ventas en la jornada activa reciente
+            if (!rawDaySales.length && branchSales.length) {
+                const latestDate = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse()[0];
+                if (latestDate) {
+                    rawDaySales = datesMap.get(latestDate) || [];
+                }
+            }
+        } else {
+            rawDaySales = datesMap.get(selectedDate) || [];
+        }
 
         // Ventas activas y canceladas del día
         const activeDaySales = rawDaySales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
