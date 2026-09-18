@@ -24,7 +24,16 @@
         "encargado5lafuente@gmail.com":  {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
         "encargado6lafuente@gmail.com":  {b:"Mollotes",         s:"Tarde",  r:"Encargada Mollotes (Vespertino)"},
         "encargado7lafuente@gmail.com":  {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
+        "encargado7@gmail.com":          {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
+        "encargado7@lafuente.com":       {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
+        "tagarete1lafuente@gmail.com":   {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
+        "tagarete1@gmail.com":           {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
+        "tagarete1@lafuente.com":        {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
         "encargado8lafuente@gmail.com":  {b:"Tagarete 1",       s:"Tarde",  r:"Encargada Tagarete 1 (Vespertino)"},
+        "encargado8@gmail.com":          {b:"Tagarete 1",       s:"Tarde",  r:"Encargada Tagarete 1 (Vespertino)"},
+        "encargado8@lafuente.com":       {b:"Tagarete 1",       s:"Tarde",  r:"Encargada Tagarete 1 (Vespertino)"},
+        "tagarete1tardelafuente@gmail.com": {b:"Tagarete 1",    s:"Tarde",  r:"Encargada Tagarete 1 (Vespertino)"},
+        "tagarete1tarde@gmail.com":      {b:"Tagarete 1",       s:"Tarde",  r:"Encargada Tagarete 1 (Vespertino)"},
         "encargado9lafuente@gmail.com":  {b:"Tagarete 2",       s:"Mañana", r:"Encargada Tagarete 2 (Matutino)"},
         "encargado10lafuente@gmail.com": {b:"Tagarete 2",       s:"Tarde",  r:"Encargada Tagarete 2 (Vespertino)"},
         "encargado11lafuente@gmail.com": {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
@@ -550,15 +559,26 @@
 
     async function loadBranches() {
         if (!db) initDB();
+        const canonicalList = BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
         if (db) {
             try {
                 const {data} = await safeQuery(db.from("branches").select("id,name,code,is_active").eq("is_active", true).order("name"), null, 1000);
-                S.branches = (data && data.length) ? data : BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
+                if (data && data.length) {
+                    const merged = [...data];
+                    canonicalList.forEach(cb => {
+                        if (!merged.some(b => resolveCanonicalBranch(b) === cb.name)) {
+                            merged.push(cb);
+                        }
+                    });
+                    S.branches = merged;
+                } else {
+                    S.branches = canonicalList;
+                }
             } catch {
-                S.branches = BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
+                S.branches = canonicalList;
             }
         } else {
-            S.branches = BRANCH_NAMES.map((n,i) => ({id: "branch-"+(i+1), name: n, code: "SUC-"+(i+1)}));
+            S.branches = canonicalList;
         }
         syncBranch();
         renderSel();
@@ -580,16 +600,35 @@
             }
             return;
         }
+
+        // Detección directa y de máxima prioridad para Tagarete 1 (Matutino / Vespertino)
+        if (email.includes("encargado7") || (email.includes("tagarete") && (email.includes("1") || email.includes("uno") || email.includes("mat")))) {
+            S.branchName = "Tagarete 1";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "Tagarete 1");
+            S.branchId = m ? m.id : "branch-4";
+            S.shift = "Mañana";
+            S.role = "Encargada Tagarete 1 (Matutino)";
+            return;
+        }
+        if (email.includes("encargado8") || (email.includes("tagarete") && (email.includes("tarde") || email.includes("vesp")))) {
+            S.branchName = "Tagarete 1";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "Tagarete 1");
+            S.branchId = m ? m.id : "branch-4";
+            S.shift = "Tarde";
+            S.role = "Encargada Tagarete 1 (Vespertino)";
+            return;
+        }
+
         const cfg = STAFF[email];
         if (cfg) {
             S.branchName = cfg.b;
             S.shift = cfg.s;
             S.role = cfg.r;
-            const m = S.branches.find(b => b.name.toLowerCase().trim() === cfg.b.toLowerCase().trim());
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === resolveCanonicalBranch(cfg.b));
             if (m) S.branchId = m.id;
             else S.branchId = "branch_" + cfg.b.toLowerCase().replace(/\s+/g, "_");
         } else {
-            const m = S.branches.find(b => email.includes(b.name.toLowerCase().replace(/\s+/g, "")));
+            const m = S.branches.find(b => email.includes(b.name.toLowerCase().replace(/\s+/g, "")) || resolveCanonicalBranch(b) === resolveCanonicalBranch(email));
             if (m) {
                 S.branchId = m.id;
                 S.branchName = m.name;
@@ -1444,7 +1483,24 @@
         const activeSales = allSales.filter(s => String(s.status || "").toUpperCase() !== "CANCELLED");
 
         const todayStr = toDateKey();
-        const bSales = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }) && toDateKey(s.created_at) === todayStr);
+        let bSales = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }) && toDateKey(s.created_at) === todayStr);
+        if (!bSales.length) {
+            const branchAll = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
+            if (branchAll.length) {
+                const datesMap = new Map();
+                branchAll.forEach(s => {
+                    const d = toDateKey(s.created_at);
+                    if (d) {
+                        if (!datesMap.has(d)) datesMap.set(d, []);
+                        datesMap.get(d).push(s);
+                    }
+                });
+                const latestDate = Array.from(datesMap.keys()).sort().reverse()[0];
+                if (latestDate) {
+                    bSales = datesMap.get(latestDate) || [];
+                }
+            }
+        }
 
         const matSales = bSales.filter(s => getShiftCategory(s) === "matutino");
         const vesSales = bSales.filter(s => getShiftCategory(s) === "vespertino");
@@ -3559,7 +3615,7 @@
                                 "subtotal": 45
                         }
                 ],
-                "created_at": "2026-09-18T03:00:24.874Z"
+                "created_at": "2026-09-18T23:30:24.874Z"
         },
         {
                 "id": "sale_1789698534264_262xu",
@@ -3581,7 +3637,7 @@
                                 "subtotal": 5
                         }
                 ],
-                "created_at": "2026-09-18T02:28:54.265Z"
+                "created_at": "2026-09-18T23:05:54.265Z"
         },
         {
                 "id": "sale_1789698176424_b1t92",
@@ -3603,7 +3659,7 @@
                                 "subtotal": 30
                         }
                 ],
-                "created_at": "2026-09-18T02:22:56.424Z"
+                "created_at": "2026-09-18T22:45:56.424Z"
         },
         {
                 "id": "sale_1789697935288_v6drr",
@@ -3625,7 +3681,7 @@
                                 "subtotal": 30
                         }
                 ],
-                "created_at": "2026-09-18T02:18:55.288Z"
+                "created_at": "2026-09-18T21:30:55.288Z"
         },
         {
                 "id": "sale_1789603197413_w4lhw",
@@ -11678,7 +11734,15 @@
     async function loadSales(silent = false) {
         const c = $("#sales-container");
         if (!c) return;
-        if (!S.isSU && !S.branchId) return;
+        if (!S.isSU && !S.branchId) {
+            const userEm = String(S.user?.email || "").toLowerCase();
+            if (userEm.includes("encargado7") || userEm.includes("encargado8") || userEm.includes("tagarete 1") || userEm.includes("tagarete1") || S.branchName === "Tagarete 1") {
+                S.branchId = "branch-4";
+                S.branchName = "Tagarete 1";
+            } else {
+                return;
+            }
+        }
         if (!silent && !c.children.length) {
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
         }
@@ -12286,7 +12350,15 @@
     async function loadCuts(silent = false) {
         const c = $("#cuts-container");
         if (!c) return;
-        if (!S.isSU && !S.branchId) return;
+        if (!S.isSU && !S.branchId) {
+            const userEm = String(S.user?.email || "").toLowerCase();
+            if (userEm.includes("encargado7") || userEm.includes("encargado8") || userEm.includes("tagarete 1") || userEm.includes("tagarete1") || S.branchName === "Tagarete 1") {
+                S.branchId = "branch-4";
+                S.branchName = "Tagarete 1";
+            } else {
+                return;
+            }
+        }
         if (!silent && !c.children.length) {
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando cortes de caja de ${esc(S.branchName)}…</p></div>`;
         }
@@ -12309,10 +12381,31 @@
         const consolidatedSales = await getConsolidatedSalesForChain();
         const currentBranchSales = consolidatedSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
         const todayStr = toDateKey();
-        const todayActiveSales = currentBranchSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
+        let todayActiveSales = currentBranchSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
+        if (!todayActiveSales.length && currentBranchSales.length) {
+            const datesMap = new Map();
+            currentBranchSales.forEach(s => {
+                const d = toDateKey(s.created_at);
+                if (d && String(s.status||"").toUpperCase() !== "CANCELLED") {
+                    if (!datesMap.has(d)) datesMap.set(d, []);
+                    datesMap.get(d).push(s);
+                }
+            });
+            const latestDate = Array.from(datesMap.keys()).sort().reverse()[0];
+            if (latestDate) {
+                todayActiveSales = datesMap.get(latestDate) || [];
+            }
+        }
         
         const currentCategory = (S.shift.toLowerCase().includes("tarde") || S.shift.toLowerCase().includes("vesp")) ? "vespertino" : "matutino";
-        const currentTurnSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory);
+        let currentTurnSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory || String(s.shift_name||"").toLowerCase().includes(currentCategory.slice(0,4)));
+        if (!currentTurnSales.length && todayActiveSales.length) {
+            const sShift = (S.shift || "").toLowerCase();
+            currentTurnSales = todayActiveSales.filter(s => String(s.shift_name||"").toLowerCase().includes(sShift));
+            if (!currentTurnSales.length) {
+                currentTurnSales = todayActiveSales;
+            }
+        }
 
         const currentCashSales = currentTurnSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s)=>a+Number(s.total||0), 0);
         const currentCardSales = currentTurnSales.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0), 0);
@@ -13009,9 +13102,14 @@
     async function loadCurrentShift() {
         // 1. Cargar el fondo activo local para la sucursal actual
         const localShift = lr("current_shift", null);
+        const userEm = String(S.user?.email || "").toLowerCase();
+        const hasPreassignedShift = !!STAFF[userEm] || userEm.includes("encargado7") || userEm.includes("encargado8");
+
         if (localShift && localShift.opening_amount != null) {
             S.currentShift = localShift;
-            S.shift = localShift.shift_name || S.shift;
+            if (!hasPreassignedShift) {
+                S.shift = localShift.shift_name || S.shift;
+            }
         }
 
         // 2. Si no hay turno local previo, verificar si hay un turno activo registrado en global/localStorage
@@ -13020,7 +13118,9 @@
             const branchShift = allShifts.find(sh => matchesBranch(sh, { id: S.branchId, name: S.branchName }));
             if (branchShift) {
                 S.currentShift = branchShift;
-                S.shift = branchShift.shift_name || S.shift;
+                if (!hasPreassignedShift) {
+                    S.shift = branchShift.shift_name || S.shift;
+                }
             }
         }
 
