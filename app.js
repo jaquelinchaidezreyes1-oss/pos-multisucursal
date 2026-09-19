@@ -206,33 +206,39 @@
     };
 
 
-    /* ── CLASIFICADOR OFICIAL DE TURNOS (PRIORIDAD: NOMBRE DE TURNO > ENCARGADA > HORA) ── */
+    /* ── CLASIFICADOR OFICIAL DE TURNOS (PRIORIDAD: ENCARGADA OFICIAL > NOMBRE DE TURNO > HORA) ── */
     function getShiftCategory(s) {
         if (!s) return "matutino";
         let obs = {};
         try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
 
-        const sn = String(obs.shift_name || s.shift_name || s.shift || "").toLowerCase();
-        // 1. Detección prioritaria por nombre explícito de turno (ej: 'Mañana', 'Maana', 'Corte Tagarete 1 (Mañana)')
-        if (sn.includes("mañana") || sn.includes("maana") || sn.includes("mat") || sn.includes("dia")) return "matutino";
-        if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
-
-        // 2. Mapeo prioritario oficial por encargada:
+        // 1. Mapeo prioritario oficial por encargada asignada (una encargada vespertina siempre genera ventas de la tarde):
         const cashier = String(obs.cashier_name || obs.performed_by_name || s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
-        if (cashier.includes("encargado12") || cashier.includes("encargado10") || cashier.includes("encargado8") || cashier.includes("encargado6") || cashier.includes("encargado4") || cashier.includes("encargado2") || cashier.includes("vespertino") || cashier.includes("tarde") || cashier.includes("noche")) {
+        if (/encargad[oa](12|10|8|6|4|2)(?!\d)/i.test(cashier) ||
+            cashier.includes("vespertino") || cashier.includes("tarde") || cashier.includes("noche") ||
+            cashier.includes("tagarete2tarde") || cashier.includes("tagarete22") ||
+            cashier.includes("mollotestarde") || cashier.includes("mollotes2")) {
             return "vespertino";
         }
-        if (cashier.includes("encargado11") || cashier.includes("encargado9") || cashier.includes("encargado7") || cashier.includes("encargado5") || cashier.includes("encargado3") || cashier.includes("encargado1") || cashier.includes("matutino") || cashier.includes("mañana") || cashier.includes("maana")) {
+        if (/encargad[oa](11|9|7|5|3|1)(?!\d)/i.test(cashier) ||
+            cashier.includes("matutino") || cashier.includes("mañana") || cashier.includes("maana") ||
+            cashier.includes("tagarete2mañana") || cashier.includes("tagarete21") ||
+            cashier.includes("mollotesmañana") || cashier.includes("mollotes1")) {
             return "matutino";
         }
 
-        // 3. Detección por hora (los cortes de turno matutino se entregan usualmente entre 3:30 p.m. y 4:30 p.m.)
+        // 2. Detección por nombre explícito de turno
+        const sn = String(obs.shift_name || s.shift_name || s.shift || "").toLowerCase();
+        if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
+        if (sn.includes("mañana") || sn.includes("maana") || sn.includes("mat")) return "matutino";
+
+        // 3. Detección por hora (el turno vespertino inicia a las 15:00 / 3:00 p.m.)
         if (s.created_at) {
             try {
                 const dt = new Date(s.created_at);
                 if (!isNaN(dt.getTime())) {
                     const hr = dt.getHours();
-                    if (hr >= 17 || hr < 6) return "vespertino";
+                    if (hr >= 15 || hr < 6) return "vespertino";
                     return "matutino";
                 }
             } catch(e) {}
@@ -1882,6 +1888,7 @@
         const saleBranchId = S.branchId || defaultBranchId;
         const saleBranchName = resolvedBranchName;
         const isTag1 = resolvedBranchName === "Tagarete 1";
+        const isTag2 = resolvedBranchName === "Tagarete 2";
         const isCalzada = resolvedBranchName === "La Fuente Calzada";
         const isMollotes = resolvedBranchName === "Mollotes";
 
@@ -1921,6 +1928,10 @@
                 localStorage.setItem("lf_tagarete_1_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_branch-4_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_tagarete 1_sales", JSON.stringify(bSalesList));
+            } else if (isTag2) {
+                localStorage.setItem("lf_tagarete_2_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_branch-5_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_tagarete 2_sales", JSON.stringify(bSalesList));
             } else if (isCalzada) {
                 localStorage.setItem("lf_calzada_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_branch-1_sales", JSON.stringify(bSalesList));
@@ -1928,6 +1939,7 @@
             } else if (isMollotes) {
                 localStorage.setItem("lf_mollotes_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_branch-3_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_molotes_sales", JSON.stringify(bSalesList));
             }
         } catch(e) {}
 
@@ -11903,9 +11915,7 @@
 
             // Asignación inequívoca de turno
             const cat = getShiftCategory(s);
-            if (!s.shift_name || s.shift_name === "Turno" || s.shift_name === "General") {
-                s.shift_name = (cat === "vespertino") ? "Tarde" : "Mañana";
-            }
+            s.shift_name = (cat === "vespertino") ? "Tarde" : "Mañana";
         }
 
         // 6. Filtrar ventas borradas y ordenar
