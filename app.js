@@ -18,11 +18,27 @@
     /* ── 12 ENCARGADAS OFICIALES ── */
     const STAFF = {
         "encargado1lafuente@gmail.com":  {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
+        "encargado1@gmail.com":          {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
+        "encargado1@lafuente.com":       {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
+        "calzadamañana@gmail.com":       {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
+        "calzada1@gmail.com":            {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
         "encargado2lafuente@gmail.com":  {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
+        "encargado2@gmail.com":          {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
+        "encargado2@lafuente.com":       {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
+        "calzadatarde@gmail.com":        {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
+        "calzada2@gmail.com":            {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
         "encargado3lafuente@gmail.com":  {b:"Rescate",          s:"Mañana", r:"Encargada Rescate (Matutino)"},
         "encargado4lafuente@gmail.com":  {b:"Rescate",          s:"Tarde",  r:"Encargada Rescate (Vespertino)"},
         "encargado5lafuente@gmail.com":  {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
+        "encargado5@gmail.com":          {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
+        "encargado5@lafuente.com":       {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
+        "mollotesmañana@gmail.com":      {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
+        "mollotes1@gmail.com":           {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
         "encargado6lafuente@gmail.com":  {b:"Mollotes",         s:"Tarde",  r:"Encargada Mollotes (Vespertino)"},
+        "encargado6@gmail.com":          {b:"Mollotes",         s:"Tarde",  r:"Encargada Mollotes (Vespertino)"},
+        "encargado6@lafuente.com":       {b:"Mollotes",         s:"Tarde",  r:"Encargada Mollotes (Vespertino)"},
+        "mollotestarde@gmail.com":       {b:"Mollotes",         s:"Tarde",  r:"Encargada Mollotes (Vespertino)"},
+        "mollotes2@gmail.com":           {b:"Mollotes",         s:"Tarde",  r:"Encargada Mollotes (Vespertino)"},
         "encargado7lafuente@gmail.com":  {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
         "encargado7@gmail.com":          {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
         "encargado7@lafuente.com":       {b:"Tagarete 1",       s:"Mañana", r:"Encargada Tagarete 1 (Matutino)"},
@@ -601,7 +617,44 @@
             return;
         }
 
-        // Detección directa y de máxima prioridad para Tagarete 1 (Matutino / Vespertino)
+        // Detección directa y de máxima prioridad por sucursal oficial y turno:
+        // 1. La Fuente Calzada
+        if (email.includes("encargado1") || (email.includes("calzada") && (email.includes("mañana") || email.includes("mat") || email.includes("1")))) {
+            S.branchName = "La Fuente Calzada";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "La Fuente Calzada");
+            S.branchId = m ? m.id : "branch-1";
+            S.shift = "Mañana";
+            S.role = "Encargada Calzada (Matutino)";
+            return;
+        }
+        if (email.includes("encargado2") || (email.includes("calzada") && (email.includes("tarde") || email.includes("vesp") || email.includes("2")))) {
+            S.branchName = "La Fuente Calzada";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "La Fuente Calzada");
+            S.branchId = m ? m.id : "branch-1";
+            S.shift = "Tarde";
+            S.role = "Encargada Calzada (Vespertino)";
+            return;
+        }
+
+        // 2. Mollotes
+        if (email.includes("encargado5") || (email.includes("mollotes") && (email.includes("mañana") || email.includes("mat") || email.includes("1")))) {
+            S.branchName = "Mollotes";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "Mollotes");
+            S.branchId = m ? m.id : "branch-3";
+            S.shift = "Mañana";
+            S.role = "Encargada Mollotes (Matutino)";
+            return;
+        }
+        if (email.includes("encargado6") || (email.includes("mollotes") && (email.includes("tarde") || email.includes("vesp") || email.includes("2")))) {
+            S.branchName = "Mollotes";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "Mollotes");
+            S.branchId = m ? m.id : "branch-3";
+            S.shift = "Tarde";
+            S.role = "Encargada Mollotes (Vespertino)";
+            return;
+        }
+
+        // 3. Tagarete 1
         if (email.includes("encargado7") || (email.includes("tagarete") && (email.includes("1") || email.includes("uno") || email.includes("mat")))) {
             S.branchName = "Tagarete 1";
             const m = S.branches.find(b => resolveCanonicalBranch(b) === "Tagarete 1");
@@ -616,6 +669,60 @@
             S.branchId = m ? m.id : "branch-4";
             S.shift = "Tarde";
             S.role = "Encargada Tagarete 1 (Vespertino)";
+            return;
+        }
+
+        // 4. Rescate
+        if (email.includes("encargado3") || (email.includes("rescate") && (email.includes("mañana") || email.includes("mat")))) {
+            S.branchName = "Rescate";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "Rescate");
+            S.branchId = m ? m.id : "branch-2";
+            S.shift = "Mañana";
+            S.role = "Encargada Rescate (Matutino)";
+            return;
+        }
+        if (email.includes("encargado4") || (email.includes("rescate") && (email.includes("tarde") || email.includes("vesp")))) {
+            S.branchName = "Rescate";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "Rescate");
+            S.branchId = m ? m.id : "branch-2";
+            S.shift = "Tarde";
+            S.role = "Encargada Rescate (Vespertino)";
+            return;
+        }
+
+        // 5. Tagarete 2
+        if (email.includes("encargado9") || (email.includes("tagarete") && (email.includes("2") || email.includes("dos")) && (email.includes("mañana") || email.includes("mat")))) {
+            S.branchName = "Tagarete 2";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "Tagarete 2");
+            S.branchId = m ? m.id : "branch-5";
+            S.shift = "Mañana";
+            S.role = "Encargada Tagarete 2 (Matutino)";
+            return;
+        }
+        if (email.includes("encargado10") || (email.includes("tagarete") && (email.includes("2") || email.includes("dos")) && (email.includes("tarde") || email.includes("vesp")))) {
+            S.branchName = "Tagarete 2";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "Tagarete 2");
+            S.branchId = m ? m.id : "branch-5";
+            S.shift = "Tarde";
+            S.role = "Encargada Tagarete 2 (Vespertino)";
+            return;
+        }
+
+        // 6. CNOP
+        if (email.includes("encargado11") || (email.includes("cnop") && (email.includes("mañana") || email.includes("mat")))) {
+            S.branchName = "CNOP";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "CNOP");
+            S.branchId = m ? m.id : "branch-6";
+            S.shift = "Mañana";
+            S.role = "Encargada CNOP (Matutino)";
+            return;
+        }
+        if (email.includes("encargado12") || (email.includes("cnop") && (email.includes("tarde") || email.includes("vesp")))) {
+            S.branchName = "CNOP";
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === "CNOP");
+            S.branchId = m ? m.id : "branch-6";
+            S.shift = "Tarde";
+            S.role = "Encargada CNOP (Vespertino)";
             return;
         }
 
@@ -1701,15 +1808,26 @@
         const cashierEmail = S.user?.email || "";
         const cashierName = S.profile?.full_name || cashierEmail || "Encargada";
 
-        const saleBranchName = S.branchName || "Tagarete 1";
-        const saleBranchId = S.branchId || "branch-4";
-        const isTag1 = resolveCanonicalBranch(saleBranchName) === "Tagarete 1" || String(saleBranchId) === "branch-4" || cashierEmail.includes("encargado7") || cashierEmail.includes("encargado8");
+        const resolvedBranchName = resolveCanonicalBranch(S.branchName || cashierEmail) || "La Fuente Calzada";
+        const defaultBranchId = (
+            resolvedBranchName === "La Fuente Calzada" ? "branch-1" :
+            resolvedBranchName === "Rescate" ? "branch-2" :
+            resolvedBranchName === "Mollotes" ? "branch-3" :
+            resolvedBranchName === "Tagarete 1" ? "branch-4" :
+            resolvedBranchName === "Tagarete 2" ? "branch-5" :
+            resolvedBranchName === "CNOP" ? "branch-6" : "branch-1"
+        );
+        const saleBranchId = S.branchId || defaultBranchId;
+        const saleBranchName = resolvedBranchName;
+        const isTag1 = resolvedBranchName === "Tagarete 1";
+        const isCalzada = resolvedBranchName === "La Fuente Calzada";
+        const isMollotes = resolvedBranchName === "Mollotes";
 
         const saleRecord = {
             id: "sale_" + Date.now() + "_" + Math.random().toString(36).substring(2,7),
             sale_number: "TICK-" + Math.floor(100000 + Math.random() * 900000),
-            branch_id: isTag1 ? "branch-4" : saleBranchId,
-            branch_name: isTag1 ? "Tagarete 1" : saleBranchName,
+            branch_id: saleBranchId,
+            branch_name: saleBranchName,
             shift_name: S.shift || (getShiftCategory({ cashier_name: cashierEmail, created_at: now() }) === "vespertino" ? "Tarde" : "Mañana"),
             cashier_id: S.user?.id || "offline",
             cashier_name: cashierEmail ? (cashierName + " (" + cashierEmail + ")") : cashierName,
@@ -1736,10 +1854,18 @@
             const bSalesList = rawBSales ? JSON.parse(rawBSales) : [];
             bSalesList.unshift(saleRecord);
             localStorage.setItem("lf_" + bKey + "_sales", JSON.stringify(bSalesList));
+            localStorage.setItem("lf_" + saleRecord.branch_id + "_sales", JSON.stringify(bSalesList));
             if (isTag1) {
                 localStorage.setItem("lf_tagarete_1_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_branch-4_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_tagarete 1_sales", JSON.stringify(bSalesList));
+            } else if (isCalzada) {
+                localStorage.setItem("lf_calzada_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_branch-1_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_la_fuente_calzada_sales", JSON.stringify(bSalesList));
+            } else if (isMollotes) {
+                localStorage.setItem("lf_mollotes_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_branch-3_sales", JSON.stringify(bSalesList));
             }
         } catch(e) {}
 
@@ -1793,8 +1919,8 @@
                     const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
 
                     const observationsObj = {
-                        branch_name: isTag1 ? "Tagarete 1" : S.branchName,
-                        branch_id: isTag1 ? "branch-4" : S.branchId,
+                        branch_name: saleRecord.branch_name,
+                        branch_id: saleRecord.branch_id,
                         shift_name: saleRecord.shift_name,
                         cashier_name: saleRecord.cashier_name,
                         user_email: cashierEmail,
@@ -11736,12 +11862,17 @@
         if (!c) return;
         if (!S.isSU && !S.branchId) {
             const userEm = String(S.user?.email || "").toLowerCase();
-            if (userEm.includes("encargado7") || userEm.includes("encargado8") || userEm.includes("tagarete 1") || userEm.includes("tagarete1") || S.branchName === "Tagarete 1") {
-                S.branchId = "branch-4";
-                S.branchName = "Tagarete 1";
-            } else {
-                return;
-            }
+            const bResolved = resolveCanonicalBranch(userEm) || resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
+            S.branchName = bResolved;
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === bResolved);
+            S.branchId = m ? m.id : (
+                bResolved === "La Fuente Calzada" ? "branch-1" :
+                bResolved === "Rescate" ? "branch-2" :
+                bResolved === "Mollotes" ? "branch-3" :
+                bResolved === "Tagarete 1" ? "branch-4" :
+                bResolved === "Tagarete 2" ? "branch-5" :
+                bResolved === "CNOP" ? "branch-6" : "branch-1"
+            );
         }
         if (!silent && !c.children.length) {
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
@@ -12352,12 +12483,17 @@
         if (!c) return;
         if (!S.isSU && !S.branchId) {
             const userEm = String(S.user?.email || "").toLowerCase();
-            if (userEm.includes("encargado7") || userEm.includes("encargado8") || userEm.includes("tagarete 1") || userEm.includes("tagarete1") || S.branchName === "Tagarete 1") {
-                S.branchId = "branch-4";
-                S.branchName = "Tagarete 1";
-            } else {
-                return;
-            }
+            const bResolved = resolveCanonicalBranch(userEm) || resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
+            S.branchName = bResolved;
+            const m = S.branches.find(b => resolveCanonicalBranch(b) === bResolved);
+            S.branchId = m ? m.id : (
+                bResolved === "La Fuente Calzada" ? "branch-1" :
+                bResolved === "Rescate" ? "branch-2" :
+                bResolved === "Mollotes" ? "branch-3" :
+                bResolved === "Tagarete 1" ? "branch-4" :
+                bResolved === "Tagarete 2" ? "branch-5" :
+                bResolved === "CNOP" ? "branch-6" : "branch-1"
+            );
         }
         if (!silent && !c.children.length) {
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando cortes de caja de ${esc(S.branchName)}…</p></div>`;
@@ -13103,7 +13239,7 @@
         // 1. Cargar el fondo activo local para la sucursal actual
         const localShift = lr("current_shift", null);
         const userEm = String(S.user?.email || "").toLowerCase();
-        const hasPreassignedShift = !!STAFF[userEm] || userEm.includes("encargado7") || userEm.includes("encargado8");
+        const hasPreassignedShift = !!STAFF[userEm] || userEm.includes("encargado");
 
         if (localShift && localShift.opening_amount != null) {
             S.currentShift = localShift;
