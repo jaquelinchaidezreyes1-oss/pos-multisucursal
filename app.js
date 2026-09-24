@@ -263,11 +263,11 @@
         if (!ref) return "";
         if (typeof ref === "string") {
             const s = ref.toLowerCase().trim();
-            if (s === "branch-4" || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || s.includes("encargado7") || s.includes("encargado8")) return "Tagarete 1";
+            if (s === "branch-4" || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || /encargad[oa]7(?!\d)/i.test(s) || /encargad[oa]8(?!\d)/i.test(s)) return "Tagarete 1";
             if (s === "branch-5" || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || /encargad[oa]9(?!\d)/i.test(s) || /encargad[oa]10(?!\d)/i.test(s)) return "Tagarete 2";
-            if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargada11") || s.includes("encargado12") || s.includes("encargada12")) return "CNOP";
+            if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || /encargad[oa]11(?!\d)/i.test(s) || /encargad[oa]12(?!\d)/i.test(s)) return "CNOP";
             if (s === "branch-3" || s.includes("mollotes") || s.includes("molotes") || /encargad[oa]5(?!\d)/i.test(s) || /encargad[oa]6(?!\d)/i.test(s)) return "Mollotes";
-            if (s === "branch-2" || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4")) return "Rescate";
+            if (s === "branch-2" || s.includes("rescate") || /encargad[oa]3(?!\d)/i.test(s) || /encargad[oa]4(?!\d)/i.test(s)) return "Rescate";
             if (s === "branch-1" || s.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(s) && !s.includes("10") && !s.includes("11") && !s.includes("12")) || /encargad[oa]2(?!\d)/i.test(s)) return "La Fuente Calzada";
             return ref.trim();
         }
@@ -283,11 +283,11 @@
 
         // 2. Identificación por correo / ID de encargada oficial asignada
         const cInfo = (String(ref.cashier_id || "") + " " + String(ref.cashier_name || "") + " " + String(ref.user_email || "")).toLowerCase();
-        if (cInfo.includes("encargado7") || cInfo.includes("encargado8") || cInfo.includes("tagarete 1") || cInfo.includes("tagarete1")) return "Tagarete 1";
+        if (/encargad[oa]7(?!\d)/i.test(cInfo) || /encargad[oa]8(?!\d)/i.test(cInfo) || cInfo.includes("tagarete 1") || cInfo.includes("tagarete1")) return "Tagarete 1";
         if (/encargad[oa]9(?!\d)/i.test(cInfo) || /encargad[oa]10(?!\d)/i.test(cInfo) || cInfo.includes("tagarete 2") || cInfo.includes("tagarete2") || (cInfo.includes("tagarete") && (cInfo.includes("2") || cInfo.includes("dos")))) return "Tagarete 2";
-        if (cInfo.includes("encargado11") || cInfo.includes("encargada11") || cInfo.includes("encargado12") || cInfo.includes("encargada12") || cInfo.includes("cnop")) return "CNOP";
+        if (/encargad[oa]11(?!\d)/i.test(cInfo) || /encargad[oa]12(?!\d)/i.test(cInfo) || cInfo.includes("cnop")) return "CNOP";
         if (/encargad[oa]5(?!\d)/i.test(cInfo) || /encargad[oa]6(?!\d)/i.test(cInfo) || cInfo.includes("mollotes") || cInfo.includes("molotes")) return "Mollotes";
-        if (cInfo.includes("encargado3") || cInfo.includes("encargado4") || cInfo.includes("rescate")) return "Rescate";
+        if (/encargad[oa]3(?!\d)/i.test(cInfo) || /encargad[oa]4(?!\d)/i.test(cInfo) || cInfo.includes("rescate")) return "Rescate";
         if ((/encargad[oa]1(?!\d)/i.test(cInfo) && !cInfo.includes("10") && !cInfo.includes("11") && !cInfo.includes("12")) || /encargad[oa]2(?!\d)/i.test(cInfo) || cInfo.includes("calzada")) return "La Fuente Calzada";
 
         // 3. Extracción de observaciones y metadatos con Tagarete 1 prioritario
@@ -296,12 +296,12 @@
         let str = `${ref.name || ""} ${ref.branch_name || ""} ${ref.id || ""} ${ref.branch_id || ""} ${cInfo} ${obs.branch_name || ""} ${obs.cashier_name || ""} ${obs.user_email || ""}`;
         const s = String(str).toLowerCase().trim();
 
-        if (s.includes("branch-4") || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno")))) return "Tagarete 1";
+        if (s.includes("branch-4") || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || /encargad[oa]7(?!\d)/i.test(s) || /encargad[oa]8(?!\d)/i.test(s)) return "Tagarete 1";
         if (s.includes("branch-5") || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || /encargad[oa]9(?!\d)/i.test(s) || /encargad[oa]10(?!\d)/i.test(s)) return "Tagarete 2";
-        if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargada11") || s.includes("encargado12") || s.includes("encargada12")) return "CNOP";
+        if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop") || /encargad[oa]11(?!\d)/i.test(s) || /encargad[oa]12(?!\d)/i.test(s)) return "CNOP";
         if (s.includes("branch-3") || s.includes("mollotes") || s.includes("molotes") || /encargad[oa]5(?!\d)/i.test(s) || /encargad[oa]6(?!\d)/i.test(s)) return "Mollotes";
-        if (s.includes("branch-2") || s.includes("rescate")) return "Rescate";
-        if (s.includes("branch-1") || s.includes("calzada")) return "La Fuente Calzada";
+        if (s.includes("branch-2") || s.includes("rescate") || /encargad[oa]3(?!\d)/i.test(s) || /encargad[oa]4(?!\d)/i.test(s)) return "Rescate";
+        if (s.includes("branch-1") || s.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(s) && !s.includes("10") && !s.includes("11") && !s.includes("12")) || /encargad[oa]2(?!\d)/i.test(s)) return "La Fuente Calzada";
 
         // 4. Soporte dinámico para cualquier sucursal futura que se habilite
         if (ref.name && String(ref.name).trim()) return String(ref.name).trim();
@@ -1169,6 +1169,45 @@
             S.inv[id] = branchDefaults[id] !== undefined ? branchDefaults[id] : ((prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : Math.min(100, maxS)); 
         }
         return S.inv[id]; 
+    }
+
+    /* ── CONSULTA DE INVENTARIOS POR SUCURSAL PARA DIRECCIÓN (SUPERUSUARIOS) ── */
+    function getStockForBranch(pid, branchRef) {
+        const bKey = getBranchKeyName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
+        let invObj = null;
+        try {
+            const raw = localStorage.getItem("lf_inv_" + bKey);
+            if (raw) invObj = JSON.parse(raw);
+        } catch(e) {}
+        if (!invObj) invObj = gr("inv_" + bKey, null);
+        if (!invObj && matchesBranch({ name: bKey }, { id: S.branchId, name: S.branchName })) invObj = S.inv;
+        if (!invObj && BRANCH_BASE_INVENTORY[bKey]) invObj = BRANCH_BASE_INVENTORY[bKey];
+        if (invObj && invObj[pid] != null) return Math.max(0, Number(invObj[pid]));
+        return (S.inv && S.inv[pid] != null && matchesBranch({ name: bKey }, { id: S.branchId, name: S.branchName })) ? Math.max(0, Number(S.inv[pid])) : 0;
+    }
+
+    function getChainTotalStock(pid) {
+        let total = 0;
+        BRANCH_NAMES.forEach(bName => {
+            total += getStockForBranch(pid, bName);
+        });
+        return total;
+    }
+
+    function getBranchTotalPieces(branchRef) {
+        const bKey = getBranchKeyName(typeof branchRef === "string" ? branchRef : (branchRef?.name || branchRef?.id || ""));
+        let invObj = null;
+        try {
+            const raw = localStorage.getItem("lf_inv_" + bKey);
+            if (raw) invObj = JSON.parse(raw);
+        } catch(e) {}
+        if (!invObj) invObj = gr("inv_" + bKey, null);
+        if (!invObj && matchesBranch({ name: bKey }, { id: S.branchId, name: S.branchName })) invObj = S.inv;
+        if (!invObj && BRANCH_BASE_INVENTORY[bKey]) invObj = BRANCH_BASE_INVENTORY[bKey];
+        if (invObj && typeof invObj === "object") {
+            return Object.values(invObj).reduce((a, v) => a + (Number(v) > 0 ? Number(v) : 0), 0);
+        }
+        return 0;
     }
 
     function deductStock(id, qty = 1, name = "", dynamicComponents = null) { 
@@ -11734,7 +11773,11 @@
                     .order("created_at", {ascending:false})
                     .limit(5000), null, 6000);
                 if (data && data.length) {
-                    remoteSales = data.map(s => {
+                    const validData = data.filter(s => {
+                        const st = String(s.status || "").toUpperCase();
+                        return !["CATALOG_RECORD", "CUT_DELETED_RECORD", "SHIFT_RECORD", "DAMAGE_RECORD", "NOTICE_RECORD"].includes(st);
+                    });
+                    remoteSales = validData.map(s => {
                         let obs = {};
                         try {
                             obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
@@ -11743,44 +11786,44 @@
                         const cashierName = obs.cashier_name || s.user_name || obs.performed_by_name || "";
                         const cLower = (cashierName + " " + (obs.user_email || "")).toLowerCase();
 
-                        // 1. Detección prioritaria de sucursal (Tagarete 1 y Staff mapping)
-                        const isTag1 = String(obs.branch_name||"").toLowerCase().includes("tagarete 1") ||
-                                       String(obs.branch_id||"") === "branch-4" ||
-                                       String(s.branch_name||"").toLowerCase().includes("tagarete 1") ||
-                                       cLower.includes("encargado7") || cLower.includes("encargado8") ||
-                                       cLower.includes("tagarete 1") || cLower.includes("tagarete1");
-
-                        let bName = "";
-                        if (isTag1) {
-                            bName = "Tagarete 1";
-                        } else {
-                            for (const [em, staffInfo] of Object.entries(STAFF)) {
-                                const numMatch = em.match(/encargado\d+/);
-                                if (cLower.includes(em.toLowerCase()) || (numMatch && cLower.includes(numMatch[0]))) {
-                                    bName = staffInfo.b;
-                                    break;
-                                }
-                            }
-                            if (!bName) {
-                                bName = obs.branch_name || s.branch_name || "";
-                            }
-                            if (!bName && s.branch_id) {
-                                bName = S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
-                            }
-                            if (!bName && (cLower.includes("cnop") || cLower.includes("cenop"))) bName = "CNOP";
+                        // 1. Detección inequívoca de sucursal
+                        let bName = resolveCanonicalBranch({
+                            ...s,
+                            branch_name: obs.branch_name || s.branch_name,
+                            branch_id: obs.branch_id || s.branch_id,
+                            cashier_name: cashierName,
+                            user_email: obs.user_email || s.user_email,
+                            observations: obs
+                        });
+                        if (!bName) {
+                            bName = resolveCanonicalBranch(obs.branch_name) ||
+                                    resolveCanonicalBranch(s.branch_name) ||
+                                    resolveCanonicalBranch(s.branch_id) ||
+                                    resolveCanonicalBranch(cLower) ||
+                                    (obs.branch_name || s.branch_name || "La Fuente Calzada");
                         }
+
+                        const bId = (
+                            bName === "La Fuente Calzada" ? "branch-1" :
+                            bName === "Rescate" ? "branch-2" :
+                            bName === "Mollotes" ? "branch-3" :
+                            bName === "Tagarete 1" ? "branch-4" :
+                            bName === "Tagarete 2" ? "branch-5" :
+                            bName === "CNOP" ? "branch-6" :
+                            (s.branch_id || "branch-1")
+                        );
 
                         // 2. Detección precisa de turno (Matutino vs Vespertino)
                         const rawShift = obs.shift_name || s.shift_name || "";
-                        const shiftCat = getShiftCategory({ cashier_name: cashierName, shift_name: rawShift, created_at: s.created_at });
+                        const shiftCat = getShiftCategory({ cashier_name: cashierName, shift_name: rawShift, created_at: s.created_at, observations: obs });
                         const shiftDisplayName = (shiftCat === "vespertino") ? "Tarde" : "Mañana";
 
                         return {
                             id: s.id,
                             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                            branch_id: isTag1 ? "branch-4" : (s.branch_id || (bName ? S.branches.find(b => b.name === bName)?.id : "")),
-                            branch_name: bName || "CNOP",
-                            shift_name: rawShift || shiftDisplayName,
+                            branch_id: bId,
+                            branch_name: bName,
+                            shift_name: shiftDisplayName,
                             cashier_id: s.user_id,
                             cashier_name: cashierName || "Encargada",
                             total: Number(s.total || 0),
@@ -11875,9 +11918,17 @@
             }
             if (matchedKey) {
                 const prev = salesMap.get(matchedKey);
-                const isTag1Merge = resolveCanonicalBranch(prev) === "Tagarete 1" || resolveCanonicalBranch(s) === "Tagarete 1";
-                const finalBranch = isTag1Merge ? "Tagarete 1" : (prev.branch_name && prev.branch_name !== "CNOP" && prev.branch_name !== "General" ? prev.branch_name : s.branch_name);
-                const finalBranchId = isTag1Merge ? "branch-4" : (prev.branch_id && prev.branch_id !== "c188dd82-7faf-41b8-948b-af8e789facba" ? prev.branch_id : s.branch_id);
+                const canonicalBranch = resolveCanonicalBranch(s) || resolveCanonicalBranch(prev);
+                const finalBranch = canonicalBranch || (prev.branch_name && prev.branch_name !== "CNOP" && prev.branch_name !== "General" ? prev.branch_name : s.branch_name);
+                const finalBranchId = (
+                    finalBranch === "La Fuente Calzada" ? "branch-1" :
+                    finalBranch === "Rescate" ? "branch-2" :
+                    finalBranch === "Mollotes" ? "branch-3" :
+                    finalBranch === "Tagarete 1" ? "branch-4" :
+                    finalBranch === "Tagarete 2" ? "branch-5" :
+                    finalBranch === "CNOP" ? "branch-6" :
+                    (prev.branch_id && prev.branch_id !== "c188dd82-7faf-41b8-948b-af8e789facba" ? prev.branch_id : s.branch_id)
+                );
                 const finalShift = prev.shift_name || s.shift_name;
                 const finalItems = (prev.items && prev.items.length) ? prev.items : (s.items || []);
 
@@ -11905,12 +11956,17 @@
             }
 
             // Asignación inequívoca de sucursal
-            const assignedBranch = getBranchForSale(s);
+            const assignedBranch = resolveCanonicalBranch(s) || getBranchForSale(s);
             if (assignedBranch) {
                 s.branch_name = assignedBranch;
-                if (assignedBranch === "Tagarete 1") {
-                    s.branch_id = "branch-4";
-                }
+                s.branch_id = (
+                    assignedBranch === "La Fuente Calzada" ? "branch-1" :
+                    assignedBranch === "Rescate" ? "branch-2" :
+                    assignedBranch === "Mollotes" ? "branch-3" :
+                    assignedBranch === "Tagarete 1" ? "branch-4" :
+                    assignedBranch === "Tagarete 2" ? "branch-5" :
+                    assignedBranch === "CNOP" ? "branch-6" : (s.branch_id || "branch-1")
+                );
             }
 
             // Asignación inequívoca de turno
@@ -11919,8 +11975,9 @@
         }
 
         // 6. Filtrar ventas borradas y ordenar
+        const nonSaleStatuses = ["CATALOG_RECORD", "CUT_DELETED_RECORD", "SHIFT_RECORD", "DAMAGE_RECORD", "NOTICE_RECORD"];
         const consolidated = Array.from(salesMap.values())
-            .filter(s => !deletedSaleIds.has(String(s.id)) && !deletedSaleIds.has(String(s.sale_number)))
+            .filter(s => !deletedSaleIds.has(String(s.id)) && !deletedSaleIds.has(String(s.sale_number)) && !nonSaleStatuses.includes(String(s.status || "").toUpperCase()))
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
         gw("all_sales", consolidated);
@@ -13920,6 +13977,7 @@
             const vesSales = bs.filter(s => getShiftCategory(s) === "vespertino");
             const matTotal = matSales.reduce((acc,s) => acc + Number(s.total||0), 0);
             const vesTotal = vesSales.reduce((acc,s) => acc + Number(s.total||0), 0);
+            const stockPieces = getBranchTotalPieces(b);
 
             chainTotal += total;
             chainCashTotal += cashTotal;
@@ -13938,6 +13996,7 @@
                 matOrders: matSales.length,
                 vesTotal: vesTotal,
                 vesOrders: vesSales.length,
+                stockPieces: stockPieces,
                 isOpen: true
             };
         });
@@ -14046,6 +14105,10 @@
                             <span style="font-size:12px;color:#64748b;font-weight:700">Tickets Cobrados:</span>
                             <span style="font-weight:900;color:#0f172a;font-size:13.5px">${b.orders}</span>
                         </div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                            <span style="font-size:12px;color:#64748b;font-weight:700">Inventario Disponible:</span>
+                            <span style="font-weight:900;color:#0284c7;font-size:13px">📦 ${b.stockPieces.toLocaleString()} pzs</span>
+                        </div>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:8px;border-top:1.5px dashed #cbd5e1;font-size:11.5px">
                             <div>💵 Efectivo: <strong style="color:#166534;font-weight:900">${money(b.cashTotal)}</strong></div>
                             <div>💳 Tarjeta: <strong style="color:#1d4ed8;font-weight:900">${money(b.cardTotal)}</strong></div>
@@ -14055,12 +14118,15 @@
                             <div>🌇 Vespertino: <strong style="color:#1e40af;font-weight:900">${money(b.vesTotal)}</strong></div>
                         </div>
                     </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-                        <button class="btn btn-sm btn-outline btn-view-branch-sales" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11.5px;font-weight:900;padding:9px;background:#ffffff;color:#1e293b;border:1.5px solid #cbd5e1;border-radius:10px;cursor:pointer">
-                            📋 Ver Ventas
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+                        <button class="btn btn-sm btn-outline btn-view-branch-sales" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11px;font-weight:900;padding:8px 4px;background:#ffffff;color:#1e293b;border:1.5px solid #cbd5e1;border-radius:10px;cursor:pointer">
+                            📋 Ventas
                         </button>
-                        <button class="btn btn-sm btn-outline btn-view-branch-cuts" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11.5px;font-weight:900;padding:9px;background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;border-radius:10px;cursor:pointer">
-                            ✂ Ver Cortes
+                        <button class="btn btn-sm btn-outline btn-view-branch-cuts" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11px;font-weight:900;padding:8px 4px;background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;border-radius:10px;cursor:pointer">
+                            ✂ Cortes
+                        </button>
+                        <button class="btn btn-sm btn-outline btn-view-branch-stock" data-bid="${b.id}" data-bname="${esc(b.name)}" style="font-size:11px;font-weight:900;padding:8px 4px;background:#f0fdf4;border:1.5px solid #86efac;color:#166534;border-radius:10px;cursor:pointer">
+                            📦 Stock
                         </button>
                     </div>
                     <button class="btn btn-sm btn-primary btn-operate-branch" data-bid="${b.id}" data-bname="${esc(b.name)}" style="width:100%;font-size:12px;font-weight:900;padding:10px;background:linear-gradient(135deg,var(--gold-400),var(--gold-600));color:#1a0205;border:none;border-radius:10px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25)">
@@ -14191,6 +14257,19 @@
                 }
             });
         });
+
+        c.querySelectorAll(".btn-view-branch-stock").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const bId = btn.dataset.bid;
+                const bName = btn.dataset.bname;
+                if (bId && bName) {
+                    S.branchId = bId;
+                    S.branchName = bName;
+                    renderSel();
+                    if (window.changeView) window.changeView("inventory");
+                }
+            });
+        });
     }
 
     // Función auxiliar para renderizar tabla de resumen diario de productos vendidos
@@ -14285,7 +14364,7 @@
                 </thead>
                 <tbody>
                     ${prodList.map((p, idx) => {
-                        const curStock = getStock(p.id);
+                        const curStock = (targetBranchId === "all") ? getChainTotalStock(p.id) : getStockForBranch(p.id, targetBranchId);
                         const isLow = curStock <= STOCK_LOW;
                         const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
                         return `
@@ -14305,7 +14384,7 @@
                             <td style="padding:12px 16px;text-align:right;font-weight:900;color:#15803d;font-size:14px">${money(p.totalMoney)}</td>
                             <td style="padding:12px 16px;text-align:center">
                                 <span style="padding:5px 12px;border-radius:8px;font-size:12px;font-weight:900;${isLow ? 'background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5' : 'background:#dcfce7;color:#166534;border:1.5px solid #86efac'}">
-                                    ${curStock} uds. ${isLow ? '⚠ Resurtir' : '✓'}
+                                    ${curStock} uds. ${targetBranchId === "all" ? '<small style="font-size:10px;opacity:0.8">(Red)</small>' : ''} ${isLow ? '⚠ Resurtir' : '✓'}
                                 </span>
                             </td>
                         </tr>`;
@@ -14909,8 +14988,11 @@
         const hasOpenModal = !!document.querySelector(".modal.open, .modal.show, [data-modal-open='true'], #checkout-modal:not(.hidden), .confirm-modal");
         if (isTyping || hasOpenModal) return;
 
+        const allGS = gr("all_sales", []);
+        const firstSale = allGS[0];
+        const latestSaleKey = firstSale ? (String(firstSale.id) + "_" + firstSale.total + "_" + firstSale.status) : "";
         const cancelledCount = Object.keys(gr("cancelled_reasons", {})).length;
-        const currentHash = S.view + "_" + (gr("all_sales", []).length) + "_" + cancelledCount + "_" + (gr("all_cuts", []).length) + "_" + (gr("all_shifts", []).length);
+        const currentHash = S.view + "_" + allGS.length + "_" + latestSaleKey + "_" + cancelledCount + "_" + (gr("all_cuts", []).length) + "_" + (gr("all_shifts", []).length);
         if (!force && currentHash === _lastRefreshHash) return;
         _lastRefreshHash = currentHash;
 
@@ -15158,6 +15240,9 @@
                     if (payload.branch_name) {
                         gw("inv_" + normalizeBranchName(payload.branch_name).replace(/\s+/g, "_"), payload.inv);
                     }
+                    const bKey = getBranchKeyName(payload.branch_name || payload.branch_id || payload.branch_key);
+                    gw("inv_" + bKey, payload.inv);
+                    try { localStorage.setItem("lf_inv_" + bKey, JSON.stringify(payload.inv)); } catch(e) {}
                     if (matchesBranch({ branch_id: payload.branch_id, branch_name: payload.branch_name }, { id: S.branchId, name: S.branchName })) {
                         S.inv = { ...payload.inv };
                         lw("inv", S.inv);
@@ -15166,6 +15251,7 @@
                         else if (S.view === "pos") renderPOS(filtered());
                         else if (S.view === "products") await loadProductsAdmin();
                     }
+                    if (S.isSU && S.view === "private-access") await loadPrivateAccess(true);
                 })
                 // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS
                 .on("broadcast", { event: "request_sync" }, async () => {
@@ -15246,8 +15332,11 @@
                         });
                         gw("all_cuts", Array.from(mapC.values()));
                     }
-                    if (payload.inv && payload.branch_id) {
-                        gw("inv_" + payload.branch_id, payload.inv);
+                    if (payload.inv && (payload.branch_id || payload.branch_name)) {
+                        if (payload.branch_id) gw("inv_" + payload.branch_id, payload.inv);
+                        const bKey = getBranchKeyName(payload.branch_name || payload.branch_id);
+                        gw("inv_" + bKey, payload.inv);
+                        try { localStorage.setItem("lf_inv_" + bKey, JSON.stringify(payload.inv)); } catch(e) {}
                     }
                     if (payload.custom_products && Array.isArray(payload.custom_products)) {
                         const localCustom = gr("custom_products", []);
