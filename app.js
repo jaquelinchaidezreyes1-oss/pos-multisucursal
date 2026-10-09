@@ -216,12 +216,14 @@
         const cashier = String(obs.cashier_name || obs.performed_by_name || s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
         if (/encargad[oa](12|10|8|6|4|2)(?!\d)/i.test(cashier) ||
             cashier.includes("vespertino") || cashier.includes("tarde") || cashier.includes("noche") ||
+            cashier.includes("calzada2") || cashier.includes("calzadatarde") ||
             cashier.includes("tagarete2tarde") || cashier.includes("tagarete22") ||
             cashier.includes("mollotestarde") || cashier.includes("mollotes2")) {
             return "vespertino";
         }
         if (/encargad[oa](11|9|7|5|3|1)(?!\d)/i.test(cashier) ||
             cashier.includes("matutino") || cashier.includes("mañana") || cashier.includes("maana") ||
+            cashier.includes("calzada1") || cashier.includes("calzadamañana") || cashier.includes("calzadamaana") ||
             cashier.includes("tagarete2mañana") || cashier.includes("tagarete21") ||
             cashier.includes("mollotesmañana") || cashier.includes("mollotes1")) {
             return "matutino";
@@ -268,7 +270,7 @@
             if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargada11") || s.includes("encargado12") || s.includes("encargada12")) return "CNOP";
             if (s === "branch-3" || s.includes("mollotes") || s.includes("molotes") || /encargad[oa]5(?!\d)/i.test(s) || /encargad[oa]6(?!\d)/i.test(s)) return "Mollotes";
             if (s === "branch-2" || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4")) return "Rescate";
-            if (s === "branch-1" || s.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(s) && !s.includes("10") && !s.includes("11") && !s.includes("12")) || /encargad[oa]2(?!\d)/i.test(s)) return "La Fuente Calzada";
+            if (s === "branch-1" || s === "c188dd82-7faf-41b8-948b-af8e789facba" || s.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(s) && !s.includes("10") && !s.includes("11") && !s.includes("12")) || /encargad[oa]2(?!\d)/i.test(s) || s.includes("calzada1") || s.includes("calzada2")) return "La Fuente Calzada";
             return ref.trim();
         }
 
@@ -279,7 +281,7 @@
         if (bId === "branch-6" || bId.includes("cnop")) return "CNOP";
         if (bId === "branch-3" || bId.includes("mollotes") || bId.includes("molotes")) return "Mollotes";
         if (bId === "branch-2" || bId.includes("rescate")) return "Rescate";
-        if (bId === "branch-1" || bId.includes("calzada")) return "La Fuente Calzada";
+        if (bId === "branch-1" || bId === "c188dd82-7faf-41b8-948b-af8e789facba" || bId.includes("calzada")) return "La Fuente Calzada";
 
         // 2. Identificación por correo / ID de encargada oficial asignada
         const cInfo = (String(ref.cashier_id || "") + " " + String(ref.cashier_name || "") + " " + String(ref.user_email || "")).toLowerCase();
@@ -288,7 +290,7 @@
         if (cInfo.includes("encargado11") || cInfo.includes("encargada11") || cInfo.includes("encargado12") || cInfo.includes("encargada12") || cInfo.includes("cnop")) return "CNOP";
         if (/encargad[oa]5(?!\d)/i.test(cInfo) || /encargad[oa]6(?!\d)/i.test(cInfo) || cInfo.includes("mollotes") || cInfo.includes("molotes")) return "Mollotes";
         if (cInfo.includes("encargado3") || cInfo.includes("encargado4") || cInfo.includes("rescate")) return "Rescate";
-        if ((/encargad[oa]1(?!\d)/i.test(cInfo) && !cInfo.includes("10") && !cInfo.includes("11") && !cInfo.includes("12")) || /encargad[oa]2(?!\d)/i.test(cInfo) || cInfo.includes("calzada")) return "La Fuente Calzada";
+        if ((/encargad[oa]1(?!\d)/i.test(cInfo) && !cInfo.includes("10") && !cInfo.includes("11") && !cInfo.includes("12")) || /encargad[oa]2(?!\d)/i.test(cInfo) || cInfo.includes("calzada") || cInfo.includes("calzada1") || cInfo.includes("calzada2")) return "La Fuente Calzada";
 
         // 3. Extracción de observaciones y metadatos con Tagarete 1 prioritario
         let obs = {};
@@ -301,7 +303,7 @@
         if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargada11") || s.includes("encargado12") || s.includes("encargada12")) return "CNOP";
         if (s.includes("branch-3") || s.includes("mollotes") || s.includes("molotes") || /encargad[oa]5(?!\d)/i.test(s) || /encargad[oa]6(?!\d)/i.test(s)) return "Mollotes";
         if (s.includes("branch-2") || s.includes("rescate")) return "Rescate";
-        if (s.includes("branch-1") || s.includes("calzada")) return "La Fuente Calzada";
+        if (s.includes("branch-1") || s.includes("c188dd82-7faf-41b8-948b-af8e789facba") || s.includes("calzada")) return "La Fuente Calzada";
 
         // 4. Soporte dinámico para cualquier sucursal futura que se habilite
         if (ref.name && String(ref.name).trim()) return String(ref.name).trim();
@@ -1736,8 +1738,9 @@
         const activeSales = allSales.filter(s => String(s.status || "").toUpperCase() !== "CANCELLED");
 
         const todayStr = toDateKey();
+        const isCalzadaActive = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada";
         let bSales = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }) && toDateKey(s.created_at) === todayStr);
-        if (!bSales.length) {
+        if (!bSales.length && !isCalzadaActive) {
             const branchAll = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
             if (branchAll.length) {
                 const datesMap = new Map();
@@ -1780,6 +1783,8 @@
                 : (S.currentShift?.opening_amount != null ? Number(S.currentShift.opening_amount) : 1000));
 
         const isCurrentVesp = (S.shift || "").toLowerCase().includes("tarde") || (S.shift || "").toLowerCase().includes("vesp");
+        const matLiveBadge = !isCurrentVesp ? ' (EN VIVO)' : '';
+        const vesLiveBadge = isCurrentVesp ? ' (EN VIVO)' : '';
 
         bar.innerHTML = `
         <div style="background:linear-gradient(135deg,#ffffff,#fffdf5);border:1.5px solid var(--gold-400);border-radius:14px;padding:12px 16px;margin-bottom:14px;box-shadow:0 3px 12px rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -1801,13 +1806,13 @@
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <!-- MAÑANA -->
                 <div style="background:#fffef0;padding:6px 12px;border-radius:10px;border:1.5px solid ${!isCurrentVesp ? '#d97706' : '#fde68a'};text-align:right">
-                    <small style="font-size:9.5px;font-weight:900;color:#92400e;display:block">🌅 MAÑANA (${matSales.length} tks)</small>
+                    <small style="font-size:9.5px;font-weight:900;color:#92400e;display:block">🌅 MAÑANA${matLiveBadge} (${matSales.length} tks)</small>
                     <strong style="font-size:14px;color:#78350f">${money(matTotal)}</strong>
                 </div>
 
                 <!-- TARDE -->
                 <div style="background:#eef2ff;padding:6px 12px;border-radius:10px;border:1.5px solid ${isCurrentVesp ? '#6366f1' : '#c7d2fe'};text-align:right">
-                    <small style="font-size:9.5px;font-weight:900;color:#3730a3;display:block">🌇 TARDE (EN VIVO - ${vesSales.length} tks)</small>
+                    <small style="font-size:9.5px;font-weight:900;color:#3730a3;display:block">🌇 TARDE${vesLiveBadge} (${vesSales.length} tks)</small>
                     <strong style="font-size:14px;color:#312e81">${money(vesTotal)}</strong>
                 </div>
 
@@ -11924,18 +11929,21 @@
                                 bName = S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
                             }
                             if (!bName && (cLower.includes("cnop") || cLower.includes("cenop"))) bName = "CNOP";
+                            if (!bName && (String(s.branch_id || "") === "c188dd82-7faf-41b8-948b-af8e789facba" || String(s.branch_id || "") === "branch-1" || cLower.includes("calzada") || cLower.includes("encargado1") || cLower.includes("encargado2"))) {
+                                bName = "La Fuente Calzada";
+                            }
                         }
 
                         // 2. Detección precisa de turno (Matutino vs Vespertino)
                         const rawShift = obs.shift_name || s.shift_name || "";
-                        const shiftCat = getShiftCategory({ cashier_name: cashierName, shift_name: rawShift, created_at: s.created_at });
+                        const shiftCat = getShiftCategory({ cashier_name: cashierName, shift_name: rawShift, created_at: s.created_at, observations: obs });
                         const shiftDisplayName = (shiftCat === "vespertino") ? "Tarde" : "Mañana";
 
                         return {
                             id: s.id,
                             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
                             branch_id: isTag1 ? "branch-4" : (s.branch_id || (bName ? S.branches.find(b => b.name === bName)?.id : "")),
-                            branch_name: bName || "CNOP",
+                            branch_name: bName || (String(s.branch_id || "") === "c188dd82-7faf-41b8-948b-af8e789facba" ? "La Fuente Calzada" : "CNOP"),
                             shift_name: rawShift || shiftDisplayName,
                             cashier_id: s.user_id,
                             cashier_name: cashierName || "Encargada",
@@ -12032,8 +12040,9 @@
             if (matchedKey) {
                 const prev = salesMap.get(matchedKey);
                 const isTag1Merge = resolveCanonicalBranch(prev) === "Tagarete 1" || resolveCanonicalBranch(s) === "Tagarete 1";
-                const finalBranch = isTag1Merge ? "Tagarete 1" : (prev.branch_name && prev.branch_name !== "CNOP" && prev.branch_name !== "General" ? prev.branch_name : s.branch_name);
-                const finalBranchId = isTag1Merge ? "branch-4" : (prev.branch_id && prev.branch_id !== "c188dd82-7faf-41b8-948b-af8e789facba" ? prev.branch_id : s.branch_id);
+                const isCalzadaMerge = resolveCanonicalBranch(prev) === "La Fuente Calzada" || resolveCanonicalBranch(s) === "La Fuente Calzada";
+                const finalBranch = isTag1Merge ? "Tagarete 1" : (isCalzadaMerge ? "La Fuente Calzada" : (prev.branch_name && prev.branch_name !== "CNOP" && prev.branch_name !== "General" ? prev.branch_name : s.branch_name));
+                const finalBranchId = isTag1Merge ? "branch-4" : (isCalzadaMerge ? "c188dd82-7faf-41b8-948b-af8e789facba" : (prev.branch_id && prev.branch_id !== "c188dd82-7faf-41b8-948b-af8e789facba" ? prev.branch_id : s.branch_id));
                 const finalShift = prev.shift_name || s.shift_name;
                 const finalItems = (prev.items && prev.items.length) ? prev.items : (s.items || []);
 
@@ -12146,7 +12155,8 @@
         } else if (selectedDate === "today") {
             rawDaySales = datesMap.get(todayStr) || [];
             // Si para 'today' aún no hay ventas en esta sucursal pero sí hay ventas en la jornada activa reciente
-            if (!rawDaySales.length && branchSales.length) {
+            const isCalzadaSales = resolveCanonicalBranch(targetBranchRef) === "La Fuente Calzada";
+            if (!rawDaySales.length && branchSales.length && !isCalzadaSales) {
                 const latestDate = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse()[0];
                 if (latestDate) {
                     rawDaySales = datesMap.get(latestDate) || [];
@@ -12746,7 +12756,8 @@
         const currentBranchSales = consolidatedSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
         const todayStr = toDateKey();
         let todayActiveSales = currentBranchSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
-        if (!todayActiveSales.length && currentBranchSales.length) {
+        const isCalzadaBranch = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada";
+        if (!todayActiveSales.length && currentBranchSales.length && !isCalzadaBranch) {
             const datesMap = new Map();
             currentBranchSales.forEach(s => {
                 const d = toDateKey(s.created_at);
@@ -14821,11 +14832,15 @@
         });
 
         // 3. Filtros de Sucursal y Turno
-        const selectedBranchFilter = S.isSU ? (S.salesCountBranch || "all") : (S.branchId || S.branchName);
+        const selectedBranchFilter = S.isSU ? (S.salesCountBranch || "all") : (S.branchName || S.branchId || "La Fuente Calzada");
         const selectedShiftFilter = S.salesCountShift || "all";
 
+        const branchRef = (selectedBranchFilter === "all") ? "all" : (
+            resolveCanonicalBranch(selectedBranchFilter) === "La Fuente Calzada" ? "La Fuente Calzada" : { id: selectedBranchFilter, name: S.branches.find(b=>String(b.id)===String(selectedBranchFilter))?.name || selectedBranchFilter }
+        );
+
         const filteredSales = activeSales.filter(s => {
-            if (selectedBranchFilter !== "all" && !matchesBranch(s, { id: selectedBranchFilter, name: selectedBranchFilter })) {
+            if (branchRef !== "all" && !matchesBranch(s, branchRef)) {
                 return false;
             }
             if (selectedShiftFilter !== "all") {
