@@ -214,6 +214,22 @@
             return `${y}-${m}-${day}`;
         }
     };
+
+    /* ── DETERMINADOR ROBUSTO DE PERTENENCIA A LA JORNADA/DÍA ACTUAL ── */
+    const isTodaySale = (s, targetDate = null) => {
+        if (!s) return false;
+        const todayStr = (targetDate && targetDate !== "today") ? targetDate : toDateKey();
+        if (s.date_key && s.date_key === todayStr) return true;
+        const d = toDateKey(s.created_at);
+        if (d === todayStr) return true;
+        if (!targetDate || targetDate === "today" || targetDate === todayStr) {
+            if (s.created_at) {
+                const t = new Date(s.created_at).getTime();
+                if (!isNaN(t) && (Date.now() - t) < 18 * 3600 * 1000) return true;
+            }
+        }
+        return false;
+    };
     /* ── ALMACENAMIENTO LOCAL & GLOBAL ── */
     const lr = (k, fallback = null) => {
         try {
@@ -1784,9 +1800,35 @@
             const branchMatch = isCalzadaActive 
                 ? (resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada"))
                 : matchesBranch(s, { id: S.branchId, name: S.branchName });
-            return branchMatch && toDateKey(s.created_at) === todayStr;
+            return branchMatch && isTodaySale(s, todayStr);
         });
-        if (!bSales.length && !isCalzadaActive) {
+
+        // Garantizar que las ventas registradas para Calzada estén siempre presentes en el monitor
+        if (isCalzadaActive) {
+            const localSources = [
+                lr("sales", []),
+                gr("all_sales", []),
+                lr("calzada_sales", []),
+                lr("calzada_today_sales", []),
+                lr("last_printed_sale") ? [lr("last_printed_sale")] : []
+            ];
+            localSources.forEach(list => {
+                if (Array.isArray(list)) {
+                    list.forEach(ls => {
+                        if (ls && String(ls.status || "").toUpperCase() !== "CANCELLED") {
+                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
+                            if (isCalz && isTodaySale(ls, todayStr)) {
+                                if (!bSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                                    bSales.unshift(ls);
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        if (!bSales.length) {
             const branchAll = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
             if (branchAll.length) {
                 const datesMap = new Map();
@@ -2021,6 +2063,7 @@
         const isCalzada = resolvedBranchName === "La Fuente Calzada";
         const isMollotes = resolvedBranchName === "Mollotes";
 
+        const currentTodayKey = toDateKey();
         const saleRecord = {
             id: "sale_" + Date.now() + "_" + Math.random().toString(36).substring(2,7),
             sale_number: "TICK-" + Math.floor(100000 + Math.random() * 900000),
@@ -2033,7 +2076,8 @@
             payment_method: payMethod,
             status: "COMPLETADA",
             items: S.cart.map(i => ({product_id: i.product_id, product_name: i.product_name, quantity: i.quantity, price: i.price, subtotal: i.price*i.quantity})),
-            created_at: now()
+            created_at: now(),
+            date_key: currentTodayKey
         };
 
         // 1. GUARDADO LOCAL Y POR SUCURSAL INSTANTÁNEO
@@ -2066,6 +2110,9 @@
                 localStorage.setItem("lf_branch-1_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_c188dd82-7faf-41b8-948b-af8e789facba_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_la_fuente_calzada_sales", JSON.stringify(bSalesList));
+                const calzToday = lr("calzada_today_sales", []);
+                calzToday.unshift(saleRecord);
+                lw("calzada_today_sales", calzToday);
             } else if (isMollotes) {
                 localStorage.setItem("lf_mollotes_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_branch-3_sales", JSON.stringify(bSalesList));
@@ -2094,13 +2141,13 @@
         S.cart = [];
         renderCart();
         renderPOS(filtered());
-        updatePosLiveMovement();
+        await updatePosLiveMovement();
         alertInv();
         safeSilentRefresh(true);
         if (S.view === "sales") {
-            loadSales(true);
+            await loadSales(true);
         } else if (S.view === "sales-count") {
-            loadSalesCount(true);
+            await loadSalesCount(true);
         }
         const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
         toast("✓ Venta de " + money(total) + " cobrada en " + payLabel + ". Ticket #" + saleRecord.sale_number, "success", 3000);
@@ -12051,7 +12098,7 @@
             "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
             "c188dd82-7faf-41b8-948b-af8e789facba",
             "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
-            "tagarete 1", "tagarete 2", "la fuente calzada"
+            "tagarete 1", "tagarete 2", "la fuente calzada", "calzada_today"
         ];
         branchKeySuffixes.forEach(bSuffix => {
             try {
@@ -12063,7 +12110,13 @@
             } catch(e) {}
         });
 
-        // 2. Cargar ventas globales y locales activas
+        // 2. Cargar ventas globales, locales activas y última venta registrada
+        const lastPrinted = lr("last_printed_sale", null);
+        if (lastPrinted) addSaleToMap(lastPrinted);
+
+        const calzToday = lr("calzada_today_sales", []);
+        if (Array.isArray(calzToday)) calzToday.forEach(addSaleToMap);
+
         const gSales = gr("all_sales", []);
         if (Array.isArray(gSales)) gSales.forEach(addSaleToMap);
 
@@ -12203,6 +12256,31 @@
                 }
                 return matchesBranch(s, targetBranchRef);
             });
+
+        // Garantizar que las ventas registradas para Calzada estén siempre en branchSales
+        if (isCalzadaFilter) {
+            const localSources = [
+                lr("sales", []),
+                gr("all_sales", []),
+                lr("calzada_sales", []),
+                lr("calzada_today_sales", []),
+                lr("last_printed_sale") ? [lr("last_printed_sale")] : []
+            ];
+            localSources.forEach(list => {
+                if (Array.isArray(list)) {
+                    list.forEach(ls => {
+                        if (ls) {
+                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
+                            if (isCalz) {
+                                if (!branchSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                                    branchSales.unshift(ls);
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
         
         const todayStr = toDateKey();
         const datesMap = new Map();
@@ -12211,6 +12289,12 @@
             if (d) {
                 if (!datesMap.has(d)) datesMap.set(d, []);
                 datesMap.get(d).push(s);
+            }
+            if (isTodaySale(s, todayStr)) {
+                if (!datesMap.has(todayStr)) datesMap.set(todayStr, []);
+                if (!datesMap.get(todayStr).some(x => String(x.id) === String(s.id) || String(x.sale_number) === String(s.sale_number))) {
+                    datesMap.get(todayStr).unshift(s);
+                }
             }
         });
         if (!datesMap.has(todayStr)) datesMap.set(todayStr, []);
@@ -12228,6 +12312,28 @@
             rawDaySales = branchSales;
         } else if (selectedDate === "today") {
             rawDaySales = datesMap.get(todayStr) || [];
+            // Para Calzada: asegurar que cualquier venta reciente esté presente en rawDaySales
+            if (isCalzadaFilter) {
+                const localSources = [
+                    lr("sales", []),
+                    gr("all_sales", []),
+                    lr("calzada_sales", []),
+                    lr("calzada_today_sales", []),
+                    lr("last_printed_sale") ? [lr("last_printed_sale")] : []
+                ];
+                localSources.forEach(list => {
+                    if (Array.isArray(list)) {
+                        list.forEach(ls => {
+                            if (ls && isTodaySale(ls, todayStr)) {
+                                const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
+                                if (isCalz && !rawDaySales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                                    rawDaySales.unshift(ls);
+                                }
+                            }
+                        });
+                    }
+                });
+            }
             // Si para 'today' aún no hay ventas en esta sucursal pero sí hay ventas en la jornada activa reciente
             if (!rawDaySales.length && branchSales.length) {
                 const latestDate = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse()[0];
@@ -12832,7 +12938,31 @@
             return matchesBranch(s, { id: S.branchId, name: S.branchName });
         });
         const todayStr = toDateKey();
-        let todayActiveSales = currentBranchSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
+        let todayActiveSales = currentBranchSales.filter(s => isTodaySale(s, todayStr) && String(s.status||"").toUpperCase() !== "CANCELLED");
+
+        // Para Calzada: asegurar inclusión directa de ventas locales recientes
+        if (isCalzadaBranch) {
+            const localSources = [
+                lr("sales", []),
+                gr("all_sales", []),
+                lr("calzada_sales", []),
+                lr("calzada_today_sales", []),
+                lr("last_printed_sale") ? [lr("last_printed_sale")] : []
+            ];
+            localSources.forEach(list => {
+                if (Array.isArray(list)) {
+                    list.forEach(ls => {
+                        if (ls && String(ls.status || "").toUpperCase() !== "CANCELLED" && isTodaySale(ls, todayStr)) {
+                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
+                            if (isCalz && !todayActiveSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                                todayActiveSales.unshift(ls);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
         if (!todayActiveSales.length && currentBranchSales.length) {
             const datesMap = new Map();
             currentBranchSales.forEach(s => {
@@ -14133,6 +14263,12 @@
                 if (!datesMap.has(d)) datesMap.set(d, []);
                 datesMap.get(d).push(s);
             }
+            if (isTodaySale(s, todayStr)) {
+                if (!datesMap.has(todayStr)) datesMap.set(todayStr, []);
+                if (!datesMap.get(todayStr).some(x => String(x.id) === String(s.id) || String(x.sale_number) === String(s.sale_number))) {
+                    datesMap.get(todayStr).unshift(s);
+                }
+            }
         });
         if (!datesMap.has(todayStr)) datesMap.set(todayStr, []);
 
@@ -14586,6 +14722,12 @@
                 if (!datesMap.has(d)) datesMap.set(d, []);
                 datesMap.get(d).push(s);
             }
+            if (isTodaySale(s, todayStr)) {
+                if (!datesMap.has(todayStr)) datesMap.set(todayStr, []);
+                if (!datesMap.get(todayStr).some(x => String(x.id) === String(s.id) || String(x.sale_number) === String(s.sale_number))) {
+                    datesMap.get(todayStr).unshift(s);
+                }
+            }
         });
 
         const todayStr = toDateKey();
@@ -14904,7 +15046,10 @@
         const activeSales = consolidatedSales.filter(s => {
             if (String(s.status || "").toUpperCase() === "CANCELLED") return false;
             if (isAllDates) return true;
-            return toDateKey(s.created_at) === selectedDate;
+            if (selectedDate === "today" || selectedDate === todayStr) {
+                return isTodaySale(s, todayStr);
+            }
+            return toDateKey(s.created_at) === selectedDate || isTodaySale(s, selectedDate);
         });
 
         // 3. Filtros de Sucursal y Turno
@@ -14930,6 +15075,39 @@
             }
             return true;
         });
+
+        // Para Calzada: asegurar inclusión de ventas locales recientes en el conteo
+        if (isCalzadaCount) {
+            const localSources = [
+                lr("sales", []),
+                gr("all_sales", []),
+                lr("calzada_sales", []),
+                lr("calzada_today_sales", []),
+                lr("last_printed_sale") ? [lr("last_printed_sale")] : []
+            ];
+            localSources.forEach(list => {
+                if (Array.isArray(list)) {
+                    list.forEach(ls => {
+                        if (ls && String(ls.status || "").toUpperCase() !== "CANCELLED") {
+                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
+                            if (isCalz) {
+                                const matchDate = isAllDates || (selectedDate === "today" || selectedDate === todayStr ? isTodaySale(ls, todayStr) : (toDateKey(ls.created_at) === selectedDate || isTodaySale(ls, selectedDate)));
+                                if (matchDate) {
+                                    if (selectedShiftFilter !== "all") {
+                                        const shiftCat = getShiftCategory(ls);
+                                        if (selectedShiftFilter === "matutino" && shiftCat !== "matutino") return;
+                                        if (selectedShiftFilter === "vespertino" && shiftCat !== "vespertino") return;
+                                    }
+                                    if (!filteredSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                                        filteredSales.unshift(ls);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
 
         // 4. Calcular conteo por producto (Matutino vs Vespertino)
         const productStats = new Map();
