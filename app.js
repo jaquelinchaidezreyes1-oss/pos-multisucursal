@@ -1810,6 +1810,7 @@
                 gr("all_sales", []),
                 lr("calzada_sales", []),
                 lr("calzada_today_sales", []),
+                lr("all_printed_tickets", []),
                 lr("last_printed_sale") ? [lr("last_printed_sale")] : []
             ];
             localSources.forEach(list => {
@@ -2724,6 +2725,14 @@
     async function printSaleReceipt(sale) {
         if (!sale) return;
         localStorage.setItem("lf_last_printed_sale", JSON.stringify(sale));
+        try {
+            const printedHistory = lr("all_printed_tickets", []);
+            if (!printedHistory.some(x => String(x.id) === String(sale.id) || String(x.sale_number) === String(sale.sale_number))) {
+                printedHistory.unshift(sale);
+                if (printedHistory.length > 200) printedHistory.pop();
+                lw("all_printed_tickets", printedHistory);
+            }
+        } catch(e) {}
 
         // 1. Envío binario por hardware directo si Bluetooth o USB está conectado (CERO VENTANAS)
         if ((directBtChar && directBtServer && directBtServer.connected) || (directUsbDevice && directUsbDevice.opened) || (directSerialPort && directSerialPort.writable)) {
@@ -3094,6 +3103,9 @@
         }
         if (e.target.closest("#btn-direct-print-ticket")) {
             directPrintTicketAction();
+        }
+        if (e.target.closest("#btn-open-recent-tickets-modal")) {
+            if (window.changeView) window.changeView("sales");
         }
     });
 
@@ -12110,9 +12122,12 @@
             } catch(e) {}
         });
 
-        // 2. Cargar ventas globales, locales activas y última venta registrada
+        // 2. Cargar ventas globales, locales activas, tickets impresos y última venta registrada
         const lastPrinted = lr("last_printed_sale", null);
         if (lastPrinted) addSaleToMap(lastPrinted);
+
+        const printedTickets = lr("all_printed_tickets", []);
+        if (Array.isArray(printedTickets)) printedTickets.forEach(addSaleToMap);
 
         const calzToday = lr("calzada_today_sales", []);
         if (Array.isArray(calzToday)) calzToday.forEach(addSaleToMap);
@@ -12212,6 +12227,83 @@
         return consolidated;
     }
 
+    /* ── MODAL VISUAL PARA VER DETALLE Y REIMPRIMIR CUALQUIER TICKET ── */
+    function showTicketModal(sale) {
+        if (!sale) return;
+        const oldModal = document.getElementById("ticket-detail-modal");
+        if (oldModal) oldModal.remove();
+
+        const isCard = sale.payment_method === "card";
+        const isCan = String(sale.status || "").toUpperCase() === "CANCELLED";
+        const timeStr = sale.created_at ? fdt(sale.created_at) : "--:--";
+
+        const modal = document.createElement("div");
+        modal.id = "ticket-detail-modal";
+        modal.className = "modal open";
+        modal.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;";
+
+        modal.innerHTML = `
+        <div style="background:#fff;border-radius:18px;max-width:440px;width:100%;padding:22px;box-shadow:0 10px 30px rgba(0,0,0,0.3);position:relative;border:2px solid var(--gold-400);max-height:90vh;overflow-y:auto;box-sizing:border-box">
+            <button type="button" id="btn-close-ticket-modal" style="position:absolute;top:14px;right:14px;background:#f1f5f9;border:none;border-radius:50%;width:32px;height:32px;font-weight:900;cursor:pointer;color:#475569;font-size:16px">✕</button>
+            <div style="text-align:center;border-bottom:2px dashed #cbd5e1;padding-bottom:14px;margin-bottom:14px">
+                <div style="font-size:18px;font-weight:900;color:var(--wine-900)">🍦 NEVERIA LA FUENTE</div>
+                <div style="font-size:11px;color:#64748b;font-weight:800;letter-spacing:1px">-- DESDE 1962 --</div>
+                <div style="font-size:10px;color:#64748b;margin-top:2px">PALETERIA Y NEVERIA ARTESANAL</div>
+            </div>
+
+            <div style="font-size:12px;color:#334155;line-height:1.6;margin-bottom:14px;background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0">
+                <div><strong>SUCURSAL:</strong> 📍 ${esc(sale.branch_name || S.branchName)}</div>
+                <div><strong>TURNO:</strong> ${esc(sale.shift_name || S.shift)}</div>
+                <div><strong>FECHA:</strong> 📅 ${timeStr}</div>
+                <div><strong>ATENDIÓ:</strong> ${esc(sale.cashier_name || "Encargada")}</div>
+                <div><strong>TICKET:</strong> <strong style="color:var(--wine-800);font-size:13px">#${esc(sale.sale_number || sale.id)}</strong></div>
+                <div><strong>ESTADO:</strong> <span style="font-weight:900;color:${isCan?'#dc2626':'#16a34a'}">${isCan?'🚫 CANCELADA':'✓ COBRADA'}</span></div>
+                <div><strong>MÉTODO DE PAGO:</strong> <span style="font-weight:900">${isCard?'💳 TARJETA':'💵 EFECTIVO'}</span></div>
+            </div>
+
+            <div style="margin-bottom:16px">
+                <div style="font-size:11.5px;font-weight:900;color:#0f172a;border-bottom:1.5px solid #0f172a;padding-bottom:4px;display:flex;justify-content:space-between">
+                    <span style="width:20%">CANT</span>
+                    <span style="width:55%">DESCRIPCIÓN</span>
+                    <span style="width:25%;text-align:right">TOTAL</span>
+                </div>
+                <div style="max-height:180px;overflow-y:auto;padding-top:6px">
+                    ${(sale.items || []).map(i => `
+                    <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px dashed #e2e8f0">
+                        <span style="width:20%;font-weight:800;color:#334155">${i.quantity}x</span>
+                        <span style="width:55%;color:#0f172a">${esc(i.product_name || 'Producto')}</span>
+                        <span style="width:25%;text-align:right;font-weight:800">${money(i.subtotal != null ? i.subtotal : (i.price * i.quantity))}</span>
+                    </div>`).join("")}
+                </div>
+            </div>
+
+            <div style="border-top:2px dashed #cbd5e1;padding-top:10px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:15px;font-weight:900;color:#0f172a">TOTAL COBRADO:</span>
+                <span style="font-size:22px;font-weight:900;color:var(--wine-800)">${money(sale.total)}</span>
+            </div>
+
+            <div style="display:flex;gap:10px">
+                <button type="button" id="btn-modal-reprint" style="flex:1;padding:12px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12.5px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 3px 10px rgba(0,0,0,0.2)">
+                    🖨️ REIMPRIMIR TICKET FÍSICO
+                </button>
+                <button type="button" id="btn-modal-close-ticket" style="padding:12px 18px;background:#f1f5f9;color:#334155;border:1.5px solid #cbd5e1;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer">
+                    Cerrar
+                </button>
+            </div>
+        </div>`;
+
+        document.body.appendChild(modal);
+
+        modal.querySelector("#btn-close-ticket-modal").onclick = () => modal.remove();
+        modal.querySelector("#btn-modal-close-ticket").onclick = () => modal.remove();
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+        modal.querySelector("#btn-modal-reprint").onclick = () => {
+            try { printSaleReceipt(sale); } catch(e) {}
+            toast(`🖨️ Reimprimiendo ticket #${sale.sale_number || sale.id}…`, "info", 3000);
+        };
+    }
+
     async function loadSales(silent = false) {
         const c = $("#sales-container");
         if (!c) return;
@@ -12264,6 +12356,7 @@
                 gr("all_sales", []),
                 lr("calzada_sales", []),
                 lr("calzada_today_sales", []),
+                lr("all_printed_tickets", []),
                 lr("last_printed_sale") ? [lr("last_printed_sale")] : []
             ];
             localSources.forEach(list => {
@@ -12319,6 +12412,7 @@
                     gr("all_sales", []),
                     lr("calzada_sales", []),
                     lr("calzada_today_sales", []),
+                    lr("all_printed_tickets", []),
                     lr("last_printed_sale") ? [lr("last_printed_sale")] : []
                 ];
                 localSources.forEach(list => {
@@ -12508,19 +12602,33 @@
                     </button>
                 </div>
             </div>
+
+            <!-- BUSCADOR RÁPIDO DE TICKETS EN VIVO -->
+            <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <div style="position:relative;flex:1;min-width:280px">
+                    <input type="text" id="sales-search-input" value="${esc(S.salesSearchQuery || '')}"
+                        placeholder="🔍 Buscar por # de ticket, producto, cajera o monto ($)..."
+                        style="width:100%;padding:9px 36px 9px 36px;border:1.5px solid var(--gold-400);border-radius:10px;font-size:12.5px;font-weight:700;outline:none;background:#fcfbf9;color:#1e293b;box-sizing:border-box">
+                    <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#94a3b8">🔍</span>
+                    <button type="button" id="btn-clear-sales-search" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-weight:900;font-size:14px;color:#94a3b8;${S.salesSearchQuery?'':'display:none'}">✕</button>
+                </div>
+                <span id="sales-search-count-badge" style="font-size:12px;font-weight:800;color:var(--wine-800);background:#fef3c7;padding:4px 10px;border-radius:8px;border:1px solid #fde68a;${S.salesSearchQuery?'':'display:none'}">
+                    ${S.salesSearchQuery ? `Filtrando resultados` : ''}
+                </span>
+            </div>
         </div>
 
         <!-- LISTA DE TICKETS Y VENTAS -->
         ${targetList.length ? `
-        <div style="display:flex;flex-direction:column;gap:12px">
+        <div id="sales-list-cards-container" style="display:flex;flex-direction:column;gap:12px">
             ${targetList.map(s => {
                 const isCan = String(s.status||"").toUpperCase() === "CANCELLED";
                 const isCard = s.payment_method === "card";
                 const shiftCat = getShiftCategory(s);
                 const isMat = shiftCat === "matutino";
                 const timeStr = s.created_at ? fdt(s.created_at) : "--:--";
-                return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                    <div style="flex:1;min-width:280px">
+                return `<article class="sale-card" data-sale-id="${esc(s.id)}" data-sale-num="${esc(s.sale_number || s.id)}" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;cursor:pointer;transition:border-color 0.2s, box-shadow 0.2s">
+                    <div style="flex:1;min-width:280px" class="sale-card-info-area">
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
                             <strong style="font-size:15px;color:var(--wine-900)">#${esc(s.sale_number || s.id)} — 📍 ${esc(s.branch_name || S.branchName)}</strong>
                             <span style="font-size:10.5px;padding:3px 9px;border-radius:10px;font-weight:900;${isMat?'background:#fef3c7;color:#92400e;border:1px solid #fde68a':'background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe'}">
@@ -12547,8 +12655,12 @@
 
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                         <strong style="font-size:20px;color:${isCan?'#991b1b':'var(--wine-700)'};font-weight:900">${money(s.total)}</strong>
+                        <button type="button" class="btn-view-ticket-modal" data-id="${esc(s.id)}"
+                            style="padding:8px 12px;background:#f8fafc;color:#1e293b;border:1.5px solid #cbd5e1;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
+                            👁️ Ver Ticket
+                        </button>
                         <button type="button" class="btn-reprint-sale" data-id="${esc(s.id)}"
-                            style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer">
+                            style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
                             🖨️ Reimprimir
                         </button>
                         ${!isCan ? `
@@ -12614,10 +12726,72 @@
             toast("Ventas actualizadas.", "info");
         });
 
-        c.querySelectorAll(".btn-reprint-sale").forEach(btn => btn.addEventListener("click", () => {
+        // Buscador interactivo en vivo de tickets
+        const sInput = c.querySelector("#sales-search-input");
+        const clearBtn = c.querySelector("#btn-clear-sales-search");
+        const badgeEl = c.querySelector("#sales-search-count-badge");
+        if (sInput) {
+            const doFilter = () => {
+                const query = (sInput.value || "").toLowerCase().trim();
+                S.salesSearchQuery = sInput.value;
+                if (clearBtn) clearBtn.style.display = query ? "block" : "none";
+                let matched = 0;
+                c.querySelectorAll(".sale-card").forEach(card => {
+                    const text = card.textContent.toLowerCase();
+                    const matches = !query || text.includes(query);
+                    card.style.display = matches ? "flex" : "none";
+                    if (matches) matched++;
+                });
+                if (badgeEl) {
+                    badgeEl.style.display = query ? "inline" : "none";
+                    badgeEl.textContent = query ? `Encontrados: ${matched} ticket(s)` : "";
+                }
+            };
+            sInput.addEventListener("input", doFilter);
+            if (clearBtn) {
+                clearBtn.addEventListener("click", () => {
+                    sInput.value = "";
+                    S.salesSearchQuery = "";
+                    doFilter();
+                    sInput.focus();
+                });
+            }
+            if (S.salesSearchQuery) doFilter();
+        }
+
+        // Función de resolución infalible de venta para reimpresión y vista previa
+        const findSaleById = (sid) => {
+            return targetList.find(x => String(x.id) === sid || String(x.sale_number) === sid) ||
+                   branchSales.find(x => String(x.id) === sid || String(x.sale_number) === sid) ||
+                   consolidated.find(x => String(x.id) === sid || String(x.sale_number) === sid) ||
+                   (lr("all_printed_tickets", []) || []).find(x => String(x.id) === sid || String(x.sale_number) === sid) ||
+                   (lr("calzada_sales", []) || []).find(x => String(x.id) === sid || String(x.sale_number) === sid) ||
+                   (lr("sales", []) || []).find(x => String(x.id) === sid || String(x.sale_number) === sid) ||
+                   (lr("last_printed_sale") && (String(lr("last_printed_sale").id) === sid || String(lr("last_printed_sale").sale_number) === sid) ? lr("last_printed_sale") : null);
+        };
+
+        // Modal para ver ticket en detalle
+        c.querySelectorAll(".btn-view-ticket-modal").forEach(btn => btn.addEventListener("click", (e) => {
+            e.stopPropagation();
             const sid = String(btn.dataset.id);
-            const target = consolidated.find(x => String(x.id) === sid || String(x.sale_number) === sid);
-            if (!target) return toast("No se encontró la venta.", "warn");
+            const target = findSaleById(sid);
+            if (!target) return toast("No se encontró el detalle del ticket.", "warn");
+            showTicketModal(target);
+        }));
+
+        c.querySelectorAll(".sale-card").forEach(card => card.addEventListener("click", (e) => {
+            if (e.target.closest("button")) return;
+            const sid = String(card.dataset.saleId || card.dataset.saleNum);
+            const target = findSaleById(sid);
+            if (target) showTicketModal(target);
+        }));
+
+        // Reimpresión directa con búsqueda profunda de respaldo
+        c.querySelectorAll(".btn-reprint-sale").forEach(btn => btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const sid = String(btn.dataset.id);
+            const target = findSaleById(sid);
+            if (!target) return toast("No se encontró la venta para reimprimir.", "warn");
             try { printSaleReceipt(target); } catch(e) {}
             toast(`🖨️ Reimprimiendo ticket #${target.sale_number || target.id}…`, "info", 3000);
         }));
