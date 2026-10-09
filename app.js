@@ -893,13 +893,40 @@
         }
         c.innerHTML = `<div class="branch-selector-box"><label>CAMBIAR SUCURSAL (👑)</label>
             <select id="branch-selector" class="branch-select-dropdown">
-                ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(S.branchId)?" selected":""}>${esc(b.name)}</option>`).join("")}
+                <option value="all"${S.branchId==="all"?" selected":""}>🏢 Todas las Sucursales (Consolidado Global)</option>
+                ${S.branches.map(b => `<option value="${esc(b.id)}"${String(b.id)===String(S.branchId)?" selected":""}>📍 ${esc(b.name)}</option>`).join("")}
             </select></div>`;
         $("#branch-selector")?.addEventListener("change", async e => await changeBranch(e.target.value));
     }
 
     async function changeBranch(id) {
         if (!S.isSU) return;
+        if (id === "all") {
+            S.branchId = "all";
+            S.branchName = "Todas las Sucursales";
+            S.cutsFilterBranchId = "all";
+            S.salesFilterBranchId = "all";
+            S.shiftFilterBranchId = "all";
+            S.damageBranchFilter = "all";
+            S.salesCountBranch = "all";
+            S.accBranchFilter = "all";
+            S.prodSummaryBranch = "all";
+            updateUI();
+            renderSel();
+            document.querySelectorAll("#branch-selector, #inv-branch-filter, #sales-branch-filter, #admin-branch-filter, #cuts-branch-filter, #shift-branch-filter, #sel-damage-branch-filter, #sc-branch-filter, #acc-branch-filter, #sel-summary-branch").forEach(sel => {
+                if (sel) sel.value = "all";
+            });
+            if (S.view === "private-access") await loadPrivateAccess();
+            if (S.view === "accounting")     await loadAccounting();
+            if (S.view === "sales")          await loadSales();
+            if (S.view === "cuts")           await loadCuts();
+            if (S.view === "sales-count")    await loadSalesCount();
+            if (S.view === "inventory")      await loadInventory();
+            updatePosLiveMovement();
+            toast("🏢 Vista global activada: Todas las Sucursales en vivo", "info", 3000);
+            return;
+        }
+
         const targetCanonical = resolveCanonicalBranch(id);
         let b = S.branches.find(x => resolveCanonicalBranch(x) === targetCanonical);
         if (!b) {
@@ -908,7 +935,7 @@
         if (!b) return;
 
         // 1. Guardar inventario de la sucursal previa
-        if (S.branchId && S.inv && Object.keys(S.inv).length) {
+        if (S.branchId && S.branchId !== "all" && S.inv && Object.keys(S.inv).length) {
             saveBranchInv();
         }
 
@@ -920,6 +947,8 @@
         S.shiftFilterBranchId = b.id;
         S.damageBranchFilter = b.id;
         S.salesCountBranch = b.id;
+        S.accBranchFilter = b.id;
+        S.prodSummaryBranch = b.id;
         S.currentShift = null;
         S.cart = [];
         
@@ -932,7 +961,7 @@
         alertInv();
         
         // Sincronizar todos los selectores de sucursales en la vista
-        document.querySelectorAll("#branch-selector, #inv-branch-filter, #sales-branch-filter, #admin-branch-filter, #cuts-branch-filter, #shift-branch-filter, #sel-damage-branch-filter, #sc-branch-filter").forEach(sel => {
+        document.querySelectorAll("#branch-selector, #inv-branch-filter, #sales-branch-filter, #admin-branch-filter, #cuts-branch-filter, #shift-branch-filter, #sel-damage-branch-filter, #sc-branch-filter, #acc-branch-filter, #sel-summary-branch").forEach(sel => {
             if (sel) sel.value = b.id;
         });
 
@@ -949,6 +978,7 @@
         if (S.view === "private-access") await loadPrivateAccess();
         if (S.view === "damage-reports") await loadDamageReports();
         if (S.view === "accounting")     await loadAccounting();
+        if (S.view === "sales-count")    await loadSalesCount();
         updatePosLiveMovement();
         
         toast("📍 Sucursal activa: " + S.branchName + " (Inventario y Cortes actualizados)", "success", 3000);
@@ -4001,6 +4031,8 @@
     /* ── MIS VENTAS (FILTRO POR FECHA, TURNOS, MÉTODO DE PAGO Y CANCELACIONES) ── */
     let _lastSalesFetchTime = 0;
     let _cachedConsolidatedSales = null;
+    let _lastCutsFetchTime = 0;
+    let _cachedConsolidatedCuts = null;
 
     // Ventas y cortes de respaldo activo de la jornada para turnos matutinos y vespertinos
     const BASE_ACTIVE_SALES = [
@@ -12005,7 +12037,7 @@
 
     async function getConsolidatedSalesForChain(forceRefresh = false) {
         const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 2500)) {
+        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 30000)) {
             return _cachedConsolidatedSales;
         }
         let remoteSales = [];
@@ -12014,7 +12046,7 @@
                 const {data, error} = await safeQuery(db.from("sales")
                     .select("*")
                     .order("created_at", {ascending:false})
-                    .limit(5000), null, 1500);
+                    .limit(300), null, 1500);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
@@ -12933,7 +12965,11 @@
 
 
     /* ── CORTES DE CAJA (ARQUEOS Y CIERRES DE TURNO) ── */
-    async function getConsolidatedCutsForChain() {
+    async function getConsolidatedCutsForChain(forceRefresh = false) {
+        const nowMs = Date.now();
+        if (!forceRefresh && _cachedConsolidatedCuts && (nowMs - _lastCutsFetchTime < 30000)) {
+            return _cachedConsolidatedCuts;
+        }
         const cutsMap = new Map();
 
         // 1. Cargar cortes con asignación inequívoca de sucursal y turno
@@ -13016,7 +13052,7 @@
         // Cortes remotos desde Supabase
         if (db) {
             try {
-                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}), null, 5000);
+                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}).limit(200), null, 2000);
                 if (data && data.length) {
                     data.forEach(ct => {
                         let obs = {};
@@ -13066,6 +13102,8 @@
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
         gw("all_cuts", consolidatedCuts);
+        _lastCutsFetchTime = Date.now();
+        _cachedConsolidatedCuts = consolidatedCuts;
         return consolidatedCuts;
     }
 
@@ -14451,12 +14489,28 @@
         const isAllDates = (selectedDate === "all");
 
         // Ventas activas para la fecha seleccionada (o todas)
-        const todaySales = isAllDates
+        let todaySales = isAllDates
             ? consolidatedSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED")
             : (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
 
+        // Si para 'today' aún no hay ventas pero la red tiene ventas registradas, utilizar la jornada activa reciente
+        if (!todaySales.length && consolidatedSales.length && (selectedDate === "today" || selectedDate === todayStr)) {
+            const availableDates = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse();
+            if (availableDates.length) {
+                const fallbackDate = availableDates[0];
+                todaySales = (datesMap.get(fallbackDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
+            }
+        }
+
         const allReps = gr("all_damage_reports", []);
         const pendingReps = allReps.filter(r => r.status !== "reviewed");
+
+        // Identificar si hay una sucursal seleccionada en el menú superior o si se ve toda la red
+        const activeBranchFilter = S.branchId || "all";
+        const isSingleBranch = (activeBranchFilter !== "all");
+        const activeBranchObj = isSingleBranch
+            ? (S.branches.find(b => String(b.id) === String(activeBranchFilter) || resolveCanonicalBranch(b) === resolveCanonicalBranch(S.branchName)) || { id: activeBranchFilter, name: S.branchName })
+            : null;
 
         let chainTotal = 0;
         let chainCashTotal = 0;
@@ -14495,22 +14549,60 @@
             };
         });
 
+        // Métricas de la sucursal seleccionada si aplica
+        let branchTargetSales = [];
+        let branchTargetTotal = 0;
+        let branchTargetCash = 0;
+        let branchTargetCard = 0;
+        let branchTargetMat = 0;
+        let branchTargetVes = 0;
+
+        if (isSingleBranch && activeBranchObj) {
+            branchTargetSales = todaySales.filter(s => matchesBranch(s, activeBranchObj));
+            if (resolveCanonicalBranch(activeBranchObj) === "La Fuente Calzada") {
+                const localCalz = [
+                    ...lr("sales", []),
+                    ...lr("calzada_sales", []),
+                    ...lr("calzada_today_sales", []),
+                    ...lr("all_printed_tickets", []),
+                    ...(lr("last_printed_sale") ? [lr("last_printed_sale")] : [])
+                ];
+                localCalz.forEach(ls => {
+                    if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED") {
+                        if (!branchTargetSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                            branchTargetSales.unshift(ls);
+                        }
+                    }
+                });
+            }
+            branchTargetTotal = branchTargetSales.reduce((acc, s) => acc + Number(s.total || 0), 0);
+            branchTargetCash = branchTargetSales.filter(s => (s.payment_method || "cash") === "cash").reduce((acc, s) => acc + Number(s.total || 0), 0);
+            branchTargetCard = branchTargetSales.filter(s => s.payment_method === "card").reduce((acc, s) => acc + Number(s.total || 0), 0);
+            branchTargetMat = branchTargetSales.filter(s => getShiftCategory(s) === "matutino").reduce((acc, s) => acc + Number(s.total || 0), 0);
+            branchTargetVes = branchTargetSales.filter(s => getShiftCategory(s) === "vespertino").reduce((acc, s) => acc + Number(s.total || 0), 0);
+        }
+
         // Últimas 20 ventas en vivo de la red completa
         const liveRecentSales = (todaySales.length ? todaySales : consolidatedSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED")).slice(0, 20);
+
+        const currentSummaryBranch = S.prodSummaryBranch || (isSingleBranch ? activeBranchObj.id : "all");
 
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;background:var(--wine-50);border:1.5px solid var(--wine-200);padding:14px 20px;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
             <div style="display:flex;align-items:center;gap:12px">
                 <span style="font-size:24px">📅</span>
                 <div>
-                    <strong style="color:var(--wine-900);font-size:15px;display:block">AUDITORÍA Y VENTAS EN TIEMPO REAL DIRECTIVAS</strong>
-                    <small style="color:var(--wine-700)">Mostrando sucursales para: <strong style="color:var(--wine-900)">${selectedDate === todayStr ? '🟢 HOY (' + selectedDate + ')' : (selectedDate === 'all' ? '🌐 TODAS LAS FECHAS' : '📆 ' + selectedDate)}</strong></small>
+                    <strong style="color:var(--wine-900);font-size:15px;display:block">
+                        AUDITORÍA Y VENTAS EN TIEMPO REAL DIRECTIVAS — ${isSingleBranch ? esc(activeBranchObj.name) : 'TODA LA RED (6 SUCURSALES)'}
+                    </strong>
+                    <small style="color:var(--wine-700)">Mostrando datos para: <strong style="color:var(--wine-900)">${selectedDate === todayStr ? '🟢 HOY (' + selectedDate + ')' : (selectedDate === 'all' ? '🌐 TODAS LAS FECHAS' : '📆 ' + selectedDate)}</strong></small>
                 
-            <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
-                <button type="button" id="btn-clean-su-cache" style="padding:6px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">
-                    🧹 Limpiar Caché de Superusuario
-                </button>
-            </div></div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+                        <button type="button" id="btn-clean-su-cache" style="padding:6px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">
+                            🧹 Limpiar Caché de Superusuario
+                        </button>
+                    </div>
+                </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
                 <label style="font-size:12px;font-weight:700;color:var(--wine-800)">Filtrar Fecha:</label>
@@ -14520,14 +14612,41 @@
                     <option value="all" ${selectedDate === 'all' ? 'selected' : ''}>🌐 Todas las fechas</option>
                 </select>
             
-            <div style="display:flex;align-items:center;gap:8px;margin-top:10px;width:100%;justify-content:flex-end">
-                <button type="button" id="btn-close-business-day" style="padding:10px 18px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);display:flex;align-items:center;gap:6px">
-                    <span>🔒</span><span>Realizar Corte General & Cerrar Día Oficial</span>
-                </button>
-            </div></div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:10px;width:100%;justify-content:flex-end">
+                    <button type="button" id="btn-close-business-day" style="padding:10px 18px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);display:flex;align-items:center;gap:6px">
+                        <span>🔒</span><span>Realizar Corte General & Cerrar Día Oficial</span>
+                    </button>
+                </div>
+            </div>
         </div>
 
-        
+        <!-- TARJETAS PRINCIPALES DE RESUMEN (ADAPTADAS A LA SUCURSAL SELECCIONADA O RED COMPLETA) -->
+        ${isSingleBranch && activeBranchObj ? `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
+            <div class="dashboard-card" style="background:linear-gradient(135deg,#44060e,#7a0c1c);color:#fff;border:2px solid var(--gold-400);padding:22px;border-radius:18px;box-shadow:0 6px 18px rgba(0,0,0,0.25)">
+                <span style="color:#fef08a;font-size:10px;font-weight:900;letter-spacing:1px">VENTAS EN VIVO — ${esc(activeBranchObj.name.toUpperCase())}</span>
+                <div style="font-size:30px;font-weight:900;margin:6px 0;color:#ffffff">${money(branchTargetTotal)}</div>
+                <small style="color:#fde68a">📍 ${esc(activeBranchObj.name)} • ${branchTargetSales.length} Tickets Cobrados</small>
+            </div>
+            <div class="dashboard-card" style="padding:22px;border-radius:18px;border-left:5px solid #16a34a;background:#fff">
+                <span style="color:var(--text-muted);font-size:10px;font-weight:900">💵 TOTAL EFECTIVO (${esc(activeBranchObj.name)})</span>
+                <div style="font-size:26px;font-weight:900;color:#15803d;margin:6px 0">${money(branchTargetCash)}</div>
+                <small style="color:var(--text-muted)">Dinero líquido en caja</small>
+            </div>
+            <div class="dashboard-card" style="padding:22px;border-radius:18px;border-left:5px solid #2563eb;background:#fff">
+                <span style="color:var(--text-muted);font-size:10px;font-weight:900">💳 TOTAL TARJETA (${esc(activeBranchObj.name)})</span>
+                <div style="font-size:26px;font-weight:900;color:#1d4ed8;margin:6px 0">${money(branchTargetCard)}</div>
+                <small style="color:var(--text-muted)">Terminales bancarias</small>
+            </div>
+            <div class="dashboard-card" style="padding:22px;border-radius:18px;border-left:5px solid #d97706;background:#fff">
+                <span style="color:var(--text-muted);font-size:10px;font-weight:900">🌅 MATUTINO / 🌇 VESPERTINO</span>
+                <div style="font-size:15px;font-weight:800;color:var(--wine-900);margin:6px 0">
+                    🌅 ${money(branchTargetMat)} <span style="color:var(--text-muted);font-size:12px">|</span> 🌇 ${money(branchTargetVes)}
+                </div>
+                <small style="color:var(--text-muted)">Desglose por turnos de ${esc(activeBranchObj.name)}</small>
+            </div>
+        </div>
+        ` : `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
             <div class="dashboard-card" style="background:linear-gradient(135deg,#44060e,#7a0c1c);color:#fff;border-color:var(--gold-400);padding:22px;border-radius:18px">
                 <span style="color:#fef08a;font-size:10px;font-weight:900;letter-spacing:1px">VENTA TOTAL CONSOLIDADA HOY</span>
@@ -14552,6 +14671,7 @@
                 <small style="color:var(--text-muted)">Desglose por turnos de red</small>
             </div>
         </div>
+        `}
 
         <!-- ══ SECCIÓN: RESUMEN DIARIO DE PRODUCTOS VENDIDOS & PRODUCCIÓN ══ -->
         <div style="margin-bottom:24px;border:2px solid var(--gold-400);border-radius:18px;background:#ffffff;box-shadow:0 4px 18px rgba(0,0,0,0.18);overflow:hidden">
@@ -14566,8 +14686,8 @@
                 <div style="display:flex;align-items:center;gap:10px">
                     <label style="font-size:12px;font-weight:900;color:#ffffff">📍 Ver Sucursal:</label>
                     <select id="sel-summary-branch" style="background:#ffffff;color:#1a0205;font-weight:900;font-size:12.5px;border-radius:10px;padding:7px 14px;border:2px solid var(--gold-400);cursor:pointer;outline:none;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
-                        <option value="all" ${(!S.prodSummaryBranch || S.prodSummaryBranch === "all") ? "selected" : ""}>🌐 Todas las Sucursales</option>
-                        ${S.branches.map(b => `<option value="${b.id}" ${S.prodSummaryBranch === b.id ? "selected" : ""}>📍 ${esc(b.name)}</option>`).join("")}
+                        <option value="all" ${currentSummaryBranch === "all" ? "selected" : ""}>🌐 Todas las Sucursales</option>
+                        ${S.branches.map(b => `<option value="${b.id}" ${String(b.id) === String(currentSummaryBranch) || (isSingleBranch && resolveCanonicalBranch(b) === resolveCanonicalBranch(activeBranchObj)) ? "selected" : ""}>📍 ${esc(b.name)}</option>`).join("")}
                     </select>
                 </div>
             </div>
@@ -14577,18 +14697,24 @@
         </div>
 
         <h3 style="font-size:20px;font-weight:900;color:#ffffff;margin-bottom:18px;display:flex;align-items:center;gap:10px;text-shadow:0 2px 4px rgba(0,0,0,0.4)">
-            <span style="font-size:22px">📍</span> Monitor de Red en Vivo (6 Sucursales)
+            <span style="font-size:22px">📍</span> Monitor de Red en Vivo (6 Sucursales) ${isSingleBranch ? `— <small style="font-size:14px;color:#fef08a;font-weight:800">(Filtrando: ${esc(activeBranchObj.name)})</small>` : ''}
         </h3>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-bottom:30px">
-            ${summary.map(b => `
-                <div class="dashboard-card" style="border-radius:18px;border:1.5px solid var(--gold-400);padding:20px;position:relative;background:linear-gradient(145deg,#44060e,#1a0205);box-shadow:0 6px 18px rgba(0,0,0,0.25)">
+            ${summary.map(b => {
+                const isThisBranchSelected = isSingleBranch && (String(b.id) === String(activeBranchObj?.id) || resolveCanonicalBranch(b) === resolveCanonicalBranch(activeBranchObj));
+                return `
+                <div class="dashboard-card branch-monitor-item" data-bid="${b.id}" data-bname="${esc(b.name)}" style="border-radius:18px;border:${isThisBranchSelected ? '2.5px solid var(--gold-400)' : '1.5px solid rgba(188,132,10,0.5)'};padding:20px;position:relative;background:linear-gradient(145deg,#44060e,#1a0205);box-shadow:${isThisBranchSelected ? '0 0 20px rgba(245,158,11,0.45)' : '0 6px 18px rgba(0,0,0,0.25)'};cursor:pointer;transition:transform 0.15s, box-shadow 0.15s">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
                         <h4 style="margin:0;font-size:17px;font-weight:900;color:#ffffff;display:flex;align-items:center;gap:8px">
                             <span style="font-size:20px">🍦</span> ${esc(b.name)}
                         </h4>
-                        <span style="font-size:11px;font-weight:900;padding:4px 10px;border-radius:20px;${b.sales > 0 ? 'background:#dcfce7;color:#15803d;border:1px solid #86efac' : 'background:#fef3c7;color:#92400e;border:1px solid #fcd34d'}">
-                            ${b.sales > 0 ? '🟢 EN VIVO' : '🟡 LISTO'}</span>
+                        <div style="display:flex;align-items:center;gap:6px">
+                            ${isThisBranchSelected ? `<span style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:12px;background:#fef08a;color:#854d0e;border:1px solid #fde047">👑 ACTIVA</span>` : ''}
+                            <span style="font-size:11px;font-weight:900;padding:4px 10px;border-radius:20px;${b.sales > 0 ? 'background:#dcfce7;color:#15803d;border:1px solid #86efac' : 'background:#fef3c7;color:#92400e;border:1px solid #fcd34d'}">
+                                ${b.sales > 0 ? '🟢 EN VIVO' : '🟡 LISTO'}
+                            </span>
+                        </div>
                     </div>
                     <div style="background:#ffffff;border:1.5px solid #e2e8f0;border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -14619,8 +14745,8 @@
                     <button class="btn btn-sm btn-primary btn-operate-branch" data-bid="${b.id}" data-bname="${esc(b.name)}" style="width:100%;font-size:12px;font-weight:900;padding:10px;background:linear-gradient(135deg,var(--gold-400),var(--gold-600));color:#1a0205;border:none;border-radius:10px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25)">
                         Operar esta Sucursal →
                     </button>
-                </div>
-            `).join("")}
+                </div>`;
+            }).join("")}
         </div>`;
 
         // Renderizar tabla de resumen de productos
@@ -14704,42 +14830,41 @@
             });
         }
 
+        c.querySelectorAll(".branch-monitor-item").forEach(card => {
+            card.addEventListener("click", async (e) => {
+                if (e.target.closest("button")) return;
+                const bId = card.dataset.bid;
+                if (bId) {
+                    await changeBranch(bId);
+                }
+            });
+        });
+
         c.querySelectorAll(".btn-operate-branch").forEach(btn => {
-            btn.addEventListener("click", () => {
+            btn.addEventListener("click", async () => {
                 const bId = btn.dataset.bid;
-                const bName = btn.dataset.bname;
-                if (bId && bName) {
-                    S.branchId = bId;
-                    S.branchName = bName;
-                    renderSel();
+                if (bId) {
+                    await changeBranch(bId);
                     if (window.changeView) window.changeView("pos");
                 }
             });
         });
 
         c.querySelectorAll(".btn-view-branch-sales").forEach(btn => {
-            btn.addEventListener("click", () => {
+            btn.addEventListener("click", async () => {
                 const bId = btn.dataset.bid;
-                const bName = btn.dataset.bname;
-                if (bId && bName) {
-                    S.branchId = bId;
-                    S.branchName = bName;
-                    S.salesFilterBranchId = bId;
-                    renderSel();
+                if (bId) {
+                    await changeBranch(bId);
                     if (window.changeView) window.changeView("sales");
                 }
             });
         });
 
         c.querySelectorAll(".btn-view-branch-cuts").forEach(btn => {
-            btn.addEventListener("click", () => {
+            btn.addEventListener("click", async () => {
                 const bId = btn.dataset.bid;
-                const bName = btn.dataset.bname;
-                if (bId && bName) {
-                    S.branchId = bId;
-                    S.branchName = bName;
-                    S.cutBranchFilter = bId;
-                    renderSel();
+                if (bId) {
+                    await changeBranch(bId);
                     if (window.changeView) window.changeView("cuts");
                 }
             });
@@ -14889,6 +15014,7 @@
         const grandHistoricalCard = allHistoricalActive.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0), 0);
         const grandHistoricalTickets = allHistoricalActive.length;
 
+        const todayStr = toDateKey();
         const datesMap = new Map();
         allSales.forEach(s => {
             const d = toDateKey(s.created_at);
@@ -14904,7 +15030,6 @@
             }
         });
 
-        const todayStr = toDateKey();
         if (!datesMap.has(todayStr)) {
             datesMap.set(todayStr, []);
         }
@@ -14916,22 +15041,63 @@
         const selectedDate = S.accHistoryFilterDate || todayStr;
         const isAllDates = (selectedDate === "all");
 
-        const activeUnarchivedSales = isAllDates
+        let activeUnarchivedSales = isAllDates
             ? allHistoricalActive
             : (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
 
-        const dateCuts = isAllDates
+        // Fallback a jornada activa si hoy aún no tiene ventas registradas
+        if (!activeUnarchivedSales.length && allHistoricalActive.length && (selectedDate === "today" || selectedDate === todayStr)) {
+            const availableDates = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse();
+            if (availableDates.length) {
+                const fallbackDate = availableDates[0];
+                activeUnarchivedSales = (datesMap.get(fallbackDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
+            }
+        }
+
+        let dateCuts = isAllDates
             ? allCuts
             : allCuts.filter(c => toDateKey(c.created_at) === (selectedDate === "today" ? todayStr : selectedDate) || String(c.created_at||"").slice(0,10) === (selectedDate === "today" ? todayStr : selectedDate));
 
-        const totalSelectedDate = activeUnarchivedSales.reduce((acc,s) => acc + Number(s.total||0), 0);
-        const cashSalesChain = activeUnarchivedSales.filter(s => (s.payment_method || "cash") === "cash");
-        const cardSalesChain = activeUnarchivedSales.filter(s => s.payment_method === "card");
+        // Filtro de Sucursal en Contabilidad
+        const activeBranchFilter = S.accBranchFilter || S.branchId || "all";
+        const isSingleBranch = (activeBranchFilter !== "all");
+        const activeBranchObj = isSingleBranch
+            ? (S.branches.find(b => String(b.id) === String(activeBranchFilter) || resolveCanonicalBranch(b) === resolveCanonicalBranch(activeBranchFilter)) || { id: activeBranchFilter, name: S.branchName })
+            : null;
+
+        let displaySales = activeUnarchivedSales;
+        let displayCuts = dateCuts;
+
+        if (isSingleBranch && activeBranchObj) {
+            displaySales = activeUnarchivedSales.filter(s => matchesBranch(s, activeBranchObj));
+            displayCuts = dateCuts.filter(c => matchesBranch(c, activeBranchObj));
+
+            if (resolveCanonicalBranch(activeBranchObj) === "La Fuente Calzada") {
+                const localCalz = [
+                    ...lr("sales", []),
+                    ...lr("calzada_sales", []),
+                    ...lr("calzada_today_sales", []),
+                    ...lr("all_printed_tickets", []),
+                    ...(lr("last_printed_sale") ? [lr("last_printed_sale")] : [])
+                ];
+                localCalz.forEach(ls => {
+                    if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED") {
+                        if (!displaySales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                            displaySales.unshift(ls);
+                        }
+                    }
+                });
+            }
+        }
+
+        const totalSelectedDate = displaySales.reduce((acc,s) => acc + Number(s.total||0), 0);
+        const cashSalesChain = displaySales.filter(s => (s.payment_method || "cash") === "cash");
+        const cardSalesChain = displaySales.filter(s => s.payment_method === "card");
         const totalCashChain = cashSalesChain.reduce((a,s)=>a+Number(s.total||0), 0);
         const totalCardChain = cardSalesChain.reduce((a,s)=>a+Number(s.total||0), 0);
 
-        const matChainSales = activeUnarchivedSales.filter(s => getShiftCategory(s) === "matutino");
-        const vesChainSales = activeUnarchivedSales.filter(s => getShiftCategory(s) === "vespertino");
+        const matChainSales = displaySales.filter(s => getShiftCategory(s) === "matutino");
+        const vesChainSales = displaySales.filter(s => getShiftCategory(s) === "vespertino");
         const matChainTotal = matChainSales.reduce((a,s)=>a+Number(s.total||0), 0);
         const vesChainTotal = vesChainSales.reduce((a,s)=>a+Number(s.total||0), 0);
 
@@ -14942,10 +15108,16 @@
         <div class="dashboard-card" style="padding:24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(145deg,#fffef9,#fceecc);box-shadow:var(--shadow-card)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
                 <div>
-                    <h3 style="color:var(--wine-900);margin:0;font-weight:900">📊 Gestión de Ventas & Balance Global</h3>
+                    <h3 style="color:var(--wine-900);margin:0;font-weight:900">📊 Balance Contable — ${isSingleBranch ? esc(activeBranchObj.name) : 'Toda la Red (6 Sucursales)'}</h3>
                     <p style="color:var(--text-muted);font-size:12px;margin:3px 0 0;font-weight:700">Informes diarios consolidados por sucursal, turnos y métodos de pago (Efectivo y Tarjeta) sincronizados</p>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <label style="font-size:12px;font-weight:900;color:var(--wine-800)">SUCURSAL:</label>
+                    <select id="acc-branch-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none;color:#1a0205">
+                        <option value="all" ${activeBranchFilter === "all" ? "selected" : ""}>🏢 Todas las Sucursales (Consolidado)</option>
+                        ${S.branches.map(b => `<option value="${b.id}" ${String(b.id) === String(activeBranchFilter) || (isSingleBranch && resolveCanonicalBranch(b) === resolveCanonicalBranch(activeBranchObj)) ? "selected" : ""}>📍 ${esc(b.name)}</option>`).join("")}
+                    </select>
+
                     <label style="font-size:12px;font-weight:900;color:var(--wine-800)">FECHA:</label>
                     <select id="acc-date-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none;color:#1a0205">
                         <option value="today"${selectedDate==="today"||selectedDate===todayStr?" selected":""}>📅 Hoy (${fd(todayStr)})</option>
@@ -14961,19 +15133,19 @@
 
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px">
                 <div style="background:#fff;padding:16px;border-radius:14px;border:1.5px solid rgba(188,132,10,.35);box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);letter-spacing:1px">VENTA DEL PERÍODO (${isAllDates ? "HISTÓRICO" : fd(selectedDate==="today"?todayStr:selectedDate)})</small>
+                    <small style="font-size:10px;font-weight:900;color:var(--text-muted);letter-spacing:1px">VENTA ${isSingleBranch ? esc(activeBranchObj.name.toUpperCase()) : "DEL PERÍODO"} (${isAllDates ? "HISTÓRICO" : fd(selectedDate==="today"?todayStr:selectedDate)})</small>
                     <div style="font-size:26px;font-weight:900;color:var(--wine-900);margin:4px 0">${money(totalSelectedDate)}</div>
-                    <small style="color:var(--emerald);font-weight:800">${activeUnarchivedSales.length} tickets activos</small>
+                    <small style="color:var(--emerald);font-weight:800">${displaySales.length} tickets activos</small>
                 </div>
                 <div style="background:#fff;padding:16px;border-radius:14px;border:1.5px solid #86efac;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-                    <small style="font-size:10px;font-weight:900;color:#166534;letter-spacing:1px">💵 TOTAL EFECTIVO (RED)</small>
+                    <small style="font-size:10px;font-weight:900;color:#166534;letter-spacing:1px">💵 EFECTIVO (${isSingleBranch ? esc(activeBranchObj.name) : "RED"})</small>
                     <div style="font-size:22px;font-weight:900;color:#15803d;margin:4px 0">
                         ${money(totalCashChain)}
                     </div>
                     <small style="color:#166534;font-weight:700">${cashSalesChain.length} tickets en caja física</small>
                 </div>
                 <div style="background:#fff;padding:16px;border-radius:14px;border:1.5px solid #93c5fd;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-                    <small style="font-size:10px;font-weight:900;color:#1e40af;letter-spacing:1px">💳 TOTAL TARJETAS (RED)</small>
+                    <small style="font-size:10px;font-weight:900;color:#1e40af;letter-spacing:1px">💳 TARJETA (${isSingleBranch ? esc(activeBranchObj.name) : "RED"})</small>
                     <div style="font-size:22px;font-weight:900;color:#1d4ed8;margin:4px 0">
                         ${money(totalCardChain)}
                     </div>
@@ -14982,14 +15154,15 @@
                 <div style="background:#fff;padding:16px;border-radius:14px;border:1.5px solid rgba(188,132,10,.35);box-shadow:0 2px 8px rgba(0,0,0,0.06)">
                     <small style="font-size:10px;font-weight:900;color:#854d0e;letter-spacing:1px">🌅 MATUTINO: ${money(matChainTotal)}</small>
                     <small style="font-size:10px;font-weight:900;color:#3730a3;letter-spacing:1px;display:block;margin-top:6px">🌇 VESPERTINO: ${money(vesChainTotal)}</small>
-                    <small style="color:var(--text-muted);font-weight:700;display:block;margin-top:6px">Consolidado por turnos</small>
+                    <small style="color:var(--text-muted);font-weight:700;display:block;margin-top:6px">Desglose por turnos</small>
                 </div>
             </div>
         </div>
 
-        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">🏢 Desglose por Sucursal & Métodos de Pago — ${isAllDates ? "Histórico Consolidado" : fd(selectedDate==="today"?todayStr:selectedDate)}</h3>
+        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">🏢 Desglose por Sucursal & Métodos de Pago — ${isAllDates ? "Histórico Consolidado" : fd(selectedDate==="today"?todayStr:selectedDate)} ${isSingleBranch ? `(Filtrando: ${esc(activeBranchObj.name)})` : ''}</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:28px">
             ${BRANCH_NAMES.map(bName => {
+                const isSelectedB = isSingleBranch && (resolveCanonicalBranch(bName) === resolveCanonicalBranch(activeBranchObj) || String(activeBranchObj.name).toLowerCase().includes(bName.toLowerCase()));
                 const bSales = activeUnarchivedSales.filter(s => matchesBranch(s, bName));
                 const bCashSales = bSales.filter(s => (s.payment_method || "cash") === "cash");
                 const bCardSales = bSales.filter(s => s.payment_method === "card");
@@ -15006,9 +15179,12 @@
                 const matCut = bCuts.find(c => getShiftCategory(c) === "matutino");
                 const vesCut = bCuts.find(c => getShiftCategory(c) === "vespertino");
 
-                return `<article class="sale-card" style="background:#fff;border:1.5px solid rgba(188,132,10,.35);border-radius:14px;padding:18px;box-shadow:0 4px 14px rgba(0,0,0,0.15)">
+                return `<article class="sale-card acc-branch-card" data-bname="${esc(bName)}" style="background:#fff;border:${isSelectedB ? '2.5px solid var(--gold-400)' : '1.5px solid rgba(188,132,10,.35)'};border-radius:14px;padding:18px;box-shadow:${isSelectedB ? '0 0 16px rgba(245,158,11,0.35)' : '0 4px 14px rgba(0,0,0,0.15)'};cursor:pointer;position:relative">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1.5px solid #e5e7eb;padding-bottom:8px">
-                        <strong style="font-size:16px;color:var(--wine-900)">🍦 ${esc(bName)}</strong>
+                        <strong style="font-size:16px;color:var(--wine-900);display:flex;align-items:center;gap:6px">
+                            <span>🍦</span> ${esc(bName)}
+                            ${isSelectedB ? `<span style="font-size:9.5px;padding:2px 6px;background:#fef08a;color:#854d0e;border-radius:8px;border:1px solid #fde047;font-weight:900">👑 ACTIVA</span>` : ''}
+                        </strong>
                         <strong style="font-size:17px;color:var(--wine-700)">${money(bTotal)}</strong>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
@@ -15158,6 +15334,23 @@
             await loadAccounting();
         }));
 
+        document.getElementById("acc-branch-filter")?.addEventListener("change", async e => {
+            S.accBranchFilter = e.target.value;
+            await changeBranch(e.target.value);
+            await loadAccounting();
+        });
+
+        c.querySelectorAll(".acc-branch-card").forEach(card => {
+            card.addEventListener("click", async () => {
+                const bName = card.dataset.bname;
+                const b = S.branches.find(x => resolveCanonicalBranch(x) === resolveCanonicalBranch(bName) || String(x.name).toLowerCase().includes(bName.toLowerCase()));
+                if (b) {
+                    await changeBranch(b.id);
+                    await loadAccounting();
+                }
+            });
+        });
+
         document.getElementById("acc-date-filter")?.addEventListener("change", async e => {
             S.accHistoryFilterDate = e.target.value;
             await loadAccounting();
@@ -15217,7 +15410,7 @@
         const isAllDates = (selectedDate === "all");
 
         // 2. Filtrar ventas por fecha seleccionada y activas (no canceladas)
-        const activeSales = consolidatedSales.filter(s => {
+        let activeSales = consolidatedSales.filter(s => {
             if (String(s.status || "").toUpperCase() === "CANCELLED") return false;
             if (isAllDates) return true;
             if (selectedDate === "today" || selectedDate === todayStr) {
@@ -15225,6 +15418,18 @@
             }
             return toDateKey(s.created_at) === selectedDate || isTodaySale(s, selectedDate);
         });
+
+        // Fallback si la fecha de hoy aún no tiene ventas
+        if (!activeSales.length && consolidatedSales.length && (selectedDate === "today" || selectedDate === todayStr)) {
+            const dateList = availableDates.filter(d => d !== todayStr);
+            if (dateList.length) {
+                const fallbackDate = dateList[0];
+                activeSales = consolidatedSales.filter(s => {
+                    if (String(s.status || "").toUpperCase() === "CANCELLED") return false;
+                    return toDateKey(s.created_at) === fallbackDate || isTodaySale(s, fallbackDate);
+                });
+            }
+        }
 
         // 3. Filtros de Sucursal y Turno
         const selectedBranchFilter = S.isSU ? (S.salesCountBranch || "all") : (S.branchName || S.branchId || "La Fuente Calzada");
@@ -15979,9 +16184,9 @@
             console.warn("Realtime error:", e);
         }
 
-        // Heartbeat de auto-sincronización periódica activa cada 4 segundos
+        // Heartbeat de auto-sincronización periódica activa cada 15 segundos
         if (window._syncTimer) clearInterval(window._syncTimer);
-        window._syncTimer = setInterval(triggerLiveNetworkSync, 4000);
+        window._syncTimer = setInterval(triggerLiveNetworkSync, 15000);
 
         // Sincronización inmediata al volver a enfocar la pestaña
         window.addEventListener("focus", triggerLiveNetworkSync);
