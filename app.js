@@ -2026,8 +2026,12 @@
             }
         } catch(e) {}
 
-        // Invalidar caché en memoria para que Contabilidad, Conteo y Mis Ventas tomen la nueva venta de inmediato
-        _cachedConsolidatedSales = null;
+        // Integrar venta de inmediato en caché en memoria para reflejo instantáneo en el sistema
+        if (_cachedConsolidatedSales && Array.isArray(_cachedConsolidatedSales)) {
+            _cachedConsolidatedSales.unshift(saleRecord);
+        } else {
+            _cachedConsolidatedSales = null;
+        }
         _lastSalesFetchTime = 0;
 
         // Guardar última venta registrada para reimpresión directa
@@ -2042,6 +2046,7 @@
         renderPOS(filtered());
         updatePosLiveMovement();
         alertInv();
+        safeSilentRefresh(true);
         const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
         toast("✓ Venta de " + money(total) + " cobrada en " + payLabel + ". Ticket #" + saleRecord.sale_number, "success", 3000);
 
@@ -2111,6 +2116,8 @@
                         syncedIds.add(String(saleRecord.id));
                         if (data[0]?.id) syncedIds.add(String(data[0].id));
                         gw("synced_sales_ids", Array.from(syncedIds));
+                        updatePosLiveMovement();
+                        safeSilentRefresh(true);
                     } else if (error) {
                         console.warn("Venta pendiente de sincronizar en cola:", error);
                     }
@@ -15453,9 +15460,45 @@
                         const n = payload.new;
                         let obs = {};
                         try { obs = typeof n.observations === "string" ? JSON.parse(n.observations) : (n.observations || {}); } catch(e) {}
-                        const bName = obs.branch_name || S.branches.find(b=>String(b.id)===String(n.branch_id))?.name || "Sucursal";
+                        const bName = obs.branch_name || (String(n.branch_id||"") === "c188dd82-7faf-41b8-948b-af8e789facba" ? "La Fuente Calzada" : (S.branches.find(b=>String(b.id)===String(n.branch_id))?.name || "Sucursal"));
                         if (S.isSU) {
                             toast(`🔔 Venta cobrada: ${money(n.total)} en ${bName}`, "success", 3500);
+                        }
+
+                        // Normalizar y agregar la venta si no existe localmente
+                        const sid = String(n.id);
+                        let allGSales = gr("all_sales", []);
+                        const exists = allGSales.some(x => String(x.id) === sid || (x.local_id && obs.local_id && x.local_id === obs.local_id) || (x.sale_number && x.sale_number === n.sale_number));
+                        if (!exists) {
+                            const newSaleObj = {
+                                id: n.id,
+                                sale_number: n.sale_number || ("TICK-" + String(n.id).substring(0,8)),
+                                branch_id: n.branch_id || obs.branch_id,
+                                branch_name: obs.branch_name || bName,
+                                shift_name: obs.shift_name || (getShiftCategory({ cashier_name: obs.cashier_name, created_at: n.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
+                                cashier_id: n.user_id,
+                                cashier_name: obs.cashier_name || "Encargada",
+                                total: Number(n.total || 0),
+                                payment_method: obs.payment_method || "cash",
+                                status: (String(n.status||"").toUpperCase() === "CANCELLED") ? "CANCELLED" : "COMPLETED",
+                                items: (obs.items && obs.items.length) ? obs.items : (n.items || []),
+                                created_at: n.created_at || now(),
+                                local_id: obs.local_id || n.id,
+                                observations: n.observations
+                            };
+                            allGSales.unshift(newSaleObj);
+                            gw("all_sales", allGSales);
+                            if (resolveCanonicalBranch(newSaleObj) === "La Fuente Calzada") {
+                                try {
+                                    const rawB = localStorage.getItem("lf_calzada_sales");
+                                    const bList = rawB ? JSON.parse(rawB) : [];
+                                    if (!bList.some(x => String(x.id) === sid || (x.local_id && obs.local_id && x.local_id === obs.local_id))) {
+                                        bList.unshift(newSaleObj);
+                                        localStorage.setItem("lf_calzada_sales", JSON.stringify(bList));
+                                        localStorage.setItem("lf_branch-1_sales", JSON.stringify(bList));
+                                    }
+                                } catch(e) {}
+                            }
                         }
                     } else if (payload.eventType === "DELETE" && payload.old) {
                         const delId = String(payload.old.id);
@@ -15475,8 +15518,11 @@
                             if (lTarget) { lTarget.status = "CANCELLED"; lw("sales", lSales); }
                         }
                     }
-                    await getConsolidatedSalesForChain();
-                    safeSilentRefresh();
+                    _cachedConsolidatedSales = null;
+                    _lastSalesFetchTime = 0;
+                    await getConsolidatedSalesForChain(true);
+                    safeSilentRefresh(true);
+                    updatePosLiveMovement();
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "cash_cuts" }, async () => {
                     if (S.view === "cuts") await loadCuts(true);
