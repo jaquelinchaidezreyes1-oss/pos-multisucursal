@@ -162,11 +162,20 @@
     const now = () => new Date().toISOString();
     const toDateKey = v => {
         if (!v) {
-            const nowD = new Date();
-            const y = nowD.getFullYear();
-            const m = String(nowD.getMonth() + 1).padStart(2, "0");
-            const d = String(nowD.getDate()).padStart(2, "0");
-            return `${y}-${m}-${d}`;
+            try {
+                return new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "America/Mexico_City",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit"
+                }).format(new Date());
+            } catch(e) {
+                const nowD = new Date();
+                const y = nowD.getFullYear();
+                const m = String(nowD.getMonth() + 1).padStart(2, "0");
+                const d = String(nowD.getDate()).padStart(2, "0");
+                return `${y}-${m}-${d}`;
+            }
         }
         if (typeof v === "string") {
             const trimmed = v.trim();
@@ -174,12 +183,36 @@
                 return trimmed;
             }
         }
-        const d = (v instanceof Date) ? v : new Date(v);
-        if (isNaN(d.getTime())) return String(v).slice(0,10);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${y}-${m}-${day}`;
+        let dt;
+        if (v instanceof Date) {
+            dt = v;
+        } else if (typeof v === "number") {
+            dt = new Date(v);
+        } else if (typeof v === "string") {
+            const trimmed = v.trim();
+            if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(trimmed) && !trimmed.endsWith("Z") && !/[+-]\d{2}/.test(trimmed)) {
+                dt = new Date(trimmed.replace(" ", "T") + "Z");
+            } else {
+                dt = new Date(trimmed);
+            }
+        } else {
+            dt = new Date(v);
+        }
+        if (isNaN(dt.getTime())) return String(v).slice(0, 10);
+
+        try {
+            return new Intl.DateTimeFormat("en-CA", {
+                timeZone: "America/Mexico_City",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit"
+            }).format(dt);
+        } catch(e) {
+            const y = dt.getFullYear();
+            const m = String(dt.getMonth() + 1).padStart(2, "0");
+            const day = String(dt.getDate()).padStart(2, "0");
+            return `${y}-${m}-${day}`;
+        }
     };
     /* ── ALMACENAMIENTO LOCAL & GLOBAL ── */
     const lr = (k, fallback = null) => {
@@ -234,12 +267,18 @@
         if (sn.includes("tarde") || sn.includes("vesp") || sn.includes("noche")) return "vespertino";
         if (sn.includes("mañana") || sn.includes("maana") || sn.includes("mat")) return "matutino";
 
-        // 3. Detección por hora (el turno vespertino inicia a las 15:00 / 3:00 p.m.)
+        // 3. Detección por hora (el turno vespertino inicia a las 15:00 / 3:00 p.m. hora de México)
         if (s.created_at) {
             try {
-                const dt = new Date(s.created_at);
-                if (!isNaN(dt.getTime())) {
-                    const hr = dt.getHours();
+                let hr = NaN;
+                try {
+                    const str = new Intl.DateTimeFormat("en-US", { timeZone: "America/Mexico_City", hour: "numeric", hour12: false }).format(new Date(s.created_at));
+                    hr = parseInt(str, 10);
+                } catch(err) {
+                    const dt = new Date(s.created_at);
+                    if (!isNaN(dt.getTime())) hr = dt.getHours();
+                }
+                if (!isNaN(hr)) {
                     if (hr >= 15 || hr < 6) return "vespertino";
                     return "matutino";
                 }
@@ -800,7 +839,7 @@
             else S.branchId = "branch_" + cfg.b.toLowerCase().replace(/\s+/g, "_");
         } else {
             const canon = resolveCanonicalBranch(email) || resolveCanonicalBranch(fullIdentity);
-            if (canon && canon !== "La Fuente Calzada") {
+            if (canon) {
                 S.branchName = canon;
                 const m = S.branches.find(b => resolveCanonicalBranch(b) === canon);
                 S.branchId = m ? m.id : (
@@ -1738,8 +1777,15 @@
         const activeSales = allSales.filter(s => String(s.status || "").toUpperCase() !== "CANCELLED");
 
         const todayStr = toDateKey();
-        const isCalzadaActive = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada";
-        let bSales = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }) && toDateKey(s.created_at) === todayStr);
+        const isCalzadaActive = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada" ||
+                                (!S.isSU && resolveCanonicalBranch(S.branchName || S.user?.email) === "La Fuente Calzada") ||
+                                (resolveCanonicalBranch(S.branchName) === "La Fuente Calzada");
+        let bSales = activeSales.filter(s => {
+            const branchMatch = isCalzadaActive 
+                ? (resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada"))
+                : matchesBranch(s, { id: S.branchId, name: S.branchName });
+            return branchMatch && toDateKey(s.created_at) === todayStr;
+        });
         if (!bSales.length && !isCalzadaActive) {
             const branchAll = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
             if (branchAll.length) {
@@ -2018,6 +2064,7 @@
             } else if (isCalzada) {
                 localStorage.setItem("lf_calzada_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_branch-1_sales", JSON.stringify(bSalesList));
+                localStorage.setItem("lf_c188dd82-7faf-41b8-948b-af8e789facba_sales", JSON.stringify(bSalesList));
                 localStorage.setItem("lf_la_fuente_calzada_sales", JSON.stringify(bSalesList));
             } else if (isMollotes) {
                 localStorage.setItem("lf_mollotes_sales", JSON.stringify(bSalesList));
@@ -2026,13 +2073,16 @@
             }
         } catch(e) {}
 
-        // Integrar venta de inmediato en caché en memoria para reflejo instantáneo en el sistema
-        if (_cachedConsolidatedSales && Array.isArray(_cachedConsolidatedSales)) {
-            _cachedConsolidatedSales.unshift(saleRecord);
+        // Integrar venta de inmediato en caché en memoria para reflejo instantáneo en el sistema sin bloqueo de red
+        if (!_cachedConsolidatedSales || !Array.isArray(_cachedConsolidatedSales)) {
+            _cachedConsolidatedSales = (allGlobalSales && allGlobalSales.length) ? [...allGlobalSales] : [saleRecord];
         } else {
-            _cachedConsolidatedSales = null;
+            if (!_cachedConsolidatedSales.some(s => String(s.id) === String(saleRecord.id) || String(s.sale_number) === String(saleRecord.sale_number))) {
+                _cachedConsolidatedSales.unshift(saleRecord);
+            }
         }
-        _lastSalesFetchTime = 0;
+        _lastSalesFetchTime = Date.now();
+        gw("all_sales", _cachedConsolidatedSales);
 
         // Guardar última venta registrada para reimpresión directa
         lw("last_printed_sale", saleRecord);
@@ -2047,6 +2097,11 @@
         updatePosLiveMovement();
         alertInv();
         safeSilentRefresh(true);
+        if (S.view === "sales") {
+            loadSales(true);
+        } else if (S.view === "sales-count") {
+            loadSalesCount(true);
+        }
         const payLabel = payMethod === "card" ? "💳 TARJETA" : "💵 EFECTIVO";
         toast("✓ Venta de " + money(total) + " cobrada en " + payLabel + ". Ticket #" + saleRecord.sale_number, "success", 3000);
 
@@ -11900,7 +11955,7 @@
                 const {data, error} = await safeQuery(db.from("sales")
                     .select("*")
                     .order("created_at", {ascending:false})
-                    .limit(5000), null, 6000);
+                    .limit(5000), null, 1500);
                 if (data && data.length) {
                     remoteSales = data.map(s => {
                         let obs = {};
@@ -11994,6 +12049,7 @@
         // 1. Cargar explícitamente desde todas las llaves locales de sucursales conocidas
         const branchKeySuffixes = [
             "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
+            "c188dd82-7faf-41b8-948b-af8e789facba",
             "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
             "tagarete 1", "tagarete 2", "la fuente calzada"
         ];
@@ -12082,6 +12138,8 @@
                 s.branch_name = assignedBranch;
                 if (assignedBranch === "Tagarete 1") {
                     s.branch_id = "branch-4";
+                } else if (assignedBranch === "La Fuente Calzada") {
+                    s.branch_id = s.branch_id || "c188dd82-7faf-41b8-948b-af8e789facba";
                 }
             }
 
@@ -12132,10 +12190,19 @@
                 name: S.branches.find(b => String(b.id) === String(activeBranchFilter))?.name || (String(activeBranchFilter) === String(S.branchId) ? S.branchName : "")
               };
 
+        const isCalzadaFilter = resolveCanonicalBranch(targetBranchRef) === "La Fuente Calzada" ||
+                                (!S.isSU && resolveCanonicalBranch(S.branchName) === "La Fuente Calzada") ||
+                                (resolveCanonicalBranch(activeBranchFilter) === "La Fuente Calzada");
+
         // Filtrar ventas por sucursal seleccionada o todas si es Superusuario
         const branchSales = (S.isSU && activeBranchFilter === "all")
             ? consolidated
-            : consolidated.filter(s => matchesBranch(s, targetBranchRef));
+            : consolidated.filter(s => {
+                if (isCalzadaFilter) {
+                    return resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada");
+                }
+                return matchesBranch(s, targetBranchRef);
+            });
         
         const todayStr = toDateKey();
         const datesMap = new Map();
@@ -12162,8 +12229,7 @@
         } else if (selectedDate === "today") {
             rawDaySales = datesMap.get(todayStr) || [];
             // Si para 'today' aún no hay ventas en esta sucursal pero sí hay ventas en la jornada activa reciente
-            const isCalzadaSales = resolveCanonicalBranch(targetBranchRef) === "La Fuente Calzada";
-            if (!rawDaySales.length && branchSales.length && !isCalzadaSales) {
+            if (!rawDaySales.length && branchSales.length) {
                 const latestDate = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse()[0];
                 if (latestDate) {
                     rawDaySales = datesMap.get(latestDate) || [];
@@ -12759,12 +12825,15 @@
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
         // Calcular ventas activas del turno actual para el corte
+        const isCalzadaBranch = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada";
         const consolidatedSales = await getConsolidatedSalesForChain();
-        const currentBranchSales = consolidatedSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
+        const currentBranchSales = consolidatedSales.filter(s => {
+            if (isCalzadaBranch) return resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada");
+            return matchesBranch(s, { id: S.branchId, name: S.branchName });
+        });
         const todayStr = toDateKey();
         let todayActiveSales = currentBranchSales.filter(s => toDateKey(s.created_at) === todayStr && String(s.status||"").toUpperCase() !== "CANCELLED");
-        const isCalzadaBranch = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada";
-        if (!todayActiveSales.length && currentBranchSales.length && !isCalzadaBranch) {
+        if (!todayActiveSales.length && currentBranchSales.length) {
             const datesMap = new Map();
             currentBranchSales.forEach(s => {
                 const d = toDateKey(s.created_at);
@@ -14846,9 +14915,13 @@
             resolveCanonicalBranch(selectedBranchFilter) === "La Fuente Calzada" ? "La Fuente Calzada" : { id: selectedBranchFilter, name: S.branches.find(b=>String(b.id)===String(selectedBranchFilter))?.name || selectedBranchFilter }
         );
 
+        const isCalzadaCount = branchRef === "La Fuente Calzada" || resolveCanonicalBranch(branchRef) === "La Fuente Calzada";
         const filteredSales = activeSales.filter(s => {
-            if (branchRef !== "all" && !matchesBranch(s, branchRef)) {
-                return false;
+            if (branchRef !== "all") {
+                const bMatches = isCalzadaCount
+                    ? (resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada"))
+                    : matchesBranch(s, branchRef);
+                if (!bMatches) return false;
             }
             if (selectedShiftFilter !== "all") {
                 const shiftCat = getShiftCategory(s);

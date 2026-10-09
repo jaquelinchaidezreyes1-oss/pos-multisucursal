@@ -353,7 +353,10 @@
 
             if (window.LaFuentePOS) {
                 window.LaFuentePOS.state.view = target;
-                if (target === "pos" && window.LaFuentePOS.loadProducts) { window.LaFuentePOS.loadProducts(); }
+                if (target === "pos") {
+                    if (window.LaFuentePOS.loadProducts) window.LaFuentePOS.loadProducts();
+                    if (window.LaFuentePOS.updatePosLiveMovement) window.LaFuentePOS.updatePosLiveMovement();
+                }
                 if (target === "private-access" && window.LaFuentePOS.loadPrivateAccessData) window.LaFuentePOS.loadPrivateAccessData();
                 if (target === "accounting" && window.LaFuentePOS.loadAccounting)     window.LaFuentePOS.loadAccounting();
                 if (target === "sales" && window.LaFuentePOS.loadSales)          window.LaFuentePOS.loadSales();
@@ -542,6 +545,6 @@
             if (btnTopbar) btnTopbar.style.display = 'none';
         });
     </script>
-    <script src="app.js?v=61"></script>
+    <script src="app.js?v=62"></script>
 </body>
 </html>
