@@ -1819,7 +1819,9 @@
             else prodSec.prepend(bar);
         }
 
-        const allSales = await getConsolidatedSalesForChain();
+        const allSales = (_cachedConsolidatedSales && _cachedConsolidatedSales.length)
+            ? _cachedConsolidatedSales
+            : await getConsolidatedSalesForChain();
         const activeSales = allSales.filter(s => String(s.status || "").toUpperCase() !== "CANCELLED");
 
         const todayStr = toDateKey();
@@ -1859,7 +1861,7 @@
             });
         }
 
-        if (!bSales.length) {
+        if (!isCalzadaActive && !bSales.length) {
             const branchAll = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
             if (branchAll.length) {
                 const datesMap = new Map();
@@ -1985,7 +1987,17 @@
     }
 
     /* ── CARRITO & COBRO DE ÓRDENES ── */
+    let _lastAddTapTime = 0;
+    let _lastAddPid = null;
     function addToCart(pid) {
+        const nowMs = Date.now();
+        // Cooldown para evitar toques fantasmas / rebote táctil en pantallas touch (<220ms para el mismo producto)
+        if (_lastAddPid === String(pid) && (nowMs - _lastAddTapTime) < 220) {
+            return;
+        }
+        _lastAddTapTime = nowMs;
+        _lastAddPid = String(pid);
+
         const p = S.products.find(x => String(x.product_id) === String(pid));
         if (!p) return;
         const stock = getStock(pid);
@@ -2067,13 +2079,17 @@
         }));
     }
 
+    let _isProcessingSale = false;
     async function processSale() {
+        if (_isProcessingSale) return;
         if (!S.cart.length) return toast("No hay productos en la orden.", "warn");
-        const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
+        _isProcessingSale = true;
+        try {
+            const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
 
-        // Selección de método de pago interactiva (Efectivo vs Tarjeta)
-        const payMethod = await toastPaymentMethod(total);
-        if (!payMethod) return;
+            // Selección de método de pago interactiva (Efectivo vs Tarjeta)
+            const payMethod = await toastPaymentMethod(total);
+            if (!payMethod) return;
 
         const cashierEmail = S.user?.email || "";
         const cashierName = S.profile?.full_name || cashierEmail || "Encargada";
@@ -2260,6 +2276,9 @@
             }
             syncPendingSalesToSupabase();
         })();
+        } finally {
+            _isProcessingSale = false;
+        }
     }
 
     /* ── MOTOR UNIVERSAL DE IMPRESIÓN DIRECTA & FÍSICA (USB, SERIAL, BLUETOOTH & NAVEGADOR) ── */
@@ -3102,9 +3121,19 @@
     }
 
     async function directPrintTicketAction() {
-        const lastSale = lr("last_printed_sale", null) || lr("sales", [])[0];
+        // Si hay una orden en curso con productos en el carrito, cobrar y registrar la venta con ticket físico de inmediato
+        if (S.cart && S.cart.length > 0) {
+            await processSale();
+            return;
+        }
+
+        // Si el carrito está vacío, reimprimir el último ticket registrado para esta sucursal
+        const lastSale = lr("last_printed_sale", null) || 
+                         (lr("calzada_today_sales", []) || [])[0] || 
+                         (lr("calzada_sales", []) || [])[0] || 
+                         (lr("sales", []) || [])[0];
         if (lastSale) {
-            toast("🖨️ Imprimiendo Ticket #" + (lastSale.sale_number || '') + "…", "info", 3000);
+            toast("🖨️ Reimprimiendo Ticket #" + (lastSale.sale_number || '') + "…", "info", 3000);
             await printSaleReceipt(lastSale);
         } else {
             toast("🖨️ Imprimiendo ticket de prueba…", "info", 3000);
@@ -3127,15 +3156,33 @@
         }
     }
 
-    document.addEventListener("click", e => {
-        if (e.target.closest("#btn-open-printer-modal,.btn-open-printer-modal")) {
-            openPrinterSetupModal();
+    document.addEventListener("click", async e => {
+        if (e.target.closest("#btn-clear-cart,.clear-order")) {
+            e.preventDefault();
+            S.cart = [];
+            renderCart();
+            toast("🧹 Orden vaciada correctamente.", "info", 1500);
+            return;
+        }
+        if (e.target.closest("#pay-button")) {
+            e.preventDefault();
+            await processSale();
+            return;
         }
         if (e.target.closest("#btn-direct-print-ticket")) {
-            directPrintTicketAction();
+            e.preventDefault();
+            await directPrintTicketAction();
+            return;
         }
         if (e.target.closest("#btn-open-recent-tickets-modal")) {
+            e.preventDefault();
             if (window.changeView) window.changeView("sales");
+            return;
+        }
+        if (e.target.closest("#btn-open-printer-modal,.btn-open-printer-modal")) {
+            e.preventDefault();
+            openPrinterSetupModal();
+            return;
         }
     });
 
@@ -16184,9 +16231,9 @@
             console.warn("Realtime error:", e);
         }
 
-        // Heartbeat de auto-sincronización periódica activa cada 15 segundos
+        // Heartbeat de auto-sincronización periódica activa cada 30 segundos
         if (window._syncTimer) clearInterval(window._syncTimer);
-        window._syncTimer = setInterval(triggerLiveNetworkSync, 15000);
+        window._syncTimer = setInterval(triggerLiveNetworkSync, 30000);
 
         // Sincronización inmediata al volver a enfocar la pestaña
         window.addEventListener("focus", triggerLiveNetworkSync);
