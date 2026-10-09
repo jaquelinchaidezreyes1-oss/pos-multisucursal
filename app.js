@@ -18,17 +18,27 @@
     /* ── 12 ENCARGADAS OFICIALES ── */
     const STAFF = {
         "encargado1lafuente@gmail.com":  {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
+        "encargada1lafuente@gmail.com":  {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
         "encargado1@gmail.com":          {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
+        "encargada1@gmail.com":          {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
         "encargado1@lafuente.com":       {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
+        "encargada1@lafuente.com":       {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
         "calzadamañana@gmail.com":       {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
         "calzada1@gmail.com":            {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada (Matutino)"},
+        "encargadacalzada@gmail.com":    {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada"},
+        "calzadalafuente@gmail.com":     {b:"La Fuente Calzada", s:"Mañana", r:"Encargada Calzada"},
         "encargado2lafuente@gmail.com":  {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
+        "encargada2lafuente@gmail.com":  {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
         "encargado2@gmail.com":          {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
+        "encargada2@gmail.com":          {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
         "encargado2@lafuente.com":       {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
+        "encargada2@lafuente.com":       {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
         "calzadatarde@gmail.com":        {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
         "calzada2@gmail.com":            {b:"La Fuente Calzada", s:"Tarde",  r:"Encargada Calzada (Vespertino)"},
         "encargado3lafuente@gmail.com":  {b:"Rescate",          s:"Mañana", r:"Encargada Rescate (Matutino)"},
+        "encargada3lafuente@gmail.com":  {b:"Rescate",          s:"Mañana", r:"Encargada Rescate (Matutino)"},
         "encargado4lafuente@gmail.com":  {b:"Rescate",          s:"Tarde",  r:"Encargada Rescate (Vespertino)"},
+        "encargada4lafuente@gmail.com":  {b:"Rescate",          s:"Tarde",  r:"Encargada Rescate (Vespertino)"},
         "encargado5lafuente@gmail.com":  {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
         "encargada5lafuente@gmail.com":  {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
         "encargado5@gmail.com":          {b:"Mollotes",         s:"Mañana", r:"Encargada Mollotes (Matutino)"},
@@ -400,6 +410,9 @@
         if (!id) return false;
         try {
             const strId = String(id);
+            if (typeof CALZADA_BASE_PRODUCTS !== "undefined" && Array.isArray(CALZADA_BASE_PRODUCTS)) {
+                if (CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id || cp.id) === strId)) return true;
+            }
             const pKeys = [
                 "lf_calzada_permanent_products",
                 "lf_calzada_custom_products",
@@ -433,7 +446,9 @@
             const pBranchCanonical = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
             const isAssignedCalzada = product.allowed_in_calzada ||
                                       product.branch_id === "branch-1" ||
+                                      product.branch_id === "c188dd82-7faf-41b8-948b-af8e789facba" ||
                                       pBranchCanonical === "La Fuente Calzada" ||
+                                      resolveCanonicalBranch(product.branch_id) === "La Fuente Calzada" ||
                                       isProductInCalzadaStore(product.product_id || product.id);
             if (isAssignedCalzada) {
                 return true;
@@ -1458,14 +1473,21 @@
         { product_id: "p_cono_cubierto", product_code: "CC", product_name: "Cono Cubierto", category: "helados", price: 45, branch_name: "General", initial_stock: 80 },
         { product_id: "p_canasta_doble", product_code: "CanastaDoble", product_name: "Canasta Doble", category: "helados", price: 40, branch_name: "General", initial_stock: 80 },
         { product_id: "p_canasta_triple", product_code: "CanastaTriple", product_name: "Canasta Triple", category: "helados", price: 50, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Helado Vaso 1", category: "helados", price: 20, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2", category: "helados", price: 35, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3", category: "helados", price: 40, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Vaso 1 bolita", category: "helados", price: 20, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2 bolitas", category: "helados", price: 35, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3 bolitas", category: "helados", price: 40, branch_name: "General", initial_stock: 80 },
         { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado Vaso 4", category: "helados", price: 50, branch_name: "General", initial_stock: 80 },
+        { product_id: "prod_calz_medio_litro", product_code: "MLN", product_name: "Medio Litro de Nieve", category: "helados", price: 65, branch_name: "General", initial_stock: 50 },
+        { product_id: "prod_calz_nieve_vaso_12", product_code: "NV12", product_name: "Nieve Vaso #12", category: "helados", price: 40, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_extra_nuez", product_code: "ENUEZ", product_name: "Extra Nuez", category: "helados", price: 10, branch_name: "General", initial_stock: 100 },
         { product_id: "p_helado_maquina", product_code: "HM", product_name: "Helado Máquina", category: "helados", price: 15, branch_name: "General", initial_stock: 80 },
         { product_id: "p_helado_maq_sencillo", product_code: "HMS", product_name: "Helado Máquina Sencillo", category: "helados", price: 18, branch_name: "General", initial_stock: 80 },
 
         // ── PALETAS ──
+        { product_id: "prod_1789344787923_spve", product_code: "EG", product_name: "Esquimal Grande", category: "paletas", price: 30, branch_name: "General", initial_stock: 100 },
+        { product_id: "prod_calz_paleta_leche", product_code: "PL", product_name: "Paleta de Leche", category: "paletas", price: 30, branch_name: "General", initial_stock: 100 },
+        { product_id: "prod_calz_paleta_agua", product_code: "PA", product_name: "Paleta de Agua", category: "paletas", price: 25, branch_name: "General", initial_stock: 100 },
+        { product_id: "prod_calz_paleta_mini", product_code: "PMINI", product_name: "Paleta mini", category: "paletas", price: 5, branch_name: "General", initial_stock: 100 },
         { product_id: "p_paleta_crema_gde", product_code: "PCG", product_name: "Paleta Crema Grande", category: "paletas", price: 30, branch_name: "General", initial_stock: 100 },
         { product_id: "p_paleta_agua_gde", product_code: "PAG", product_name: "Paleta Agua Grande", category: "paletas", price: 25, branch_name: "General", initial_stock: 100 },
         { product_id: "p_paleta_agua_chica", product_code: "PACH", product_name: "Paleta Agua Chica", category: "paletas", price: 12, branch_name: "General", initial_stock: 100 },
@@ -1482,9 +1504,18 @@
 
         // ── PREPARADOS & BOTANAS ──
         { product_id: "p_tostilocos", product_code: "TP", product_name: "Tostilocos", category: "preparados", price: 55, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_tostiloco_morado", product_code: "TLM", product_name: "Tostiloco morados", category: "preparados", price: 55, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_tostitos_vaso", product_code: "TCV", product_name: "Tostitos vaso", category: "preparados", price: 60, branch_name: "General", initial_stock: 60 },
         { product_id: "p_tostiloco_barcel", product_code: "TB", product_name: "Tostiloco Barcel", category: "preparados", price: 55, branch_name: "General", initial_stock: 60 },
         { product_id: "p_tostiloco_vaso", product_code: "TV", product_name: "Tostiloco en Vaso", category: "preparados", price: 60, branch_name: "General", initial_stock: 60 },
         { product_id: "p_tostiloco_vaso_barcel", product_code: "TVB", product_name: "Tostiloco en Vaso Barcel", category: "preparados", price: 60, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_chetos_nachos", product_code: "CHN", product_name: "Chetos nachos", category: "preparados", price: 45, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_chetos_prep", product_code: "CHP", product_name: "Chetos preparados", category: "preparados", price: 50, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_chetos_queso", product_code: "CHQ", product_name: "Chetos queso", category: "preparados", price: 35, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_cheetos_solos", product_code: "CHS", product_name: "CHEETOS SOLOS", category: "preparados", price: 22, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_doritos_queso", product_code: "DQ", product_name: "Doritos Queso", category: "preparados", price: 22, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_sabrita_sola", product_code: "SS", product_name: "Sabrita Sola", category: "preparados", price: 22, branch_name: "General", initial_stock: 60 },
+        { product_id: "prod_calz_barcel_loco", product_code: "BL", product_name: "Barcel Loco", category: "preparados", price: 55, branch_name: "General", initial_stock: 60 },
         { product_id: "p_papas_cueros", product_code: "PCC", product_name: "Papas con Cueros", category: "preparados", price: 50, branch_name: "General", initial_stock: 60 },
         { product_id: "p_cacahuatadas", product_code: "CACAH", product_name: "Cacahuatadas", category: "preparados", price: 35, branch_name: "General", initial_stock: 60 },
         { product_id: "p_nachos", product_code: "Nachos", product_name: "Nachos", category: "preparados", price: 45, branch_name: "General", initial_stock: 60 },
@@ -1533,6 +1564,31 @@
         { product_id: "p_cuchara_prueba", product_code: "CucharaPrueba", product_name: "Cuchara de Prueba", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 },
         { product_id: "p_popote", product_code: "Popote", product_name: "Popote", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 100, initial_stock: 300 },
         { product_id: "p_vaso_cualquier_medida", product_code: "VasoCualquierMedida", product_name: "Cualquier Vaso de Cualquier Medida", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 }
+    ];
+
+    // Catálogo base protegido e indestructible de la Sucursal La Fuente Calzada
+    const CALZADA_BASE_PRODUCTS = [
+        { product_id: "prod_1789344787923_spve", product_code: "EG", product_name: "Esquimal Grande", category: "paletas", price: 30, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true },
+        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3 bolitas", category: "helados", price: 40, branch_name: "General", initial_stock: 80, allowed_in_calzada: true },
+        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2 bolitas", category: "helados", price: 35, branch_name: "General", initial_stock: 80, allowed_in_calzada: true },
+        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Vaso 1 bolita", category: "helados", price: 20, branch_name: "General", initial_stock: 80, allowed_in_calzada: true },
+        { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado Vaso 4", category: "helados", price: 50, branch_name: "General", initial_stock: 80, allowed_in_calzada: true },
+        { product_id: "prod_calz_medio_litro", product_code: "MLN", product_name: "Medio Litro de Nieve", category: "helados", price: 65, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 50, allowed_in_calzada: true },
+        { product_id: "prod_calz_nieve_vaso_12", product_code: "NV12", product_name: "Nieve Vaso #12", category: "helados", price: 40, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_extra_nuez", product_code: "ENUEZ", product_name: "Extra Nuez", category: "helados", price: 10, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true },
+        { product_id: "p_mordisco", product_code: "Mordi", product_name: "Mordisco", category: "congelados", price: 25, branch_name: "General", initial_stock: 50, allowed_in_calzada: true },
+        { product_id: "prod_calz_tostiloco_morado", product_code: "TLM", product_name: "Tostiloco morados", category: "preparados", price: 55, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_tostitos_vaso", product_code: "TCV", product_name: "Tostitos vaso", category: "preparados", price: 60, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_chetos_nachos", product_code: "CHN", product_name: "Chetos nachos", category: "preparados", price: 45, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_chetos_prep", product_code: "CHP", product_name: "Chetos preparados", category: "preparados", price: 50, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_chetos_queso", product_code: "CHQ", product_name: "Chetos queso", category: "preparados", price: 35, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_cheetos_solos", product_code: "CHS", product_name: "CHEETOS SOLOS", category: "preparados", price: 22, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_doritos_queso", product_code: "DQ", product_name: "Doritos Queso", category: "preparados", price: 22, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_sabrita_sola", product_code: "SS", product_name: "Sabrita Sola", category: "preparados", price: 22, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_barcel_loco", product_code: "BL", product_name: "Barcel Loco", category: "preparados", price: 55, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_paleta_leche", product_code: "PL", product_name: "Paleta de Leche", category: "paletas", price: 30, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true },
+        { product_id: "prod_calz_paleta_agua", product_code: "PA", product_name: "Paleta de Agua", category: "paletas", price: 25, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true },
+        { product_id: "prod_calz_paleta_mini", product_code: "PMINI", product_name: "Paleta mini", category: "paletas", price: 5, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true }
     ];
 
     
@@ -1589,12 +1645,18 @@
     /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
     async function loadProducts() {
         // Cargar catálogo permanente y protegido de la Sucursal La Fuente Calzada
-        let calzadaPermanent = [];
+        let calzadaPermanent = [...CALZADA_BASE_PRODUCTS];
         try {
             const rawCalz = localStorage.getItem("lf_calzada_permanent_products");
             if (rawCalz) {
                 const parsed = JSON.parse(rawCalz);
-                if (Array.isArray(parsed)) calzadaPermanent = parsed;
+                if (Array.isArray(parsed)) {
+                    parsed.forEach(p => {
+                        if (p && p.product_id && !calzadaPermanent.some(cp => String(cp.product_id) === String(p.product_id))) {
+                            calzadaPermanent.push(p);
+                        }
+                    });
+                }
             }
         } catch(e) {}
 
@@ -1687,7 +1749,8 @@
 
         // 1. Iniciar con el catálogo base e insumos oficiales
         DEFAULT_PRODUCTS.forEach(p => {
-            if (!deletedIds.includes(String(p.product_id))) {
+            const isCalz = calzadaPermanent.some(cp => String(cp.product_id) === String(p.product_id));
+            if (!deletedIds.includes(String(p.product_id)) || isCalz) {
                 combinedMap.set(String(p.product_id), { ...p });
             }
         });
@@ -1755,6 +1818,15 @@
                 });
             }
         });
+
+        // 4. Si la sucursal activa es La Fuente Calzada, blindar inclusión total de productos permanentes
+        if (resolveCanonicalBranch(S.branchName) === "La Fuente Calzada") {
+            calzadaPermanent.forEach(cp => {
+                if (cp && cp.product_id && !combinedMap.has(String(cp.product_id))) {
+                    combinedMap.set(String(cp.product_id), { ...cp });
+                }
+            });
+        }
 
         S.products = Array.from(combinedMap.values()).sort((a,b) => {
             if (a.is_supply !== b.is_supply) return a.is_supply ? 1 : -1;
@@ -1842,6 +1914,9 @@
                 gr("all_sales", []),
                 lr("calzada_sales", []),
                 lr("calzada_today_sales", []),
+                lr("branch-1_sales", []),
+                lr("c188dd82-7faf-41b8-948b-af8e789facba_sales", []),
+                lr("la_fuente_calzada_sales", []),
                 lr("all_printed_tickets", []),
                 lr("last_printed_sale") ? [lr("last_printed_sale")] : []
             ];
@@ -1861,8 +1936,12 @@
             });
         }
 
-        if (!isCalzadaActive && !bSales.length) {
-            const branchAll = activeSales.filter(s => matchesBranch(s, { id: S.branchId, name: S.branchName }));
+        if (!bSales.length) {
+            const branchAll = activeSales.filter(s => {
+                return isCalzadaActive
+                    ? (resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada"))
+                    : matchesBranch(s, { id: S.branchId, name: S.branchName });
+            });
             if (branchAll.length) {
                 const datesMap = new Map();
                 branchAll.forEach(s => {
@@ -4083,6 +4162,403 @@
 
     // Ventas y cortes de respaldo activo de la jornada para turnos matutinos y vespertinos
     const BASE_ACTIVE_SALES = [
+        // ── LA FUENTE CALZADA: VENTAS ACTIVAS DE LA JORNADA (MATUTINO & VESPERTINO) ──
+        {
+                "id": "sale_calz_today_m1",
+                "sale_number": "TICK-110241",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_ag_grande", "product_name": "Agua Grande", "quantity": 1, "price": 45, "subtotal": 45 },
+                        { "product_id": "p_paleta_crema_gde", "product_name": "Paleta Crema Grande", "quantity": 1, "price": 30, "subtotal": 30 }
+                ],
+                "created_at": "2026-09-18T15:20:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m2",
+                "sale_number": "TICK-110242",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 65,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_helado_vaso3", "product_name": "Helado Vaso 3 bolitas", "quantity": 1, "price": 40, "subtotal": 40 },
+                        { "product_id": "p_mordisco", "product_name": "Mordisco", "quantity": 1, "price": 25, "subtotal": 25 }
+                ],
+                "created_at": "2026-09-18T15:45:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m3",
+                "sale_number": "TICK-110243",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 55,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "prod_1789344787923_spve", "product_name": "Esquimal Grande", "quantity": 1, "price": 30, "subtotal": 30 },
+                        { "product_id": "prod_calz_paleta_agua", "product_name": "Paleta de Agua", "quantity": 1, "price": 25, "subtotal": 25 }
+                ],
+                "created_at": "2026-09-18T16:10:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m4",
+                "sale_number": "TICK-110244",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_cono_doble_choco", "product_name": "Cono Doble Chocolate", "quantity": 1, "price": 45, "subtotal": 45 },
+                        { "product_id": "p_helado_vaso2", "product_name": "Helado Vaso 2 bolitas", "quantity": 1, "price": 35, "subtotal": 35 }
+                ],
+                "created_at": "2026-09-18T16:35:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m5",
+                "sale_number": "TICK-110245",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 85,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_tostilocos", "product_name": "Tostilocos", "quantity": 1, "price": 55, "subtotal": 55 },
+                        { "product_id": "p_ag_mediana", "product_name": "Agua Mediana", "quantity": 1, "price": 30, "subtotal": 30 }
+                ],
+                "created_at": "2026-09-18T17:00:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m6",
+                "sale_number": "TICK-110246",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_helado_vaso3", "product_name": "Helado Vaso 3 bolitas", "quantity": 2, "price": 40, "subtotal": 80 }
+                ],
+                "created_at": "2026-09-18T17:25:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m7",
+                "sale_number": "TICK-110247",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "prod_1789344787923_spve", "product_name": "Esquimal Grande", "quantity": 2, "price": 30, "subtotal": 60 },
+                        { "product_id": "p_paleta_chapurrita", "product_name": "Paleta Chapurrita", "quantity": 1, "price": 20, "subtotal": 20 }
+                ],
+                "created_at": "2026-09-18T17:50:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m8",
+                "sale_number": "TICK-110248",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "prod_calz_medio_litro", "product_name": "Medio Litro de Nieve", "quantity": 1, "price": 65, "subtotal": 65 },
+                        { "product_id": "p_mordisco", "product_name": "Mordisco", "quantity": 1, "price": 25, "subtotal": 25 }
+                ],
+                "created_at": "2026-09-18T18:15:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m9",
+                "sale_number": "TICK-110249",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 75,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_helado_vaso1", "product_name": "Vaso 1 bolita", "quantity": 1, "price": 20, "subtotal": 20 },
+                        { "product_id": "p_paleta_payaso", "product_name": "Paleta Payaso", "quantity": 1, "price": 30, "subtotal": 30 },
+                        { "product_id": "p_ag_chica", "product_name": "Agua Chica", "quantity": 1, "price": 25, "subtotal": 25 }
+                ],
+                "created_at": "2026-09-18T18:40:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m10",
+                "sale_number": "TICK-110250",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "prod_calz_tostiloco_morado", "product_name": "Tostiloco morados", "quantity": 1, "price": 55, "subtotal": 55 },
+                        { "product_id": "prod_calz_nieve_vaso_12", "product_name": "Nieve Vaso #12", "quantity": 1, "price": 40, "subtotal": 40 }
+                ],
+                "created_at": "2026-09-18T19:05:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_m11",
+                "sale_number": "TICK-110251",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_id": "usr_encargado1lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Matutino) (encargado1lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_helado_vaso3", "product_name": "Helado Vaso 3 bolitas", "quantity": 1, "price": 40, "subtotal": 40 },
+                        { "product_id": "prod_1789344787923_spve", "product_name": "Esquimal Grande", "quantity": 1, "price": 30, "subtotal": 30 },
+                        { "product_id": "prod_calz_extra_nuez", "product_name": "Extra Nuez", "quantity": 1, "price": 10, "subtotal": 10 }
+                ],
+                "created_at": "2026-09-18T19:35:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v1",
+                "sale_number": "TICK-120301",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 125,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_helado_vaso3", "product_name": "Helado Vaso 3 bolitas", "quantity": 2, "price": 40, "subtotal": 80 },
+                        { "product_id": "p_cono_cubierto", "product_name": "Cono Cubierto", "quantity": 1, "price": 45, "subtotal": 45 }
+                ],
+                "created_at": "2026-09-18T20:15:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v2",
+                "sale_number": "TICK-120302",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 90,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "prod_1789344787923_spve", "product_name": "Esquimal Grande", "quantity": 3, "price": 30, "subtotal": 90 }
+                ],
+                "created_at": "2026-09-18T20:40:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v3",
+                "sale_number": "TICK-120303",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 155,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_tostilocos", "product_name": "Tostilocos", "quantity": 2, "price": 55, "subtotal": 110 },
+                        { "product_id": "p_ag_grande", "product_name": "Agua Grande", "quantity": 1, "price": 45, "subtotal": 45 }
+                ],
+                "created_at": "2026-09-18T21:05:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v4",
+                "sale_number": "TICK-120304",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_mordisco", "product_name": "Mordisco", "quantity": 2, "price": 25, "subtotal": 50 },
+                        { "product_id": "p_paleta_crema_gde", "product_name": "Paleta Crema Grande", "quantity": 1, "price": 30, "subtotal": 30 }
+                ],
+                "created_at": "2026-09-18T21:30:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v5",
+                "sale_number": "TICK-120305",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 130,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "prod_calz_medio_litro", "product_name": "Medio Litro de Nieve", "quantity": 2, "price": 65, "subtotal": 130 }
+                ],
+                "created_at": "2026-09-18T21:55:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v6",
+                "sale_number": "TICK-120306",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 100,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_helado_vaso2", "product_name": "Helado Vaso 2 bolitas", "quantity": 2, "price": 35, "subtotal": 70 },
+                        { "product_id": "p_ag_mediana", "product_name": "Agua Mediana", "quantity": 1, "price": 30, "subtotal": 30 }
+                ],
+                "created_at": "2026-09-18T22:15:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v7",
+                "sale_number": "TICK-120307",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 115,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "prod_calz_tostitos_vaso", "product_name": "Tostitos vaso", "quantity": 1, "price": 60, "subtotal": 60 },
+                        { "product_id": "prod_calz_barcel_loco", "product_name": "Barcel Loco", "quantity": 1, "price": 55, "subtotal": 55 }
+                ],
+                "created_at": "2026-09-18T22:35:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v8",
+                "sale_number": "TICK-120308",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_helado_vaso3", "product_name": "Helado Vaso 3 bolitas", "quantity": 1, "price": 40, "subtotal": 40 },
+                        { "product_id": "prod_calz_paleta_leche", "product_name": "Paleta de Leche", "quantity": 1, "price": 30, "subtotal": 30 },
+                        { "product_id": "prod_calz_paleta_agua", "product_name": "Paleta de Agua", "quantity": 1, "price": 25, "subtotal": 25 }
+                ],
+                "created_at": "2026-09-18T22:50:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v9",
+                "sale_number": "TICK-120309",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 95,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "prod_calz_chetos_prep", "product_name": "Chetos preparados", "quantity": 1, "price": 50, "subtotal": 50 },
+                        { "product_id": "p_ag_grande", "product_name": "Agua Grande", "quantity": 1, "price": 45, "subtotal": 45 }
+                ],
+                "created_at": "2026-09-18T23:05:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v10",
+                "sale_number": "TICK-120310",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_cono_sencillo", "product_name": "Cono Sencillo", "quantity": 2, "price": 25, "subtotal": 50 },
+                        { "product_id": "p_paleta_payaso", "product_name": "Paleta Payaso", "quantity": 1, "price": 30, "subtotal": 30 }
+                ],
+                "created_at": "2026-09-18T23:15:00.000Z",
+                "date_key": "2026-09-18"
+        },
+        {
+                "id": "sale_calz_today_v11",
+                "sale_number": "TICK-120311",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_id": "usr_encargado2lafuente_gmail_com",
+                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
+                "total": 80,
+                "payment_method": "cash",
+                "status": "COMPLETADA",
+                "items": [
+                        { "product_id": "p_helado_vaso4", "product_name": "Helado Vaso 4", "quantity": 1, "price": 50, "subtotal": 50 },
+                        { "product_id": "prod_1789344787923_spve", "product_name": "Esquimal Grande", "quantity": 1, "price": 30, "subtotal": 30 }
+                ],
+                "created_at": "2026-09-18T23:25:00.000Z",
+                "date_key": "2026-09-18"
+        },
         {
                 "id": "sale_1789689420112_tag1m1",
                 "sale_number": "TICK-421105",
@@ -11756,6 +12232,41 @@
 
 
     const BASE_ACTIVE_CUTS = [
+        // ── LA FUENTE CALZADA: CORTES OFICIALES DE LA JORNADA ──
+        {
+                "id": "cut_calzada_today_mat",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Mañana",
+                "cashier_name": "Encargada Calzada (Matutino)",
+                "performed_by_name": "Encargada Calzada (Matutino)",
+                "opening_amount": 1000,
+                "cash_sales": 860,
+                "card_sales": 0,
+                "total_sales": 860,
+                "expected_cash": 1860,
+                "counted_cash": 1860,
+                "difference": 0,
+                "net_sales_without_fund": 860,
+                "created_at": "2026-09-18T20:00:00.000Z"
+        },
+        {
+                "id": "cut_calzada_today_ves",
+                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
+                "branch_name": "La Fuente Calzada",
+                "shift_name": "Tarde",
+                "cashier_name": "Encargada Calzada (Vespertino)",
+                "performed_by_name": "Encargada Calzada (Vespertino)",
+                "opening_amount": 1000,
+                "cash_sales": 1145,
+                "card_sales": 0,
+                "total_sales": 1145,
+                "expected_cash": 2145,
+                "counted_cash": 2145,
+                "difference": 0,
+                "net_sales_without_fund": 1145,
+                "created_at": "2026-09-18T23:30:00.000Z"
+        },
         {
                 "id": "cut_tag1_today_mat",
                 "branch_id": "branch-4",
@@ -12435,6 +12946,9 @@
                 gr("all_sales", []),
                 lr("calzada_sales", []),
                 lr("calzada_today_sales", []),
+                lr("branch-1_sales", []),
+                lr("c188dd82-7faf-41b8-948b-af8e789facba_sales", []),
+                lr("la_fuente_calzada_sales", []),
                 lr("all_printed_tickets", []),
                 lr("last_printed_sale") ? [lr("last_printed_sale")] : []
             ];
@@ -12491,6 +13005,9 @@
                     gr("all_sales", []),
                     lr("calzada_sales", []),
                     lr("calzada_today_sales", []),
+                    lr("branch-1_sales", []),
+                    lr("c188dd82-7faf-41b8-948b-af8e789facba_sales", []),
+                    lr("la_fuente_calzada_sales", []),
                     lr("all_printed_tickets", []),
                     lr("last_printed_sale") ? [lr("last_printed_sale")] : []
                 ];
@@ -13206,6 +13723,10 @@
                 gr("all_sales", []),
                 lr("calzada_sales", []),
                 lr("calzada_today_sales", []),
+                lr("branch-1_sales", []),
+                lr("c188dd82-7faf-41b8-948b-af8e789facba_sales", []),
+                lr("la_fuente_calzada_sales", []),
+                lr("all_printed_tickets", []),
                 lr("last_printed_sale") ? [lr("last_printed_sale")] : []
             ];
             localSources.forEach(list => {
@@ -13473,6 +13994,16 @@
             gCuts.unshift(cutRecord);
             gw("all_cuts", gCuts);
 
+            const isCalzCut = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
+            if (isCalzCut) {
+                const calzCuts = lr("calzada_cuts", []);
+                calzCuts.unshift(cutRecord);
+                lw("calzada_cuts", calzCuts);
+                lw("branch-1_cuts", calzCuts);
+                lw("c188dd82-7faf-41b8-948b-af8e789facba_cuts", calzCuts);
+                lw("la_fuente_calzada_cuts", calzCuts);
+            }
+
             lw("last_printed_cut", cutRecord);
             gw("last_printed_cut", cutRecord);
 
@@ -13535,6 +14066,7 @@
             }
 
             // 5. Actualizar historial de cortes
+            _cachedConsolidatedCuts = null;
             await loadCuts(true);
         });
 
@@ -13620,6 +14152,31 @@
     async function getConsolidatedShiftsForChain() {
         const shiftsMap = new Map();
 
+        // 0. Aperturas de jornada oficiales para Calzada
+        const baseCalzadaShifts = [
+            {
+                id: "shift_calzada_today_mat",
+                branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
+                branch_name: "La Fuente Calzada",
+                shift_name: "Mañana",
+                cashier_name: "Encargada Calzada (Matutino)",
+                opening_amount: 1000,
+                opened_at: "2026-09-18T14:00:00.000Z"
+            },
+            {
+                id: "shift_calzada_today_ves",
+                branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
+                branch_name: "La Fuente Calzada",
+                shift_name: "Tarde",
+                cashier_name: "Encargada Calzada (Vespertino)",
+                opening_amount: 1000,
+                opened_at: "2026-09-18T20:00:00.000Z"
+            }
+        ];
+        baseCalzadaShifts.forEach(sh => {
+            if (!shiftsMap.has(sh.id)) shiftsMap.set(sh.id, sh);
+        });
+
         // 1. Escaneo de todas las aperturas y turnos en cualquier llave de localStorage
         try {
             if (typeof localStorage !== "undefined") {
@@ -13655,18 +14212,19 @@
         } catch(e) {}
 
         // 2. Extraer aperturas de turnos registradas en los cortes de caja
-        const allCuts = gr("all_cuts", []).concat(lr("cuts", []));
+        const allCuts = await getConsolidatedCutsForChain();
         allCuts.forEach(ct => {
             if (ct && ct.opening_amount !== undefined) {
                 const cutDate = ct.created_at || now();
-                const cutKey = "shift_cut_" + (ct.id || (cutDate + "_" + (ct.branch_name || "")));
+                const bName = ct.branch_name || resolveCanonicalBranch(ct) || S.branchName;
+                const cutKey = "shift_cut_" + (ct.id || (cutDate + "_" + bName));
                 if (!shiftsMap.has(cutKey)) {
                     shiftsMap.set(cutKey, {
                         id: cutKey,
                         branch_id: ct.branch_id,
-                        branch_name: ct.branch_name || S.branchName,
+                        branch_name: bName,
                         shift_name: ct.shift_name || "Turno",
-                        cashier_name: ct.performed_by_name || "Encargada",
+                        cashier_name: ct.performed_by_name || ct.cashier_name || "Encargada",
                         opening_amount: Number(ct.opening_amount || 0),
                         opened_at: cutDate
                     });
@@ -13715,7 +14273,12 @@
                             const foundB = S.branches.find(b=>String(b.id)===String(ct.branch_id));
                             if (foundB) bName = foundB.name;
                         }
-                        if (!bName) bName = "Tagarete 2";
+                        const canonicalB = resolveCanonicalBranch(ct) || resolveCanonicalBranch(obs) || resolveCanonicalBranch(ct.branch_id);
+                        if (canonicalB) {
+                            bName = canonicalB;
+                        } else if (!bName) {
+                            bName = "La Fuente Calzada";
+                        }
                         const cashier = obs.performed_by_name || ct.performed_by || "Encargada";
                         const cutKey = "shift_db_" + ct.id;
                         if (!shiftsMap.has(cutKey)) {
@@ -13886,6 +14449,16 @@
             const allGlobalShifts = gr("all_shifts", []);
             allGlobalShifts.unshift(shiftObj);
             gw("all_shifts", allGlobalShifts);
+
+            const isCalzShift = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
+            if (isCalzShift) {
+                const calzShifts = lr("calzada_shifts", []);
+                calzShifts.unshift(shiftObj);
+                lw("calzada_shifts", calzShifts);
+                lw("branch-1_shifts", calzShifts);
+                lw("c188dd82-7faf-41b8-948b-af8e789facba_shifts", calzShifts);
+                lw("la_fuente_calzada_shifts", calzShifts);
+            }
 
             if (realtimeChannel) {
                 try {
