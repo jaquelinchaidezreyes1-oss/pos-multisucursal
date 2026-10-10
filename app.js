@@ -486,6 +486,22 @@
         return true;
     }
 
+    /* ── FILTRO ESTRICTO DE REGISTROS DE SISTEMA (NO VENTAS) ── */
+    function isSystemNonSaleRecord(s) {
+        if (!s || typeof s !== "object") return true;
+        const st = String(s.status || "").toUpperCase().trim();
+        if (["CATALOG_RECORD", "SHIFT_RECORD", "CUT_DELETED_RECORD", "DAMAGE_RECORD", "NOTICE_RECORD"].includes(st)) return true;
+        const snum = String(s.sale_number || "").toUpperCase().trim();
+        if (snum.startsWith("CATALOG-") || snum.startsWith("SHIFT-") || snum.startsWith("DELCUT-") || snum.startsWith("DMG-") || snum.startsWith("NOT-")) return true;
+        let obs = {};
+        if (s.observations) {
+            try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
+        }
+        if (obs.is_catalog_record || obs.is_shift_record || obs.is_cut_deleted_record || obs.is_damage_record || obs.is_notice_record || obs.custom_products || obs.deleted_product_ids || obs.deleted_cut_id || obs.report || obs.notice) return true;
+        if (Number(s.total || 0) <= 0 && (!Array.isArray(s.items) || s.items.length === 0)) return true;
+        return false;
+    }
+
     /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE ── */
     let _isSyncingSales = false;
     async function syncPendingSalesToSupabase() {
@@ -495,41 +511,19 @@
             const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
             const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
             const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
-            const defaultShiftUUID = "1dabe6df-2ce6-4e3a-97df-b81e179898ab";
 
-            const localSales = lr("sales", []).concat(gr("all_sales", []));
-            
-            // Recoger ventas de todas las llaves de sucursales locales
-            try {
-                if (typeof localStorage !== "undefined") {
-                    for (let i = 0; i < localStorage.length; i++) {
-                        const key = localStorage.key(i);
-                        if (key && (key.startsWith("lf_") || key.includes("sales"))) {
-                            try {
-                                const raw = localStorage.getItem(key);
-                                if (raw && raw.startsWith("[")) {
-                                    const parsed = JSON.parse(raw);
-                                    if (Array.isArray(parsed)) {
-                                        parsed.forEach(item => {
-                                            if (item && (item.total != null || item.sale_number || item.items)) {
-                                                localSales.push(item);
-                                            }
-                                        });
-                                    }
-                                }
-                            } catch(e) {}
-                        }
-                    }
-                }
-            } catch(e) {}
-
+            const localSales = lr("pending_sync_sales", []).concat(lr("sales", []));
             const syncedIds = new Set(gr("synced_sales_ids", []));
             const seenLocals = new Set();
             const unsynced = [];
 
             localSales.forEach(s => {
-                if (s && s.id && !syncedIds.has(String(s.id)) && !uuid(s.id) && !seenLocals.has(String(s.id))) {
-                    seenLocals.add(String(s.id));
+                if (!s || !s.id || isSystemNonSaleRecord(s)) return;
+                const sid = String(s.id);
+                // Ignorar ventas semilla estáticas para no saturar la red
+                if (sid.startsWith("sale_calz_today_") || sid.startsWith("sale_1789")) return;
+                if (!syncedIds.has(sid) && !uuid(sid) && !seenLocals.has(sid)) {
+                    seenLocals.add(sid);
                     unsynced.push(s);
                 }
             });
@@ -543,6 +537,7 @@
 
                 const observationsObj = {
                     branch_name: s.branch_name || S.branchName,
+                    branch_id: s.branch_id || S.branchId,
                     shift_name: s.shift_name || S.shift,
                     cashier_name: s.cashier_name || "Encargada",
                     payment_method: s.payment_method || "cash",
@@ -576,6 +571,8 @@
                 }
             }
             gw("synced_sales_ids", Array.from(syncedIds));
+            const remainingPending = lr("pending_sync_sales", []).filter(x => x && !syncedIds.has(String(x.id)));
+            lw("pending_sync_sales", remainingPending);
         } catch(e) {
             console.warn("Error en cola de sincronización:", e);
         } finally {
@@ -1239,6 +1236,7 @@
 
     function initInv() { 
         const branchKey = getBranchKeyName(S.branchName);
+        const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
         
         // 1. Intentar cargar stock guardado para esta sucursal
         let stored = null;
@@ -1254,7 +1252,7 @@
             stored = lr("inv", null);
         }
 
-        // Evaluar si stored tiene casi todos los productos en 0 (lo cual bloqueaba a las encargadas)
+        // Evaluar si stored tiene productos masivamente en 0 (causado por stock=0 de nube)
         let zeroCount = 0;
         let totalKeys = 0;
         if (stored && typeof stored === "object") {
@@ -1263,35 +1261,45 @@
             entries.forEach(v => { if (Number(v) <= 0) zeroCount++; });
         }
 
-        const isWiped = totalKeys > 0 && (zeroCount / totalKeys) > 0.65;
+        const isCalzadaNeedsHeal = branchKey === "calzada" && (!localStorage.getItem("lf_calzada_inv_healed_v68") || zeroCount >= 8);
+        const isWiped = totalKeys > 0 && ((zeroCount / totalKeys) > 0.35 || zeroCount >= 12 || isCalzadaNeedsHeal);
+
+        const computeHealthyDefault = (p) => {
+            const maxS = getMaxStock(p);
+            let baseStk = branchDefaults[p.product_id];
+            if (baseStk === undefined || baseStk === null || Number(baseStk) <= 0) {
+                baseStk = (p.initial_stock !== undefined && p.initial_stock !== null && Number(p.initial_stock) > 0) 
+                    ? Number(p.initial_stock) 
+                    : (p.is_supply || p.category === "desechables" ? 250 : (p.category === "paletas" ? 100 : (p.category === "helados" ? 80 : 60)));
+                if (branchKey === "tagarete_2") baseStk = Math.max(25, Math.floor(baseStk * 0.75));
+                else if (branchKey === "cnop") baseStk = Math.max(20, Math.floor(baseStk * 0.65));
+                else if (branchKey === "rescate") baseStk = Math.max(30, Math.floor(baseStk * 0.85));
+            }
+            return Math.min(maxS, Math.max(1, baseStk));
+        };
 
         if (stored && typeof stored === "object" && totalKeys > 0 && !isWiped) {
             S.inv = { ...stored };
-            // Asegurar que ningún producto nuevo quede indefinido
+            let healedAny = false;
             S.products.forEach(p => {
-                if (S.inv[p.product_id] === undefined || S.inv[p.product_id] === null) {
-                    S.inv[p.product_id] = (p.initial_stock && Number(p.initial_stock) > 0) ? Number(p.initial_stock) : 60;
+                if (S.inv[p.product_id] === undefined || S.inv[p.product_id] === null || isNaN(S.inv[p.product_id])) {
+                    S.inv[p.product_id] = computeHealthyDefault(p);
+                    healedAny = true;
                 }
             });
+            if (healedAny) saveBranchInv();
         } else {
-            // Cargar stock operativo saludable y diferenciado por sucursal
-            S.inv = {};
-            const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
-
+            // Cargar o restaurar stock operativo saludable manteniendo ajustes positivos existentes
+            S.inv = (stored && typeof stored === "object") ? { ...stored } : {};
             S.products.forEach(p => {
-                const maxS = getMaxStock(p);
-                let baseStk = branchDefaults[p.product_id];
-                if (baseStk === undefined || baseStk === null || Number(baseStk) <= 0) {
-                    baseStk = (p.initial_stock !== undefined && p.initial_stock !== null && Number(p.initial_stock) > 0) 
-                        ? Number(p.initial_stock) 
-                        : (p.is_supply || p.category === "desechables" ? 250 : (p.category === "paletas" ? 100 : (p.category === "helados" ? 80 : 60)));
-                    if (branchKey === "tagarete_2") baseStk = Math.max(25, Math.floor(baseStk * 0.75));
-                    else if (branchKey === "cnop") baseStk = Math.max(20, Math.floor(baseStk * 0.65));
-                    else if (branchKey === "rescate") baseStk = Math.max(30, Math.floor(baseStk * 0.85));
+                const curVal = S.inv[p.product_id];
+                if (curVal === undefined || curVal === null || isNaN(curVal) || Number(curVal) <= 0) {
+                    S.inv[p.product_id] = computeHealthyDefault(p);
                 }
-                S.inv[p.product_id] = Math.min(maxS, Math.max(0, baseStk));
             });
-
+            if (branchKey === "calzada") {
+                try { localStorage.setItem("lf_calzada_inv_healed_v68", "1"); } catch(e) {}
+            }
             saveBranchInv();
         }
     }
@@ -1308,7 +1316,8 @@
             const maxS = getMaxStock(prod);
             const branchKey = getBranchKeyName(S.branchName);
             const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
-            S.inv[id] = branchDefaults[id] !== undefined ? branchDefaults[id] : ((prod && prod.initial_stock !== undefined && prod.initial_stock !== null) ? Number(prod.initial_stock) : Math.min(100, maxS)); 
+            const defVal = branchDefaults[id] !== undefined ? branchDefaults[id] : ((prod && prod.initial_stock !== undefined && prod.initial_stock !== null && Number(prod.initial_stock) > 0) ? Number(prod.initial_stock) : Math.min(60, maxS));
+            S.inv[id] = defVal;
         }
         return S.inv[id]; 
     }
@@ -1453,7 +1462,7 @@
         }
     }
 
-    function checkBlock() { return S.cart.some(i => i.quantity > getStock(i.product_id)); }
+    function checkBlock() { return false; }
 
     /* ── CATÁLOGO OFICIAL LA FUENTE (PUNTOS DE VENTA & SUCURSALES) ── */
     const DEFAULT_PRODUCTS = [
@@ -1644,15 +1653,17 @@
 
     /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
     async function loadProducts() {
-        // Cargar catálogo permanente y protegido de la Sucursal La Fuente Calzada
-        let calzadaPermanent = [...CALZADA_BASE_PRODUCTS];
+        const explicitDelSet = new Set(gr("explicit_deleted_ids", []).map(String));
+
+        // Cargar catálogo permanente y protegido de la Sucursal La Fuente Calzada (respetando solo eliminaciones explícitas del usuario)
+        let calzadaPermanent = CALZADA_BASE_PRODUCTS.filter(cp => !explicitDelSet.has(String(cp.product_id)));
         try {
             const rawCalz = localStorage.getItem("lf_calzada_permanent_products");
             if (rawCalz) {
                 const parsed = JSON.parse(rawCalz);
                 if (Array.isArray(parsed)) {
                     parsed.forEach(p => {
-                        if (p && p.product_id && !calzadaPermanent.some(cp => String(cp.product_id) === String(p.product_id))) {
+                        if (p && p.product_id && !explicitDelSet.has(String(p.product_id)) && !calzadaPermanent.some(cp => String(cp.product_id) === String(p.product_id))) {
                             calzadaPermanent.push(p);
                         }
                     });
@@ -1667,21 +1678,34 @@
                 if (catalogRecords && catalogRecords.length) {
                     const localCustom = gr("custom_products", []);
                     const mapCust = new Map();
-                    localCustom.forEach(p => mapCust.set(String(p.product_id), p));
-                    calzadaPermanent.forEach(p => mapCust.set(String(p.product_id), p));
-                    const delSet = new Set(gr("deleted_product_ids", []));
+                    localCustom.forEach(p => {
+                        if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                            mapCust.set(String(p.product_id), p);
+                        }
+                    });
+                    calzadaPermanent.forEach(p => {
+                        if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                            mapCust.set(String(p.product_id), p);
+                        }
+                    });
+                    const delSet = new Set(gr("deleted_product_ids", []).map(String));
 
                     catalogRecords.reverse().forEach(cr => {
                         let obs = {};
                         try { obs = typeof cr.observations === "string" ? JSON.parse(cr.observations) : (cr.observations || {}); } catch(e) {}
                         if (obs.custom_products && Array.isArray(obs.custom_products)) {
-                            obs.custom_products.forEach(p => mapCust.set(String(p.product_id), p));
+                            obs.custom_products.forEach(p => {
+                                if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                                    mapCust.set(String(p.product_id), p);
+                                }
+                            });
                         }
                         if (obs.deleted_product_ids && Array.isArray(obs.deleted_product_ids)) {
                             obs.deleted_product_ids.forEach(id => {
-                                const isCalz = calzadaPermanent.some(cp => String(cp.product_id) === String(id));
-                                if (!isCalz) {
-                                    delSet.add(String(id));
+                                const sid = String(id);
+                                const isCalzBase = CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === sid);
+                                if (!isCalzBase || explicitDelSet.has(sid)) {
+                                    delSet.add(sid);
                                 }
                             });
                         }
@@ -1712,13 +1736,13 @@
         }
 
         const customProds = gr("custom_products", []);
-        const deletedIds  = gr("deleted_product_ids", []);
+        const deletedIds  = gr("deleted_product_ids", []).map(String);
 
         // Escaneo de productos personalizados guardados por sucursales específicas
         const branchKeySuffixes = [
             "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
             "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
-            "tagarete 1", "tagarete 2", "la fuente calzada"
+            "tagarete 1", "tagarete 2", "la fuente calzada", "la_fuente_calzada"
         ];
         branchKeySuffixes.forEach(bSuffix => {
             try {
@@ -1727,8 +1751,10 @@
                     const parsed = JSON.parse(raw);
                     if (Array.isArray(parsed)) {
                         parsed.forEach(p => {
-                            if (p && p.product_id && !customProds.some(x => String(x.product_id) === String(p.product_id))) {
-                                customProds.push(p);
+                            if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                                const idx = customProds.findIndex(x => String(x.product_id) === String(p.product_id));
+                                if (idx >= 0) customProds[idx] = { ...customProds[idx], ...p };
+                                else customProds.push(p);
                             }
                         });
                     }
@@ -1736,9 +1762,9 @@
             } catch(e) {}
         });
 
-        // Asegurar que todos los productos permanentes de Calzada se incluyan
+        // Asegurar que todos los productos permanentes de Calzada (no eliminados explícitamente) se incluyan
         calzadaPermanent.forEach(p => {
-            if (p && p.product_id && !customProds.some(x => String(x.product_id) === String(p.product_id))) {
+            if (p && p.product_id && !explicitDelSet.has(String(p.product_id)) && !customProds.some(x => String(x.product_id) === String(p.product_id))) {
                 customProds.push(p);
             }
         });
@@ -1749,9 +1775,10 @@
 
         // 1. Iniciar con el catálogo base e insumos oficiales
         DEFAULT_PRODUCTS.forEach(p => {
-            const isCalz = calzadaPermanent.some(cp => String(cp.product_id) === String(p.product_id));
-            if (!deletedIds.includes(String(p.product_id)) || isCalz) {
-                combinedMap.set(String(p.product_id), { ...p });
+            const pid = String(p.product_id);
+            const isCalz = calzadaPermanent.some(cp => String(cp.product_id) === pid);
+            if ((!deletedIds.includes(pid) || isCalz) && !explicitDelSet.has(pid)) {
+                combinedMap.set(pid, { ...p });
             }
         });
 
@@ -1759,7 +1786,7 @@
         if (remoteProducts.length) {
             remoteProducts.forEach(p => {
                 const pid = String(p.product_id || p.id);
-                if (!deletedIds.includes(pid)) {
+                if (!deletedIds.includes(pid) && !explicitDelSet.has(pid)) {
                     let cat = String(p.category || p.product_category || "helados").toLowerCase().trim();
                     const pName = String(p.product_name || "").toLowerCase();
                     if (cat.includes("preparad") || pName.includes("esquite") || pName.includes("nacho") || pName.includes("tosti") || pName.includes("fresas con crema")) cat = "preparados";
@@ -1779,11 +1806,11 @@
                         product_name: p.product_name,
                         product_code: p.product_code || p.code || existing.product_code || "",
                         category: cat,
-                        price: Number(p.price || 0),
+                        price: Number(p.price || existing.price || 0),
                         image_url: p.image_url || existing.image_url || null,
                         branch_id: p.branch_id || existing.branch_id || "all",
                         branch_name: p.branch_name || existing.branch_name || "General",
-                        initial_stock: p.stock != null ? Number(p.stock) : existing.initial_stock,
+                        initial_stock: (p.stock != null && Number(p.stock) > 0) ? Number(p.stock) : (existing.initial_stock || 60),
                         is_composite: (p.is_composite !== undefined) ? p.is_composite : existing.is_composite,
                         components: p.components || existing.components || [],
                         is_supply: (p.is_supply !== undefined) ? p.is_supply : (cat === "desechables"),
@@ -1793,37 +1820,38 @@
             });
         }
 
-        // 3. Fusionar productos personalizados creados por los administradores
+        // 3. Fusionar productos personalizados creados o editados por los usuarios
         customProds.forEach(p => {
             const pid = String(p.product_id);
             const isCalz = calzadaPermanent.some(cp => String(cp.product_id) === pid);
-            if (!deletedIds.includes(pid) || isCalz) {
+            if ((!deletedIds.includes(pid) || isCalz) && !explicitDelSet.has(pid)) {
                 let existing = combinedMap.get(pid) || {};
                 combinedMap.set(pid, {
                     ...existing,
                     ...p,
                     product_id: pid,
-                    product_name: p.product_name,
+                    product_name: p.product_name || existing.product_name,
                     product_code: p.product_code || existing.product_code || "",
                     category: (p.category || existing.category || "helados").toLowerCase().trim(),
                     price: Number(p.price != null ? p.price : (existing.price || 0)),
                     image_url: p.image_url || existing.image_url || null,
                     branch_id: p.branch_id || existing.branch_id || "all",
                     branch_name: p.branch_name || existing.branch_name || "General",
-                    initial_stock: p.stock != null ? Number(p.stock) : (existing.initial_stock || 60),
-                    is_composite: !!p.is_composite,
+                    initial_stock: (p.stock != null && Number(p.stock) > 0) ? Number(p.stock) : (p.initial_stock != null && Number(p.initial_stock) > 0 ? Number(p.initial_stock) : (existing.initial_stock || 60)),
+                    is_composite: p.is_composite !== undefined ? !!p.is_composite : !!existing.is_composite,
                     components: Array.isArray(p.components) ? p.components : (existing.components || []),
-                    is_supply: !!p.is_supply,
+                    is_supply: p.is_supply !== undefined ? !!p.is_supply : !!existing.is_supply,
                     units_per_package: Number(p.units_per_package || existing.units_per_package || 1)
                 });
             }
         });
 
-        // 4. Si la sucursal activa es La Fuente Calzada, blindar inclusión total de productos permanentes
+        // 4. Si la sucursal activa es La Fuente Calzada, blindar inclusión de productos permanentes no eliminados
         if (resolveCanonicalBranch(S.branchName) === "La Fuente Calzada") {
             calzadaPermanent.forEach(cp => {
-                if (cp && cp.product_id && !combinedMap.has(String(cp.product_id))) {
-                    combinedMap.set(String(cp.product_id), { ...cp });
+                const cpid = String(cp.product_id);
+                if (cp && cpid && !explicitDelSet.has(cpid) && !combinedMap.has(cpid)) {
+                    combinedMap.set(cpid, { ...cp });
                 }
             });
         }
@@ -1877,7 +1905,7 @@
         }));
     }
 
-    /* ── NUEVA FUNCIÓN: MONITOR DE MOVIMIENTO EN VIVO & VENTAS DEL DÍA ── */
+    /* ── BARRA DE ESTADO EN PUNTO DE VENTA (SIN MONTOS ACUMULADOS POR PRIVACIDAD EN PANTALLA DOBLE) ── */
     async function updatePosLiveMovement() {
         const prodSec = document.querySelector(".products-section");
         if (!prodSec) return;
@@ -1891,139 +1919,29 @@
             else prodSec.prepend(bar);
         }
 
-        const allSales = (_cachedConsolidatedSales && _cachedConsolidatedSales.length)
-            ? _cachedConsolidatedSales
-            : await getConsolidatedSalesForChain();
-        const activeSales = allSales.filter(s => String(s.status || "").toUpperCase() !== "CANCELLED");
-
-        const todayStr = toDateKey();
-        const isCalzadaActive = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada" ||
-                                (!S.isSU && resolveCanonicalBranch(S.branchName || S.user?.email) === "La Fuente Calzada") ||
-                                (resolveCanonicalBranch(S.branchName) === "La Fuente Calzada");
-        let bSales = activeSales.filter(s => {
-            const branchMatch = isCalzadaActive 
-                ? (resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada"))
-                : matchesBranch(s, { id: S.branchId, name: S.branchName });
-            return branchMatch && isTodaySale(s, todayStr);
-        });
-
-        // Garantizar que las ventas registradas para Calzada estén siempre presentes en el monitor
-        if (isCalzadaActive) {
-            const localSources = [
-                lr("sales", []),
-                gr("all_sales", []),
-                lr("calzada_sales", []),
-                lr("calzada_today_sales", []),
-                lr("branch-1_sales", []),
-                lr("c188dd82-7faf-41b8-948b-af8e789facba_sales", []),
-                lr("la_fuente_calzada_sales", []),
-                lr("all_printed_tickets", []),
-                lr("last_printed_sale") ? [lr("last_printed_sale")] : []
-            ];
-            localSources.forEach(list => {
-                if (Array.isArray(list)) {
-                    list.forEach(ls => {
-                        if (ls && String(ls.status || "").toUpperCase() !== "CANCELLED") {
-                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
-                            if (isCalz && isTodaySale(ls, todayStr)) {
-                                if (!bSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
-                                    bSales.unshift(ls);
-                                }
-                            }
-                        }
-                    });
-                }
-            });
-        }
-
-        if (!bSales.length) {
-            const branchAll = activeSales.filter(s => {
-                return isCalzadaActive
-                    ? (resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada"))
-                    : matchesBranch(s, { id: S.branchId, name: S.branchName });
-            });
-            if (branchAll.length) {
-                const datesMap = new Map();
-                branchAll.forEach(s => {
-                    const d = toDateKey(s.created_at);
-                    if (d) {
-                        if (!datesMap.has(d)) datesMap.set(d, []);
-                        datesMap.get(d).push(s);
-                    }
-                });
-                const latestDate = Array.from(datesMap.keys()).sort().reverse()[0];
-                if (latestDate) {
-                    bSales = datesMap.get(latestDate) || [];
-                }
-            }
-        }
-
-        const matSales = bSales.filter(s => getShiftCategory(s) === "matutino");
-        const vesSales = bSales.filter(s => getShiftCategory(s) === "vespertino");
-
-        const matCash = matSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a, s) => a + Number(s.total || 0), 0);
-        const matCard = matSales.filter(s => s.payment_method === "card").reduce((a, s) => a + Number(s.total || 0), 0);
-        const matTotal = matCash + matCard;
-
-        const vesCash = vesSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a, s) => a + Number(s.total || 0), 0);
-        const vesCard = vesSales.filter(s => s.payment_method === "card").reduce((a, s) => a + Number(s.total || 0), 0);
-        const vesTotal = vesCash + vesCard;
-
-        const dayCash = matCash + vesCash;
-        const dayCard = matCard + vesCard;
-        const dayTotal = matTotal + vesTotal;
-
-        const allShifts = gr("all_shifts", []);
-        const branchShift = allShifts.find(sh => matchesBranch(sh, { id: S.branchId, name: S.branchName }));
-        const activeLocalShift = lr("current_shift", null);
-        const initialFund = (branchShift && branchShift.opening_amount != null)
-            ? Number(branchShift.opening_amount)
-            : (activeLocalShift && activeLocalShift.opening_amount != null
-                ? Number(activeLocalShift.opening_amount)
-                : (S.currentShift?.opening_amount != null ? Number(S.currentShift.opening_amount) : 1000));
-
-        const isCurrentVesp = (S.shift || "").toLowerCase().includes("tarde") || (S.shift || "").toLowerCase().includes("vesp");
-        const matLiveBadge = !isCurrentVesp ? ' (EN VIVO)' : '';
-        const vesLiveBadge = isCurrentVesp ? ' (EN VIVO)' : '';
-
+        // En Punto de Venta ocultamos los montos acumulados (Mañana, Tarde y Total del Día)
+        // para proteger la privacidad ante clientes en sucursales con pantalla doble (como La Fuente Calzada).
+        // Los montos detallados se consultan exclusivamente en el apartado "Mis Ventas".
         bar.innerHTML = `
-        <div style="background:linear-gradient(135deg,#ffffff,#fffdf5);border:1.5px solid var(--gold-400);border-radius:14px;padding:12px 16px;margin-bottom:14px;box-shadow:0 3px 12px rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div style="background:linear-gradient(135deg,#ffffff,#fffdf5);border:1.5px solid var(--gold-400);border-radius:14px;padding:10px 16px;margin-bottom:14px;box-shadow:0 3px 12px rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
             <div style="display:flex;align-items:center;gap:10px">
-                <span style="font-size:24px">🍦</span>
+                <span style="font-size:22px">🍦</span>
                 <div>
                     <div style="display:flex;align-items:center;gap:8px">
                         <strong style="font-size:14px;color:var(--wine-900);font-weight:900">📍 ${esc(S.branchName)}</strong>
                         <span style="font-size:10px;font-weight:900;background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:10px;border:1px solid #86efac;display:inline-flex;align-items:center;gap:4px">
-                            <span style="width:6px;height:6px;background:#15803d;border-radius:50%;display:inline-block"></span> EN VIVO
+                            <span style="width:6px;height:6px;background:#15803d;border-radius:50%;display:inline-block"></span> PUNTO DE VENTA ACTIVO
                         </span>
                     </div>
                     <small style="color:var(--text-muted);font-size:11px;display:block;margin-top:2px">
-                        Turno actual: <strong style="color:var(--wine-800)">${esc(S.shift)}</strong> • Fondo Inicial: <strong>${money(initialFund)}</strong> • 🧾 <strong>${bSales.length} tickets hoy</strong>
+                        Turno actual: <strong style="color:var(--wine-800)">${esc(S.shift)}</strong>
                     </small>
                 </div>
             </div>
 
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <!-- MAÑANA -->
-                <div style="background:#fffef0;padding:6px 12px;border-radius:10px;border:1.5px solid ${!isCurrentVesp ? '#d97706' : '#fde68a'};text-align:right">
-                    <small style="font-size:9.5px;font-weight:900;color:#92400e;display:block">🌅 MAÑANA${matLiveBadge} (${matSales.length} tks)</small>
-                    <strong style="font-size:14px;color:#78350f">${money(matTotal)}</strong>
-                </div>
-
-                <!-- TARDE -->
-                <div style="background:#eef2ff;padding:6px 12px;border-radius:10px;border:1.5px solid ${isCurrentVesp ? '#6366f1' : '#c7d2fe'};text-align:right">
-                    <small style="font-size:9.5px;font-weight:900;color:#3730a3;display:block">🌇 TARDE${vesLiveBadge} (${vesSales.length} tks)</small>
-                    <strong style="font-size:14px;color:#312e81">${money(vesTotal)}</strong>
-                </div>
-
-                <!-- TOTAL DÍA -->
-                <div style="background:#f0fdf4;padding:6px 14px;border-radius:10px;border:1.5px solid #86efac;text-align:right">
-                    <small style="font-size:10px;font-weight:900;color:#166534;display:block">💰 TOTAL VENDIDO HOY</small>
-                    <strong style="font-size:16px;color:#15803d">${money(dayTotal)}</strong>
-                </div>
-
-                <button type="button" class="btn-goto-sales-live" style="padding:7px 12px;background:linear-gradient(135deg,var(--wine-800),var(--wine-950));color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
-                    📋 Ver Tickets
+                <button type="button" class="btn-goto-sales-live" style="padding:7px 14px;background:linear-gradient(135deg,var(--wine-800),var(--wine-950));color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px">
+                    📋 Ver Mis Ventas y Tickets
                 </button>
             </div>
         </div>`;
@@ -2070,8 +1988,8 @@
     let _lastAddPid = null;
     function addToCart(pid) {
         const nowMs = Date.now();
-        // Cooldown para evitar toques fantasmas / rebote táctil en pantallas touch (<220ms para el mismo producto)
-        if (_lastAddPid === String(pid) && (nowMs - _lastAddTapTime) < 220) {
+        // Cooldown para evitar toques fantasmas / rebote táctil en pantallas touch (<180ms para el mismo producto)
+        if (_lastAddPid === String(pid) && (nowMs - _lastAddTapTime) < 180) {
             return;
         }
         _lastAddTapTime = nowMs;
@@ -2079,10 +1997,6 @@
 
         const p = S.products.find(x => String(x.product_id) === String(pid));
         if (!p) return;
-        const stock = getStock(pid);
-        if (stock <= 0) {
-            toast("'" + p.product_name + "' agregado a la orden (stock bajo, recuerda reponer en Inventario).", "info", 2000);
-        }
         const ex = S.cart.find(i => String(i.product_id) === String(pid));
         if (ex) ex.quantity++;
         else S.cart.push({product_id: p.product_id, product_name: p.product_name, price: Number(p.price||0), quantity: 1});
@@ -2102,13 +2016,11 @@
 
         const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
         c.innerHTML = S.cart.map((item, idx) => {
-            const stock = getStock(item.product_id);
-            const over = item.quantity > stock;
             return `
-            <div class="order-item${over ? " item-overstock" : ""}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(0,0,0,0.06);">
+            <div class="order-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(0,0,0,0.06);">
                 <div style="flex:1;min-width:0;padding-right:10px;">
                     <div style="font-weight:800;font-size:13px;color:var(--wine-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(item.product_name)}</div>
-                    <div style="font-size:11px;color:var(--gold-600);font-weight:700;">${money(item.price)} c/u ${over ? '<span style="color:#dc2626;">(Excede stock ' + stock + ')</span>' : ''}</div>
+                    <div style="font-size:11px;color:var(--gold-600);font-weight:700;">${money(item.price)} c/u • Subtotal: ${money(item.price * item.quantity)}</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;">
                     <button type="button" class="btn-qty-minus" data-idx="${idx}" style="width:26px;height:26px;border-radius:6px;border:1px solid #d1d5db;background:#fff;font-weight:900;cursor:pointer;">-</button>
@@ -2122,10 +2034,9 @@
         setT("#subtotal,#total,#pay-total", money(total));
 
         const payBtn = $("#pay-button");
-        const blocked = checkBlock();
         if (payBtn) {
-            payBtn.disabled = blocked;
-            payBtn.style.opacity = blocked ? "0.6" : "1";
+            payBtn.disabled = false;
+            payBtn.style.opacity = "1";
         }
 
         c.querySelectorAll(".btn-qty-minus").forEach(btn => btn.addEventListener("click", () => {
@@ -2140,10 +2051,6 @@
         c.querySelectorAll(".btn-qty-plus").forEach(btn => btn.addEventListener("click", () => {
             const idx = Number(btn.dataset.idx);
             if (S.cart[idx]) {
-                const stock = getStock(S.cart[idx].product_id);
-                if (S.cart[idx].quantity >= stock) {
-                    return toast("Stock máximo alcanzado (" + stock + ").", "warn");
-                }
                 S.cart[idx].quantity++;
                 renderCart();
             }
@@ -2298,6 +2205,7 @@
 
         // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO
         (async () => {
+            let syncedOk = false;
             if (db) {
                 try {
                     const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
@@ -2340,6 +2248,7 @@
                     const { data, error } = await db.from("sales").insert(insertPayload).select();
 
                     if (!error && data && data.length) {
+                        syncedOk = true;
                         const syncedIds = new Set(gr("synced_sales_ids", []));
                         syncedIds.add(String(saleRecord.id));
                         if (data[0]?.id) syncedIds.add(String(data[0].id));
@@ -2353,7 +2262,12 @@
                     console.warn("Red lenta/offline, guardado en cola para reintentar:", e);
                 }
             }
-            syncPendingSalesToSupabase();
+            if (!syncedOk) {
+                const pendingList = lr("pending_sync_sales", []);
+                pendingList.push(saleRecord);
+                lw("pending_sync_sales", pendingList);
+                syncPendingSalesToSupabase();
+            }
         })();
         } finally {
             _isProcessingSale = false;
@@ -3698,7 +3612,8 @@
             const code  = document.getElementById("np-code")?.value.trim();
             const cat   = document.getElementById("np-cat")?.value;
             const price = Number(document.getElementById("np-price")?.value || 0);
-            const stockInp = Math.min(500, Math.max(0, parseInt(document.getElementById("np-stock")?.value, 10) || 0));
+            const maxAllowed = getMaxStock({ category: cat, is_supply: (cat === "desechables" || price === 0) });
+            const stockInp = Math.min(maxAllowed, Math.max(0, parseInt(document.getElementById("np-stock")?.value, 10) || 0));
             const packUnits = parseInt(document.getElementById("np-pack-units")?.value, 10) || 50;
             const targetBranch = document.getElementById("np-branch")?.value || S.branchName;
             const isComp = !!document.getElementById("np-is-composite")?.checked;
@@ -3709,7 +3624,8 @@
 
             const isCalzadaTarget = resolveCanonicalBranch(targetBranch) === "La Fuente Calzada" ||
                                     resolveCanonicalBranch(S.branchName) === "La Fuente Calzada" ||
-                                    bId === "branch-1";
+                                    bId === "branch-1" ||
+                                    targetBranch === "all";
 
             if (editingProductId) {
                 // MODIFICAR PRODUCTO EXISTENTE
@@ -3717,7 +3633,7 @@
                 let prodToEdit = customList.find(p => String(p.product_id) === String(editingProductId));
                 if (!prodToEdit) {
                     const existingInCatalog = S.products.find(p => String(p.product_id) === String(editingProductId));
-                    prodToEdit = Object.assign({}, existingInCatalog || {});
+                    prodToEdit = Object.assign({}, existingInCatalog || { product_id: editingProductId });
                     customList.push(prodToEdit);
                 }
 
@@ -3725,6 +3641,7 @@
                 prodToEdit.product_code = code || prodToEdit.product_code || ("LF-" + Math.floor(Math.random()*900+100));
                 prodToEdit.category = cat;
                 prodToEdit.price = price;
+                prodToEdit.initial_stock = stockInp;
                 prodToEdit.units_per_package = packUnits;
                 prodToEdit.branch_id = bId;
                 prodToEdit.branch_name = targetBranch === "all" ? "General" : targetBranch;
@@ -3758,14 +3675,17 @@
                     } catch(e) {}
                 }
 
-                // Si estaba en deleted_product_ids, removerlo para rehabilitarlo
+                // Si estaba en deleted_product_ids o explicit_deleted_ids, removerlo para rehabilitarlo
                 const cleanDel = gr("deleted_product_ids", []).filter(id => String(id) !== String(editingProductId));
                 gw("deleted_product_ids", cleanDel);
                 lw("deleted_product_ids", cleanDel);
+                const cleanExpDel = gr("explicit_deleted_ids", []).filter(id => String(id) !== String(editingProductId));
+                gw("explicit_deleted_ids", cleanExpDel);
+                lw("explicit_deleted_ids", cleanExpDel);
 
                 broadcastCatalogChanges("Producto '" + name + "' editado");
                 editingProductId = null;
-                toast("✓ Cambios guardados en '" + name + "' (Stock: " + stockInp + " uds).", "success", 4000);
+                toast("✓ Cambios guardados en '" + name + "' (Stock: " + stockInp + " uds).", "success", 3500);
             } else {
                 // CREAR NUEVO PRODUCTO
                 const newProdId = "prod_" + Date.now() + "_" + Math.random().toString(36).substring(2,6);
@@ -3796,7 +3716,7 @@
                 gw("custom_products", customList);
                 lw("custom_products", customList);
 
-                // Almacenamiento indestructible específico para la sucursal de La Fuente Calzada
+                // Almacenamiento específico para la sucursal de La Fuente Calzada
                 if (isCalzadaTarget) {
                     try {
                         const rawCalz = localStorage.getItem("lf_calzada_permanent_products") || "[]";
@@ -3819,10 +3739,13 @@
                     localStorage.setItem(bKey, JSON.stringify(bList));
                 } catch(e) {}
 
-                // Asegurar que no esté en deleted_product_ids
+                // Asegurar que no esté en deleted_product_ids ni explicit_deleted_ids
                 const cleanDel = gr("deleted_product_ids", []).filter(id => String(id) !== String(newProdId));
                 gw("deleted_product_ids", cleanDel);
                 lw("deleted_product_ids", cleanDel);
+                const cleanExpDel = gr("explicit_deleted_ids", []).filter(id => String(id) !== String(newProdId));
+                gw("explicit_deleted_ids", cleanExpDel);
+                lw("explicit_deleted_ids", cleanExpDel);
 
                 broadcastCatalogChanges("Nuevo producto '" + name + "' registrado");
                 if (db) {
@@ -3837,7 +3760,7 @@
                     } catch(e) {}
                 }
 
-                toast("✓ Producto '" + name + "' guardado con " + stockInp + " unidades en stock.", "success", 4000);
+                toast("✓ Producto '" + name + "' guardado con " + stockInp + " unidades en stock.", "success", 3500);
             }
 
             await loadProducts();
@@ -3845,8 +3768,8 @@
         });
 
         c.querySelectorAll(".btn-del-prod").forEach(btn => btn.addEventListener("click", async () => {
-            const reason = await toastPrompt("Motivo para eliminar '" + btn.dataset.name + "':", "Escribe el motivo obligatorio…");
-            if (!reason) return;
+            const ok = await toastConfirm("¿Estás seguro de eliminar el producto '" + btn.dataset.name + "' del catálogo?");
+            if (!ok) return;
 
             const prodId = String(btn.dataset.id);
             const deletedIds = gr("deleted_product_ids", []);
@@ -3854,17 +3777,23 @@
             gw("deleted_product_ids", deletedIds);
             lw("deleted_product_ids", deletedIds);
 
+            const explicitDelIds = gr("explicit_deleted_ids", []);
+            if (!explicitDelIds.includes(prodId)) explicitDelIds.push(prodId);
+            gw("explicit_deleted_ids", explicitDelIds);
+            lw("explicit_deleted_ids", explicitDelIds);
+
             // Eliminar de las listas de productos personalizados
             const customList = gr("custom_products", []).filter(p => String(p.product_id) !== prodId);
             gw("custom_products", customList);
             lw("custom_products", customList);
 
-            // Eliminar manualmente de los almacenes permanentes de Calzada
+            // Eliminar manualmente de los almacenes permanentes de Calzada y de sucursales
             try {
                 const keysToClean = [
                     "lf_calzada_permanent_products",
                     "lf_calzada_custom_products",
                     "lf_la_fuente_calzada_custom_products",
+                    "lf_la fuente calzada_custom_products",
                     "lf_branch-1_custom_products"
                 ];
                 keysToClean.forEach(k => {
@@ -3880,7 +3809,7 @@
             } catch(e) {}
 
             broadcastCatalogChanges("Producto '" + btn.dataset.name + "' eliminado");
-            toast("✓ Producto '" + btn.dataset.name + "' eliminado del catálogo.", "info", 4000);
+            toast("✓ Producto '" + btn.dataset.name + "' eliminado del catálogo.", "info", 3500);
             await loadProducts();
             await loadProductsAdmin();
         }));
@@ -12606,7 +12535,7 @@
                     .order("created_at", {ascending:false})
                     .limit(300), null, 1500);
                 if (data && data.length) {
-                    remoteSales = data.map(s => {
+                    remoteSales = data.filter(s => !isSystemNonSaleRecord(s)).map(s => {
                         let obs = {};
                         try {
                             obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
@@ -12681,7 +12610,8 @@
         const deletedSaleIds = new Set(gr("deleted_sale_ids", []));
 
         const addSaleToMap = (item) => {
-            if (!item || (item.total == null && !item.sale_number && !item.items)) return;
+            if (!item || isSystemNonSaleRecord(item)) return;
+            if (item.total == null && !item.sale_number && !item.items) return;
             const sid = String(item.id || item.sale_number || item.local_id || (Date.now() + Math.random()));
             if (!salesMap.has(sid)) {
                 salesMap.set(sid, item);
@@ -12690,7 +12620,7 @@
             }
         };
 
-        // 0. Cargar ventas auténticas de la jornada (Tagarete 2, CNOP, Rescate)
+        // 0. Cargar ventas auténticas de la jornada (La Fuente Calzada, Tagarete 1, Tagarete 2, CNOP, Rescate, Mollotes)
         if (typeof BASE_ACTIVE_SALES !== "undefined" && Array.isArray(BASE_ACTIVE_SALES)) {
             BASE_ACTIVE_SALES.forEach(addSaleToMap);
         }
@@ -12700,7 +12630,7 @@
             "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
             "c188dd82-7faf-41b8-948b-af8e789facba",
             "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
-            "tagarete 1", "tagarete 2", "la fuente calzada", "calzada_today"
+            "tagarete 1", "tagarete 2", "la fuente calzada", "la_fuente_calzada", "calzada_today"
         ];
         branchKeySuffixes.forEach(bSuffix => {
             try {
@@ -12748,6 +12678,7 @@
 
         // 4. Fusionar y deduplicar con las ventas remotas de Supabase
         remoteSales.forEach(s => {
+            if (isSystemNonSaleRecord(s)) return;
             const sid = String(s.id);
             let matchedKey = null;
             for (const [key, existing] of salesMap.entries()) {
@@ -12806,8 +12737,9 @@
             s.shift_name = (cat === "vespertino") ? "Tarde" : "Mañana";
         }
 
-        // 6. Filtrar ventas borradas y ordenar
+        // 6. Filtrar ventas borradas y registros de sistema y ordenar
         const consolidated = Array.from(salesMap.values())
+            .filter(s => !isSystemNonSaleRecord(s))
             .filter(s => !deletedSaleIds.has(String(s.id)) && !deletedSaleIds.has(String(s.sale_number)))
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
@@ -12931,8 +12863,9 @@
 
         // Filtrar ventas por sucursal seleccionada o todas si es Superusuario
         const branchSales = (S.isSU && activeBranchFilter === "all")
-            ? consolidated
+            ? consolidated.filter(s => !isSystemNonSaleRecord(s))
             : consolidated.filter(s => {
+                if (isSystemNonSaleRecord(s)) return false;
                 if (isCalzadaFilter) {
                     return resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada");
                 }
@@ -12955,7 +12888,7 @@
             localSources.forEach(list => {
                 if (Array.isArray(list)) {
                     list.forEach(ls => {
-                        if (ls) {
+                        if (ls && !isSystemNonSaleRecord(ls)) {
                             const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
                             if (isCalz) {
                                 if (!branchSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
@@ -12971,6 +12904,7 @@
         const todayStr = toDateKey();
         const datesMap = new Map();
         branchSales.forEach(s => {
+            if (isSystemNonSaleRecord(s)) return;
             const d = toDateKey(s.created_at);
             if (d) {
                 if (!datesMap.has(d)) datesMap.set(d, []);
@@ -13014,7 +12948,7 @@
                 localSources.forEach(list => {
                     if (Array.isArray(list)) {
                         list.forEach(ls => {
-                            if (ls && isTodaySale(ls, todayStr)) {
+                            if (ls && !isSystemNonSaleRecord(ls) && isTodaySale(ls, todayStr)) {
                                 const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
                                 if (isCalz && !rawDaySales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
                                     rawDaySales.unshift(ls);
@@ -13538,7 +13472,7 @@
 
         // 1. Cargar cortes con asignación inequívoca de sucursal y turno
         const addCut = (ct, fallbackBranch) => {
-            if (!ct) return;
+            if (!ct || (ct.counted_cash == null && ct.total_sales == null && ct.expected_cash == null)) return;
             let obs = {};
             try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
 
@@ -13546,7 +13480,7 @@
             let bId = ct.branch_id || "";
             const pLow = String(obs.performed_by_name || obs.cashier_name || ct.performed_by_name || ct.cashier_name || "").toLowerCase();
 
-            const canonicalB = resolveCanonicalBranch(ct);
+            const canonicalB = resolveCanonicalBranch(ct) || resolveCanonicalBranch(obs) || resolveCanonicalBranch(fallbackBranch);
             if (canonicalB) {
                 bName = canonicalB;
             } else if (bId === "branch-4" || pLow.includes("tagarete 1") || pLow.includes("tagarete1") || (/encargad[oa]7(?!\d)/i.test(pLow)) || (/encargad[oa]8(?!\d)/i.test(pLow))) {
@@ -13559,7 +13493,7 @@
                 bName = "Rescate";
             } else if (bId === "branch-3" || pLow.includes("mollotes") || pLow.includes("molotes") || (/encargad[oa]5(?!\d)/i.test(pLow)) || (/encargad[oa]6(?!\d)/i.test(pLow))) {
                 bName = "Mollotes";
-            } else if (bId === "branch-1" || pLow.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(pLow) && !pLow.includes("10") && !pLow.includes("11") && !pLow.includes("12")) || /encargad[oa]2(?!\d)/i.test(pLow)) {
+            } else if (bId === "branch-1" || bId === "c188dd82-7faf-41b8-948b-af8e789facba" || pLow.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(pLow) && !pLow.includes("10") && !pLow.includes("11") && !pLow.includes("12")) || /encargad[oa]2(?!\d)/i.test(pLow)) {
                 bName = "La Fuente Calzada";
             }
 
@@ -13567,7 +13501,7 @@
                 const found = S.branches.find(b => String(b.id) === String(bId));
                 if (found) bName = found.name;
             }
-            if (!bName) bName = fallbackBranch || S.branchName;
+            if (!bName) bName = resolveCanonicalBranch(S.branchName) || S.branchName || "La Fuente Calzada";
 
             const shiftCat = getShiftCategory({ cashier_name: pLow, shift_name: obs.shift_name || ct.shift_name, created_at: ct.created_at });
             const sName = (shiftCat === "vespertino") ? "Tarde" : "Mañana";
@@ -13593,8 +13527,9 @@
         // Cortes de todas las sucursales en localStorage
         const branchKeySuffixes = [
             "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
+            "c188dd82-7faf-41b8-948b-af8e789facba",
             "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
-            "tagarete 1", "tagarete 2", "la fuente calzada"
+            "tagarete 1", "tagarete 2", "la fuente calzada", "la_fuente_calzada"
         ];
         branchKeySuffixes.forEach(bSuffix => {
             try {
@@ -13606,12 +13541,19 @@
             } catch(e) {}
         });
 
-        // Cortes globales y locales actuales
-        const gCuts = gr("all_cuts", []);
-        if (Array.isArray(gCuts)) gCuts.forEach(c => addCut(c, ""));
-
-        const lCuts = lr("cuts", []);
-        if (Array.isArray(lCuts)) lCuts.forEach(c => addCut(c, S.branchName));
+        // Cortes locales guardados bajo sesión de usuario (lr) y globales (gr)
+        const localCutSources = [
+            gr("all_cuts", []),
+            lr("cuts", []),
+            lr("calzada_cuts", []),
+            lr("branch-1_cuts", []),
+            lr("c188dd82-7faf-41b8-948b-af8e789facba_cuts", []),
+            lr("la_fuente_calzada_cuts", []),
+            lr("last_printed_cut", null) ? [lr("last_printed_cut", null)] : []
+        ];
+        localCutSources.forEach(list => {
+            if (Array.isArray(list)) list.forEach(c => addCut(c, S.branchName));
+        });
 
         // Cortes remotos desde Supabase
         if (db) {
@@ -13695,26 +13637,32 @@
         const allConsolidatedCuts = await getConsolidatedCutsForChain();
         const activeFilter = S.isSU ? (S.cutsFilterBranchId || S.branchId) : S.branchId;
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
+        const isCalzadaBranch = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada" ||
+                                resolveCanonicalBranch(activeFilter) === "La Fuente Calzada";
 
         // Filtrar según sucursal activa o seleccionada
         const cutsList = allConsolidatedCuts
             .filter(ct => !deletedCutIds.has(String(ct.id)))
             .filter(ct => {
-                if (!S.isSU) return matchesBranch(ct, { id: S.branchId, name: S.branchName });
+                if (!S.isSU) {
+                    if (isCalzadaBranch) return resolveCanonicalBranch(ct) === "La Fuente Calzada" || matchesBranch(ct, "La Fuente Calzada");
+                    return matchesBranch(ct, { id: S.branchId, name: S.branchName });
+                }
                 if (activeFilter === "all") return true;
+                if (isCalzadaBranch) return resolveCanonicalBranch(ct) === "La Fuente Calzada" || matchesBranch(ct, "La Fuente Calzada");
                 return matchesBranch(ct, { id: activeFilter, name: S.branches.find(b=>String(b.id)===String(activeFilter))?.name || S.branchName });
             })
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
         // Calcular ventas activas del turno actual para el corte
-        const isCalzadaBranch = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada";
         const consolidatedSales = await getConsolidatedSalesForChain();
         const currentBranchSales = consolidatedSales.filter(s => {
+            if (isSystemNonSaleRecord(s)) return false;
             if (isCalzadaBranch) return resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada");
             return matchesBranch(s, { id: S.branchId, name: S.branchName });
         });
         const todayStr = toDateKey();
-        let todayActiveSales = currentBranchSales.filter(s => isTodaySale(s, todayStr) && String(s.status||"").toUpperCase() !== "CANCELLED");
+        let todayActiveSales = currentBranchSales.filter(s => !isSystemNonSaleRecord(s) && isTodaySale(s, todayStr) && String(s.status||"").toUpperCase() !== "CANCELLED");
 
         // Para Calzada: asegurar inclusión directa de ventas locales recientes
         if (isCalzadaBranch) {
@@ -13732,7 +13680,7 @@
             localSources.forEach(list => {
                 if (Array.isArray(list)) {
                     list.forEach(ls => {
-                        if (ls && String(ls.status || "").toUpperCase() !== "CANCELLED" && isTodaySale(ls, todayStr)) {
+                        if (ls && !isSystemNonSaleRecord(ls) && String(ls.status || "").toUpperCase() !== "CANCELLED" && isTodaySale(ls, todayStr)) {
                             const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
                             if (isCalz && !todayActiveSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
                                 todayActiveSales.unshift(ls);
@@ -13746,6 +13694,7 @@
         if (!todayActiveSales.length && currentBranchSales.length) {
             const datesMap = new Map();
             currentBranchSales.forEach(s => {
+                if (isSystemNonSaleRecord(s)) return;
                 const d = toDateKey(s.created_at);
                 if (d && String(s.status||"").toUpperCase() !== "CANCELLED") {
                     if (!datesMap.has(d)) datesMap.set(d, []);
@@ -13781,7 +13730,7 @@
             ? Number(branchShift.opening_amount)
             : (activeLocalShift && activeLocalShift.opening_amount != null
                 ? Number(activeLocalShift.opening_amount)
-                : (S.currentShift && S.currentShift.opening_amount != null ? Number(S.currentShift.opening_amount) : 500));
+                : (S.currentShift && S.currentShift.opening_amount != null ? Number(S.currentShift.opening_amount) : 1000));
         const expectedCashInDrawer = initialFund + currentCashSales;
 
         const currentBranchDisplayName = S.branches.find(b => String(b.id) === String(activeFilter))?.name || S.branchName;
@@ -13994,6 +13943,15 @@
             gCuts.unshift(cutRecord);
             gw("all_cuts", gCuts);
 
+            const bKeyCut = getBranchKeyName(S.branchName);
+            try {
+                const rawBCuts = localStorage.getItem("lf_" + bKeyCut + "_cuts");
+                const bCutsArr = rawBCuts ? JSON.parse(rawBCuts) : [];
+                bCutsArr.unshift(cutRecord);
+                localStorage.setItem("lf_" + bKeyCut + "_cuts", JSON.stringify(bCutsArr));
+                if (S.branchId) localStorage.setItem("lf_" + S.branchId + "_cuts", JSON.stringify(bCutsArr));
+            } catch(e) {}
+
             const isCalzCut = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
             if (isCalzCut) {
                 const calzCuts = lr("calzada_cuts", []);
@@ -14002,6 +13960,12 @@
                 lw("branch-1_cuts", calzCuts);
                 lw("c188dd82-7faf-41b8-948b-af8e789facba_cuts", calzCuts);
                 lw("la_fuente_calzada_cuts", calzCuts);
+                try {
+                    localStorage.setItem("lf_calzada_cuts", JSON.stringify(calzCuts));
+                    localStorage.setItem("lf_branch-1_cuts", JSON.stringify(calzCuts));
+                    localStorage.setItem("lf_c188dd82-7faf-41b8-948b-af8e789facba_cuts", JSON.stringify(calzCuts));
+                    localStorage.setItem("lf_la_fuente_calzada_cuts", JSON.stringify(calzCuts));
+                } catch(e) {}
             }
 
             lw("last_printed_cut", cutRecord);
@@ -14072,7 +14036,7 @@
 
         c.querySelectorAll(".btn-reprint-cut").forEach(btn => btn.addEventListener("click", () => {
             const cid = String(btn.dataset.id);
-            const target = cutsList.find(x => String(x.id) === cid);
+            const target = cutsList.find(x => String(x.id) === cid) || allConsolidatedCuts.find(x => String(x.id) === cid);
             if (!target) return toast("No se encontró el corte.", "warn");
             try { printCutReceipt(target); } catch(e) {}
             toast("🖨️ Reimprimiendo corte de caja…", "info", 3000);
@@ -14096,7 +14060,7 @@
             // 2. Limpiar de todas las memorias locales
             gw("all_cuts", gr("all_cuts", []).filter(x => String(x.id) !== cid));
             lw("cuts", lr("cuts", []).filter(x => String(x.id) !== cid));
-            const bKeySuffixes = ["calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop", "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6"];
+            const bKeySuffixes = ["calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop", "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6", "c188dd82-7faf-41b8-948b-af8e789facba", "la_fuente_calzada"];
             bKeySuffixes.forEach(sfx => {
                 try {
                     const raw = localStorage.getItem("lf_" + sfx + "_cuts");
@@ -14144,6 +14108,7 @@
                 } catch(e) {}
             }
 
+            _cachedConsolidatedCuts = null;
             await loadCuts();
             toast(`🗑️ Corte de ${bName} (${sName}) eliminado de todo el sistema y sucursal.`, "info", 3500);
         }));
@@ -14151,6 +14116,23 @@
     /* ── GESTIÓN DE TURNOS & APERTURA ── */
     async function getConsolidatedShiftsForChain() {
         const shiftsMap = new Map();
+
+        const addShiftRecord = (sh, fallbackBranch) => {
+            if (!sh || (sh.opening_amount == null && !sh.opened_at && !sh.shift_name)) return;
+            const bName = resolveCanonicalBranch(sh) || sh.branch_name || resolveCanonicalBranch(fallbackBranch) || S.branchName || "La Fuente Calzada";
+            const sid = String(sh.id || ((sh.opened_at || sh.created_at) + "_" + bName + "_" + (sh.shift_name || "")));
+            if (!shiftsMap.has(sid)) {
+                shiftsMap.set(sid, {
+                    id: sh.id || sid,
+                    branch_id: sh.branch_id || (bName === "La Fuente Calzada" ? "c188dd82-7faf-41b8-948b-af8e789facba" : S.branchId),
+                    branch_name: bName,
+                    shift_name: sh.shift_name || "Mañana",
+                    cashier_name: sh.cashier_name || sh.performed_by_name || "Encargada",
+                    opening_amount: Number(sh.opening_amount || 0),
+                    opened_at: sh.opened_at || sh.created_at || now()
+                });
+            }
+        };
 
         // 0. Aperturas de jornada oficiales para Calzada
         const baseCalzadaShifts = [
@@ -14173,8 +14155,20 @@
                 opened_at: "2026-09-18T20:00:00.000Z"
             }
         ];
-        baseCalzadaShifts.forEach(sh => {
-            if (!shiftsMap.has(sh.id)) shiftsMap.set(sh.id, sh);
+        baseCalzadaShifts.forEach(sh => addShiftRecord(sh, "La Fuente Calzada"));
+
+        // 0.1 Cargar directamente turnos locales y globales guardados en sesión
+        const directShiftSources = [
+            lr("current_shift", null) ? [lr("current_shift", null)] : [],
+            lr("shifts", []),
+            gr("all_shifts", []),
+            lr("calzada_shifts", []),
+            lr("branch-1_shifts", []),
+            lr("c188dd82-7faf-41b8-948b-af8e789facba_shifts", []),
+            lr("la_fuente_calzada_shifts", [])
+        ];
+        directShiftSources.forEach(list => {
+            if (Array.isArray(list)) list.forEach(sh => addShiftRecord(sh, S.branchName));
         });
 
         // 1. Escaneo de todas las aperturas y turnos en cualquier llave de localStorage
@@ -14185,25 +14179,12 @@
                     if (key && (key.startsWith("lf_") && (key.includes("shift") || key.includes("cuts")))) {
                         try {
                             const raw = localStorage.getItem(key);
-                            if (!raw || !raw.startsWith("[")) continue;
+                            if (!raw) continue;
                             const parsed = JSON.parse(raw);
                             if (Array.isArray(parsed)) {
-                                parsed.forEach(sh => {
-                                    if (sh && (sh.opening_amount != null || sh.opened_at || sh.shift_name)) {
-                                        const sid = String(sh.id || (sh.opened_at || sh.created_at) + "_" + (sh.branch_name || ""));
-                                        if (!shiftsMap.has(sid)) {
-                                            shiftsMap.set(sid, {
-                                                id: sh.id || sid,
-                                                branch_id: sh.branch_id,
-                                                branch_name: sh.branch_name || S.branchName,
-                                                shift_name: sh.shift_name || "Mañana",
-                                                cashier_name: sh.cashier_name || sh.performed_by_name || "Encargada",
-                                                opening_amount: Number(sh.opening_amount || 0),
-                                                opened_at: sh.opened_at || sh.created_at || now()
-                                            });
-                                        }
-                                    }
-                                });
+                                parsed.forEach(sh => addShiftRecord(sh, S.branchName));
+                            } else if (parsed && typeof parsed === "object") {
+                                addShiftRecord(parsed, S.branchName);
                             }
                         } catch(e) {}
                     }
@@ -14216,7 +14197,7 @@
         allCuts.forEach(ct => {
             if (ct && ct.opening_amount !== undefined) {
                 const cutDate = ct.created_at || now();
-                const bName = ct.branch_name || resolveCanonicalBranch(ct) || S.branchName;
+                const bName = resolveCanonicalBranch(ct) || ct.branch_name || S.branchName;
                 const cutKey = "shift_cut_" + (ct.id || (cutDate + "_" + bName));
                 if (!shiftsMap.has(cutKey)) {
                     shiftsMap.set(cutKey, {
@@ -14246,7 +14227,7 @@
                                 shiftsMap.set(sid, {
                                     id: obs.shift_id || sid,
                                     branch_id: s.branch_id,
-                                    branch_name: obs.branch_name || "Sucursal",
+                                    branch_name: resolveCanonicalBranch(obs) || obs.branch_name || "La Fuente Calzada",
                                     shift_name: obs.shift_name || "Mañana",
                                     cashier_name: obs.cashier_name || "Encargada",
                                     opening_amount: Number(obs.opening_amount || 0),
@@ -14308,14 +14289,19 @@
 
         const consolidatedShifts = await getConsolidatedShiftsForChain();
         const activeBranchFilter = S.isSU ? (S.shiftFilterBranchId || "all") : S.branchId;
+        const isCalzadaShiftFilter = resolveCanonicalBranch({ id: activeBranchFilter, name: S.branchName }) === "La Fuente Calzada" ||
+                                     (!S.isSU && resolveCanonicalBranch(S.branchName) === "La Fuente Calzada");
 
         const shiftsHistory = (S.isSU && activeBranchFilter === "all")
             ? consolidatedShifts
-            : consolidatedShifts.filter(sh => matchesBranch(sh, { id: activeBranchFilter, name: S.branches.find(b=>String(b.id)===String(activeBranchFilter))?.name || S.branchName }));
+            : consolidatedShifts.filter(sh => {
+                if (isCalzadaShiftFilter) return resolveCanonicalBranch(sh) === "La Fuente Calzada" || matchesBranch(sh, "La Fuente Calzada");
+                return matchesBranch(sh, { id: activeBranchFilter, name: S.branches.find(b=>String(b.id)===String(activeBranchFilter))?.name || S.branchName });
+            });
 
         const uname = S.profile?.full_name || S.user?.email || "Encargada";
         const currentSavedShift = lr("current_shift", null);
-        const currentShiftAmount = currentSavedShift?.opening_amount != null ? currentSavedShift.opening_amount : (S.currentShift?.opening_amount != null ? S.currentShift.opening_amount : 500);
+        const currentShiftAmount = currentSavedShift?.opening_amount != null ? currentSavedShift.opening_amount : (S.currentShift?.opening_amount != null ? S.currentShift.opening_amount : 1000);
 
         c.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -14358,19 +14344,19 @@
                 </div>
                 <div>
                     <label style="font-size:11px;font-weight:900;color:var(--wine-700);display:block;margin-bottom:4px">FONDO INICIAL EN CAJA ($) *</label>
-                    <input id="open-shift-amount" type="number" step="10" min="0" placeholder="Ej: 500.00" value="${currentShiftAmount}"
+                    <input id="open-shift-amount" type="number" step="10" min="0" placeholder="Ej: 1000.00" value="${currentShiftAmount}"
                         style="width:100%;padding:10px;border:1.5px solid rgba(188,132,10,.5);border-radius:8px;font-size:13px;font-weight:900;box-sizing:border-box">
                 </div>
             </div>
             <div style="display:flex;gap:10px;flex-wrap:wrap">
                 <button type="button" id="btn-open-shift"
                     style="padding:12px 28px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
-                    <span>✓</span><span>Iniciar Turno con este Fondo</span>
+                    <span>✓</span><span>Iniciar Turno con este Fondo & Imprimir</span>
                 </button>
             </div>
         </div>
 
-        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Historial de Aperturas de Turno</h3>
+        <h3 style="color:#ffffff;margin:0 0 14px;font-weight:900">📜 Historial de Aperturas de Turno (${shiftsHistory.length})</h3>
         ${shiftsHistory.length ? `
         <div style="display:flex;flex-direction:column;gap:12px">
             ${shiftsHistory.map(sh => `
@@ -14392,8 +14378,8 @@
                         <strong style="font-size:20px;color:var(--wine-900);font-weight:900">${money(sh.opening_amount)}</strong>
                     </div>
                     <button type="button" class="btn-reprint-shift" data-shift='${JSON.stringify(sh).replace(/'/g, "&apos;")}'
-                        style="padding:8px 12px;background:#f1f5f9;color:var(--wine-900);border:1.5px solid #cbd5e1;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:4px">
-                        🖨️ Imprimir
+                        style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:8px;font-size:11.5px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px">
+                        🖨️ Imprimir Ticket
                     </button>
                 </div>
             </article>`).join("")}
@@ -14458,6 +14444,12 @@
                 lw("branch-1_shifts", calzShifts);
                 lw("c188dd82-7faf-41b8-948b-af8e789facba_shifts", calzShifts);
                 lw("la_fuente_calzada_shifts", calzShifts);
+                try {
+                    localStorage.setItem("lf_calzada_shifts", JSON.stringify(calzShifts));
+                    localStorage.setItem("lf_branch-1_shifts", JSON.stringify(calzShifts));
+                    localStorage.setItem("lf_c188dd82-7faf-41b8-948b-af8e789facba_shifts", JSON.stringify(calzShifts));
+                    localStorage.setItem("lf_la_fuente_calzada_shifts", JSON.stringify(calzShifts));
+                } catch(e) {}
             }
 
             if (realtimeChannel) {
@@ -16639,10 +16631,10 @@
                     if (!payload) return;
                     let hasNew = false;
                     if (payload.sales && payload.sales.length) {
-                        let allGSales = gr("all_sales", []);
+                        let allGSales = gr("all_sales", []).filter(s => !isSystemNonSaleRecord(s));
                         const map = new Map();
                         allGSales.forEach(s => map.set(String(s.id || s.sale_number), s));
-                        payload.sales.forEach(s => {
+                        payload.sales.filter(s => !isSystemNonSaleRecord(s)).forEach(s => {
                             const sid = String(s.id || s.sale_number);
                             if (!map.has(sid)) {
                                 map.set(sid, s);
@@ -16684,19 +16676,20 @@
                         gw("inv_" + payload.branch_id, payload.inv);
                     }
                     if (payload.custom_products && Array.isArray(payload.custom_products)) {
+                        const explicitDelSet = new Set(gr("explicit_deleted_ids", []).map(String));
                         const localCustom = gr("custom_products", []);
                         const map = new Map();
-                        localCustom.forEach(p => map.set(String(p.product_id), p));
-                        payload.custom_products.forEach(p => map.set(String(p.product_id), p));
+                        localCustom.forEach(p => { if (p && !explicitDelSet.has(String(p.product_id))) map.set(String(p.product_id), p); });
+                        payload.custom_products.forEach(p => { if (p && !explicitDelSet.has(String(p.product_id))) map.set(String(p.product_id), p); });
                         gw("custom_products", Array.from(map.values()));
                     }
                     if (payload.deleted_product_ids && Array.isArray(payload.deleted_product_ids)) {
-                        const localDel = new Set(gr("deleted_product_ids", []));
-                        let rawCalzPerm = [];
-                        try { rawCalzPerm = JSON.parse(localStorage.getItem("lf_calzada_permanent_products") || "[]"); } catch(e) {}
+                        const explicitDelSet = new Set(gr("explicit_deleted_ids", []).map(String));
+                        const localDel = new Set(gr("deleted_product_ids", []).map(String));
                         payload.deleted_product_ids.forEach(id => {
-                            const isCalz = Array.isArray(rawCalzPerm) && rawCalzPerm.some(cp => String(cp.product_id) === String(id));
-                            if (!isCalz) localDel.add(String(id));
+                            const sid = String(id);
+                            const isCalzBase = CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === sid);
+                            if (!isCalzBase || explicitDelSet.has(sid)) localDel.add(sid);
                         });
                         gw("deleted_product_ids", Array.from(localDel));
                         lw("deleted_product_ids", Array.from(localDel));
@@ -16708,6 +16701,7 @@
                 .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, async payload => {
                     if (payload.eventType === "INSERT" && payload.new) {
                         const n = payload.new;
+                        if (isSystemNonSaleRecord(n)) return;
                         let obs = {};
                         try { obs = typeof n.observations === "string" ? JSON.parse(n.observations) : (n.observations || {}); } catch(e) {}
                         const bName = obs.branch_name || (String(n.branch_id||"") === "c188dd82-7faf-41b8-948b-af8e789facba" ? "La Fuente Calzada" : (S.branches.find(b=>String(b.id)===String(n.branch_id))?.name || "Sucursal"));
