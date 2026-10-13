@@ -240,7 +240,101 @@
         }
         return false;
     };
-    /* ── ALMACENAMIENTO LOCAL & GLOBAL ── */
+    /* ── ALMACENAMIENTO LOCAL, COMPACTACIÓN AUTOMÁTICA Y MEMORIA EN VIVO ── */
+    let _sessionSales = [];
+    let _sessionCuts = [];
+    let _sessionShifts = [];
+
+    function isStaticBaseSale(s) {
+        if (!s || typeof s !== "object") return false;
+        if (String(s.status || "").toUpperCase() === "CANCELLED") return false;
+        const sid = String(s.id || "");
+        if (sid.startsWith("sale_calz_today_") || sid.startsWith("sale_1789")) return true;
+        return false;
+    }
+
+    function stripStaticSales(arr) {
+        if (!Array.isArray(arr)) return arr;
+        return arr.filter(s => s && !isSystemNonSaleRecord(s) && !isStaticBaseSale(s));
+    }
+
+    function compactAndFreeLocalStorage() {
+        try {
+            if (typeof localStorage === "undefined") return;
+            const rescuedMap = new Map();
+            const addRescued = (s) => {
+                if (!s || typeof s !== "object" || isSystemNonSaleRecord(s) || isStaticBaseSale(s)) return;
+                if (s.total == null && !s.sale_number && !s.items) return;
+                const sid = String(s.id || s.sale_number || s.local_id || "");
+                if (!sid) return;
+                rescuedMap.set(sid, { ...(rescuedMap.get(sid) || {}), ...s });
+            };
+
+            _sessionSales.forEach(addRescued);
+
+            const salesKeysToScan = [
+                "lf_sales", "lf_all_sales", "lf_calzada_sales", "lf_calzada_today_sales",
+                "lf_branch-1_sales", "lf_branch-2_sales", "lf_branch-3_sales",
+                "lf_branch-4_sales", "lf_branch-5_sales", "lf_branch-6_sales",
+                "lf_c188dd82-7faf-41b8-948b-af8e789facba_sales",
+                "lf_la_fuente_calzada_sales", "lf_la fuente calzada_sales",
+                "lf_tagarete_1_sales", "lf_tagarete 1_sales",
+                "lf_tagarete_2_sales", "lf_tagarete 2_sales",
+                "lf_rescate_sales", "lf_mollotes_sales", "lf_molotes_sales", "lf_cnop_sales",
+                "lf_all_printed_tickets", "lf_pending_sync_sales"
+            ];
+            salesKeysToScan.forEach(k => {
+                try {
+                    const raw = localStorage.getItem(k);
+                    if (raw && raw.startsWith("[")) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) parsed.forEach(addRescued);
+                    }
+                } catch(e) {}
+            });
+            try {
+                const lastP = localStorage.getItem("lf_last_printed_sale");
+                if (lastP) addRescued(JSON.parse(lastP));
+            } catch(e) {}
+
+            // Eliminar llaves redundantes que saturaban los 5 MB de localStorage en Calzada
+            const redundantKeys = [
+                "lf_branch-1_sales", "lf_branch-2_sales", "lf_branch-3_sales",
+                "lf_branch-4_sales", "lf_branch-5_sales", "lf_branch-6_sales",
+                "lf_c188dd82-7faf-41b8-948b-af8e789facba_sales",
+                "lf_la_fuente_calzada_sales", "lf_la fuente calzada_sales",
+                "lf_tagarete 1_sales", "lf_tagarete 2_sales", "lf_molotes_sales",
+                "lf_all_printed_tickets",
+                "lf_branch-1_cuts", "lf_c188dd82-7faf-41b8-948b-af8e789facba_cuts", "lf_la_fuente_calzada_cuts",
+                "lf_branch-1_shifts", "lf_c188dd82-7faf-41b8-948b-af8e789facba_shifts", "lf_la_fuente_calzada_shifts",
+                "lf_calzada_custom_products", "lf_la_fuente_calzada_custom_products", "lf_branch-1_custom_products"
+            ];
+            redundantKeys.forEach(rk => {
+                try { localStorage.removeItem(rk); } catch(e) {}
+            });
+
+            const rescuedList = Array.from(rescuedMap.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+            _sessionSales = rescuedList;
+
+            // Guardar únicamente las ventas reales dinámicas (sin las 180 estáticas de BASE_ACTIVE_SALES que ya están en código)
+            try {
+                localStorage.setItem("lf_all_sales", JSON.stringify(rescuedList.slice(0, 600)));
+                localStorage.setItem("lf_sales", JSON.stringify(rescuedList.slice(0, 400)));
+                const calzOnly = rescuedList.filter(s => {
+                    const b = String(s.branch_name || "").toLowerCase();
+                    const bid = String(s.branch_id || "").toLowerCase();
+                    const c = String(s.cashier_name || "").toLowerCase();
+                    return b.includes("calzada") || bid === "branch-1" || bid === "c188dd82-7faf-41b8-948b-af8e789facba" || c.includes("encargado1") || c.includes("encargado2") || c.includes("calzada");
+                });
+                localStorage.setItem("lf_calzada_sales", JSON.stringify(calzOnly.slice(0, 400)));
+                localStorage.setItem("lf_calzada_today_sales", JSON.stringify(calzOnly.slice(0, 300)));
+            } catch(e) {}
+        } catch(e) {}
+    }
+
+    // Ejecutar compactación preventiva al arrancar para liberar espacio en la PC de Calzada
+    compactAndFreeLocalStorage();
+
     const lr = (k, fallback = null) => {
         try {
             const item = localStorage.getItem("lf_" + k);
@@ -248,9 +342,18 @@
         } catch(e) { return fallback; }
     };
     const lw = (k, v) => {
+        let valToStore = v;
+        if (Array.isArray(v) && (k === "sales" || k === "all_sales" || k.endsWith("_sales") || k === "pending_sync_sales" || k === "all_printed_tickets")) {
+            valToStore = stripStaticSales(v).slice(0, 500);
+        }
         try {
-            localStorage.setItem("lf_" + k, JSON.stringify(v));
-        } catch(e) {}
+            localStorage.setItem("lf_" + k, JSON.stringify(valToStore));
+        } catch(e) {
+            compactAndFreeLocalStorage();
+            try {
+                localStorage.setItem("lf_" + k, JSON.stringify(valToStore));
+            } catch(e2) {}
+        }
     };
     const gr = (k, fallback = null) => {
         try {
@@ -259,19 +362,35 @@
         } catch(e) { return fallback; }
     };
     const gw = (k, v) => {
+        let valToStore = v;
+        if (Array.isArray(v) && (k === "sales" || k === "all_sales" || k.endsWith("_sales") || k === "pending_sync_sales" || k === "all_printed_tickets")) {
+            valToStore = stripStaticSales(v).slice(0, 600);
+        }
         try {
-            localStorage.setItem("lf_" + k, JSON.stringify(v));
-        } catch(e) {}
+            localStorage.setItem("lf_" + k, JSON.stringify(valToStore));
+        } catch(e) {
+            compactAndFreeLocalStorage();
+            try {
+                localStorage.setItem("lf_" + k, JSON.stringify(valToStore));
+            } catch(e2) {}
+        }
     };
 
 
-    /* ── CLASIFICADOR OFICIAL DE TURNOS (PRIORIDAD: ENCARGADA OFICIAL > NOMBRE DE TURNO > HORA) ── */
+    /* ── CLASIFICADOR OFICIAL DE TURNOS (PRIORIDAD: TURNO EXPLÍCITO EN VENTA NUEVA > ENCARGADA > HORA) ── */
     function getShiftCategory(s) {
         if (!s) return "matutino";
         let obs = {};
         try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
 
-        // 1. Mapeo prioritario oficial por encargada asignada (una encargada vespertina siempre genera ventas de la tarde):
+        // 0. Si es una venta dinámica registrada con turno explícito (Mañana / Tarde), respetar siempre el turno en que se cobró:
+        if (!isStaticBaseSale(s)) {
+            const explicitShift = String(obs.shift_name || s.shift_name || s.shift || "").toLowerCase().trim();
+            if (explicitShift === "mañana" || explicitShift === "maana" || explicitShift === "matutino") return "matutino";
+            if (explicitShift === "tarde" || explicitShift === "vespertino" || explicitShift === "noche") return "vespertino";
+        }
+
+        // 1. Mapeo prioritario oficial por encargada asignada:
         const cashier = String(obs.cashier_name || obs.performed_by_name || s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
         if (/encargad[oa](12|10|8|6|4|2)(?!\d)/i.test(cashier) ||
             cashier.includes("vespertino") || cashier.includes("tarde") || cashier.includes("noche") ||
@@ -1575,35 +1694,51 @@
         { product_id: "p_vaso_cualquier_medida", product_code: "VasoCualquierMedida", product_name: "Cualquier Vaso de Cualquier Medida", category: "desechables", price: 5, branch_name: "General", is_supply: true, units_per_package: 50, initial_stock: 300 }
     ];
 
-    // Catálogo base protegido e indestructible de la Sucursal La Fuente Calzada
+    // Catálogo base protegido e indestructible (compartido como General para no quitar productos de Tagarete 2 ni de ninguna otra sucursal)
     const CALZADA_BASE_PRODUCTS = [
-        { product_id: "prod_1789344787923_spve", product_code: "EG", product_name: "Esquimal Grande", category: "paletas", price: 30, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true },
-        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3 bolitas", category: "helados", price: 40, branch_name: "General", initial_stock: 80, allowed_in_calzada: true },
-        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2 bolitas", category: "helados", price: 35, branch_name: "General", initial_stock: 80, allowed_in_calzada: true },
-        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Vaso 1 bolita", category: "helados", price: 20, branch_name: "General", initial_stock: 80, allowed_in_calzada: true },
-        { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado Vaso 4", category: "helados", price: 50, branch_name: "General", initial_stock: 80, allowed_in_calzada: true },
-        { product_id: "prod_calz_medio_litro", product_code: "MLN", product_name: "Medio Litro de Nieve", category: "helados", price: 65, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 50, allowed_in_calzada: true },
-        { product_id: "prod_calz_nieve_vaso_12", product_code: "NV12", product_name: "Nieve Vaso #12", category: "helados", price: 40, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_extra_nuez", product_code: "ENUEZ", product_name: "Extra Nuez", category: "helados", price: 10, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true },
-        { product_id: "p_mordisco", product_code: "Mordi", product_name: "Mordisco", category: "congelados", price: 25, branch_name: "General", initial_stock: 50, allowed_in_calzada: true },
-        { product_id: "prod_calz_tostiloco_morado", product_code: "TLM", product_name: "Tostiloco morados", category: "preparados", price: 55, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_tostitos_vaso", product_code: "TCV", product_name: "Tostitos vaso", category: "preparados", price: 60, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_chetos_nachos", product_code: "CHN", product_name: "Chetos nachos", category: "preparados", price: 45, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_chetos_prep", product_code: "CHP", product_name: "Chetos preparados", category: "preparados", price: 50, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_chetos_queso", product_code: "CHQ", product_name: "Chetos queso", category: "preparados", price: 35, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_cheetos_solos", product_code: "CHS", product_name: "CHEETOS SOLOS", category: "preparados", price: 22, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_doritos_queso", product_code: "DQ", product_name: "Doritos Queso", category: "preparados", price: 22, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_sabrita_sola", product_code: "SS", product_name: "Sabrita Sola", category: "preparados", price: 22, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_barcel_loco", product_code: "BL", product_name: "Barcel Loco", category: "preparados", price: 55, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 60, allowed_in_calzada: true },
-        { product_id: "prod_calz_paleta_leche", product_code: "PL", product_name: "Paleta de Leche", category: "paletas", price: 30, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true },
-        { product_id: "prod_calz_paleta_agua", product_code: "PA", product_name: "Paleta de Agua", category: "paletas", price: 25, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true },
-        { product_id: "prod_calz_paleta_mini", product_code: "PMINI", product_name: "Paleta mini", category: "paletas", price: 5, branch_name: "La Fuente Calzada", branch_id: "branch-1", initial_stock: 100, allowed_in_calzada: true }
+        { product_id: "prod_1789344787923_spve", product_code: "EG", product_name: "Esquimal Grande", category: "paletas", price: 30, branch_name: "General", branch_id: "all", initial_stock: 100, allowed_in_calzada: true },
+        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3 bolitas", category: "helados", price: 40, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_calzada: true },
+        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2 bolitas", category: "helados", price: 35, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_calzada: true },
+        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Vaso 1 bolita", category: "helados", price: 20, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_calzada: true },
+        { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado Vaso 4", category: "helados", price: 50, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_calzada: true },
+        { product_id: "prod_calz_medio_litro", product_code: "MLN", product_name: "Medio Litro de Nieve", category: "helados", price: 65, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_calzada: true },
+        { product_id: "prod_calz_nieve_vaso_12", product_code: "NV12", product_name: "Nieve Vaso #12", category: "helados", price: 40, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_extra_nuez", product_code: "ENUEZ", product_name: "Extra Nuez", category: "helados", price: 10, branch_name: "General", branch_id: "all", initial_stock: 100, allowed_in_calzada: true },
+        { product_id: "p_mordisco", product_code: "Mordi", product_name: "Mordisco", category: "congelados", price: 25, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_calzada: true },
+        { product_id: "prod_calz_tostiloco_morado", product_code: "TLM", product_name: "Tostiloco morados", category: "preparados", price: 55, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_tostitos_vaso", product_code: "TCV", product_name: "Tostitos vaso", category: "preparados", price: 60, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_chetos_nachos", product_code: "CHN", product_name: "Chetos nachos", category: "preparados", price: 45, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_chetos_prep", product_code: "CHP", product_name: "Chetos preparados", category: "preparados", price: 50, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_chetos_queso", product_code: "CHQ", product_name: "Chetos queso", category: "preparados", price: 35, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_cheetos_solos", product_code: "CHS", product_name: "CHEETOS SOLOS", category: "preparados", price: 22, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_doritos_queso", product_code: "DQ", product_name: "Doritos Queso", category: "preparados", price: 22, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_sabrita_sola", product_code: "SS", product_name: "Sabrita Sola", category: "preparados", price: 22, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_barcel_loco", product_code: "BL", product_name: "Barcel Loco", category: "preparados", price: 55, branch_name: "General", branch_id: "all", initial_stock: 60, allowed_in_calzada: true },
+        { product_id: "prod_calz_paleta_leche", product_code: "PL", product_name: "Paleta de Leche", category: "paletas", price: 30, branch_name: "General", branch_id: "all", initial_stock: 100, allowed_in_calzada: true },
+        { product_id: "prod_calz_paleta_agua", product_code: "PA", product_name: "Paleta de Agua", category: "paletas", price: 25, branch_name: "General", branch_id: "all", initial_stock: 100, allowed_in_calzada: true },
+        { product_id: "prod_calz_paleta_mini", product_code: "PMINI", product_name: "Paleta mini", category: "paletas", price: 5, branch_name: "General", branch_id: "all", initial_stock: 100, allowed_in_calzada: true }
     ];
 
+    function getBranchExplicitDeletedKey(branchRef) {
+        const bKey = getBranchKeyName(branchRef || S.branchName || "general");
+        return "explicit_deleted_ids_v69_" + bKey;
+    }
+
+    function sanitizeSharedCatalogProduct(p) {
+        if (!p || !p.product_id) return p;
+        const pid = String(p.product_id);
+        const isDefaultOrShared = DEFAULT_PRODUCTS.some(dp => String(dp.product_id) === pid) ||
+                                  CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === pid);
+        if (isDefaultOrShared) {
+            return { ...p, branch_name: "General", branch_id: "all", allowed_in_calzada: true };
+        }
+        return p;
+    }
     
     function broadcastCatalogChanges(actionDescription = "Modificación de catálogo") {
         const customList = gr("custom_products", []);
-        const deletedList = gr("deleted_product_ids", []);
+        const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
+        const deletedList = gr(branchDelKey, []);
         
         // 1. Difusión en tiempo real por canal Mesh a todos los navegadores abiertos
         if (realtimeChannel) {
@@ -1614,6 +1749,7 @@
                     payload: {
                         custom_products: customList,
                         deleted_product_ids: deletedList,
+                        deleted_branch_key: branchDelKey,
                         branch_name: S.branchName,
                         action: actionDescription,
                         user: S.profile?.full_name || S.user?.email || "Encargada",
@@ -1641,6 +1777,7 @@
                         is_catalog_record: true,
                         custom_products: customList,
                         deleted_product_ids: deletedList,
+                        deleted_branch_key: branchDelKey,
                         updated_at: now(),
                         updated_by: S.profile?.full_name || S.user?.email || "Encargada",
                         branch_name: S.branchName,
@@ -1651,18 +1788,20 @@
         }
     }
 
-    /* ── PRODUCTOS (CARGA DESDE SUPABASE Y CATÁLOGO AUTÉNTICO) ── */
+    /* ── PRODUCTOS (CARGA Y PROTECCIÓN TOTAL DE CATÁLOGOS DE TODAS LAS SUCURSALES) ── */
     async function loadProducts() {
-        const explicitDelSet = new Set(gr("explicit_deleted_ids", []).map(String));
+        const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
+        const explicitDelSet = new Set(gr(branchDelKey, []).map(String));
 
-        // Cargar catálogo permanente y protegido de la Sucursal La Fuente Calzada (respetando solo eliminaciones explícitas del usuario)
-        let calzadaPermanent = CALZADA_BASE_PRODUCTS.filter(cp => !explicitDelSet.has(String(cp.product_id)));
+        // Cargar catálogo base compartido (respetando solo eliminaciones explícitas de la sucursal activa)
+        let calzadaPermanent = CALZADA_BASE_PRODUCTS.filter(cp => !explicitDelSet.has(String(cp.product_id))).map(sanitizeSharedCatalogProduct);
         try {
             const rawCalz = localStorage.getItem("lf_calzada_permanent_products");
             if (rawCalz) {
                 const parsed = JSON.parse(rawCalz);
                 if (Array.isArray(parsed)) {
-                    parsed.forEach(p => {
+                    parsed.forEach(rawP => {
+                        const p = sanitizeSharedCatalogProduct(rawP);
                         if (p && p.product_id && !explicitDelSet.has(String(p.product_id)) && !calzadaPermanent.some(cp => String(cp.product_id) === String(p.product_id))) {
                             calzadaPermanent.push(p);
                         }
@@ -1671,52 +1810,42 @@
             }
         } catch(e) {}
 
-        // Cargar registros de personalizaciones y cambios de catálogo desde la nube
+        // Cargar registros de personalizaciones y productos de todas las sucursales desde la nube (sin borrar productos de ninguna sucursal)
         if (db) {
             try {
                 const {data: catalogRecords} = await safeQuery(db.from("sales").select("*").eq("status", "CATALOG_RECORD").order("created_at", {ascending: false}).limit(50), null, 2500);
                 if (catalogRecords && catalogRecords.length) {
                     const localCustom = gr("custom_products", []);
                     const mapCust = new Map();
-                    localCustom.forEach(p => {
+                    localCustom.forEach(rawP => {
+                        const p = sanitizeSharedCatalogProduct(rawP);
                         if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
                             mapCust.set(String(p.product_id), p);
                         }
                     });
-                    calzadaPermanent.forEach(p => {
+                    calzadaPermanent.forEach(rawP => {
+                        const p = sanitizeSharedCatalogProduct(rawP);
                         if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
                             mapCust.set(String(p.product_id), p);
                         }
                     });
-                    const delSet = new Set(gr("deleted_product_ids", []).map(String));
 
                     catalogRecords.reverse().forEach(cr => {
                         let obs = {};
                         try { obs = typeof cr.observations === "string" ? JSON.parse(cr.observations) : (cr.observations || {}); } catch(e) {}
                         if (obs.custom_products && Array.isArray(obs.custom_products)) {
-                            obs.custom_products.forEach(p => {
+                            obs.custom_products.forEach(rawP => {
+                                const p = sanitizeSharedCatalogProduct(rawP);
                                 if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
                                     mapCust.set(String(p.product_id), p);
-                                }
-                            });
-                        }
-                        if (obs.deleted_product_ids && Array.isArray(obs.deleted_product_ids)) {
-                            obs.deleted_product_ids.forEach(id => {
-                                const sid = String(id);
-                                const isCalzBase = CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === sid);
-                                if (!isCalzBase || explicitDelSet.has(sid)) {
-                                    delSet.add(sid);
                                 }
                             });
                         }
                     });
 
                     const mergedCustom = Array.from(mapCust.values());
-                    const mergedDel = Array.from(delSet);
                     gw("custom_products", mergedCustom);
                     lw("custom_products", mergedCustom);
-                    gw("deleted_product_ids", mergedDel);
-                    lw("deleted_product_ids", mergedDel);
                 }
             } catch(e) {}
         }
@@ -1735,10 +1864,9 @@
             }
         }
 
-        const customProds = gr("custom_products", []);
-        const deletedIds  = gr("deleted_product_ids", []).map(String);
+        const customProds = gr("custom_products", []).map(sanitizeSharedCatalogProduct);
 
-        // Escaneo de productos personalizados guardados por sucursales específicas
+        // Escaneo de productos personalizados guardados por sucursales específicas (Tagarete 2, Tagarete 1, Rescate, Mollotes, CNOP, Calzada)
         const branchKeySuffixes = [
             "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
             "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
@@ -1750,10 +1878,11 @@
                 if (raw) {
                     const parsed = JSON.parse(raw);
                     if (Array.isArray(parsed)) {
-                        parsed.forEach(p => {
+                        parsed.forEach(rawP => {
+                            const p = sanitizeSharedCatalogProduct(rawP);
                             if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
                                 const idx = customProds.findIndex(x => String(x.product_id) === String(p.product_id));
-                                if (idx >= 0) customProds[idx] = { ...customProds[idx], ...p };
+                                if (idx >= 0) customProds[idx] = sanitizeSharedCatalogProduct({ ...customProds[idx], ...p });
                                 else customProds.push(p);
                             }
                         });
@@ -1762,8 +1891,9 @@
             } catch(e) {}
         });
 
-        // Asegurar que todos los productos permanentes de Calzada (no eliminados explícitamente) se incluyan
-        calzadaPermanent.forEach(p => {
+        // Asegurar que todos los productos permanentes se incluyan sin sobreescribir la sucursal de otras tiendas
+        calzadaPermanent.forEach(rawP => {
+            const p = sanitizeSharedCatalogProduct(rawP);
             if (p && p.product_id && !explicitDelSet.has(String(p.product_id)) && !customProds.some(x => String(x.product_id) === String(p.product_id))) {
                 customProds.push(p);
             }
@@ -1773,11 +1903,10 @@
 
         const combinedMap = new Map();
 
-        // 1. Iniciar con el catálogo base e insumos oficiales
+        // 1. Iniciar con el catálogo base e insumos oficiales (disponibles para todas las sucursales según sus reglas)
         DEFAULT_PRODUCTS.forEach(p => {
             const pid = String(p.product_id);
-            const isCalz = calzadaPermanent.some(cp => String(cp.product_id) === pid);
-            if ((!deletedIds.includes(pid) || isCalz) && !explicitDelSet.has(pid)) {
+            if (!explicitDelSet.has(pid)) {
                 combinedMap.set(pid, { ...p });
             }
         });
@@ -1786,7 +1915,7 @@
         if (remoteProducts.length) {
             remoteProducts.forEach(p => {
                 const pid = String(p.product_id || p.id);
-                if (!deletedIds.includes(pid) && !explicitDelSet.has(pid)) {
+                if (!explicitDelSet.has(pid)) {
                     let cat = String(p.category || p.product_category || "helados").toLowerCase().trim();
                     const pName = String(p.product_name || "").toLowerCase();
                     if (cat.includes("preparad") || pName.includes("esquite") || pName.includes("nacho") || pName.includes("tosti") || pName.includes("fresas con crema")) cat = "preparados";
@@ -1799,8 +1928,7 @@
                     else if (!cat || cat.length > 20) cat = "helados";
 
                     let existing = combinedMap.get(pid) || {};
-
-                    combinedMap.set(pid, {
+                    const sanitized = sanitizeSharedCatalogProduct({
                         ...existing,
                         product_id: pid,
                         product_name: p.product_name,
@@ -1816,17 +1944,20 @@
                         is_supply: (p.is_supply !== undefined) ? p.is_supply : (cat === "desechables"),
                         units_per_package: p.units_per_package || existing.units_per_package || (cat === "desechables" ? 50 : 1)
                     });
+
+                    combinedMap.set(pid, sanitized);
                 }
             });
         }
 
-        // 3. Fusionar productos personalizados creados o editados por los usuarios
-        customProds.forEach(p => {
+        // 3. Fusionar productos personalizados creados o editados por las sucursales
+        customProds.forEach(rawP => {
+            const p = sanitizeSharedCatalogProduct(rawP);
+            if (!p || !p.product_id) return;
             const pid = String(p.product_id);
-            const isCalz = calzadaPermanent.some(cp => String(cp.product_id) === pid);
-            if ((!deletedIds.includes(pid) || isCalz) && !explicitDelSet.has(pid)) {
+            if (!explicitDelSet.has(pid)) {
                 let existing = combinedMap.get(pid) || {};
-                combinedMap.set(pid, {
+                const mergedProd = sanitizeSharedCatalogProduct({
                     ...existing,
                     ...p,
                     product_id: pid,
@@ -1843,17 +1974,88 @@
                     is_supply: p.is_supply !== undefined ? !!p.is_supply : !!existing.is_supply,
                     units_per_package: Number(p.units_per_package || existing.units_per_package || 1)
                 });
+                combinedMap.set(pid, mergedProd);
             }
         });
 
-        // 4. Si la sucursal activa es La Fuente Calzada, blindar inclusión de productos permanentes no eliminados
-        if (resolveCanonicalBranch(S.branchName) === "La Fuente Calzada") {
-            calzadaPermanent.forEach(cp => {
-                const cpid = String(cp.product_id);
-                if (cp && cpid && !explicitDelSet.has(cpid) && !combinedMap.has(cpid)) {
-                    combinedMap.set(cpid, { ...cp });
-                }
+        // 4. Recuperación automática de todos los productos personalizados agregados por Tagarete 2 y demás sucursales en sus ventas históricas
+        try {
+            const historicalSalesToScan = [
+                ...(typeof BASE_ACTIVE_SALES !== "undefined" && Array.isArray(BASE_ACTIVE_SALES) ? BASE_ACTIVE_SALES : []),
+                ...(_sessionSales || []),
+                ...(gr("all_sales", []) || [])
+            ];
+            historicalSalesToScan.forEach(s => {
+                if (!s || isSystemNonSaleRecord(s) || !Array.isArray(s.items)) return;
+                const saleBranch = resolveCanonicalBranch(s) || s.branch_name || "General";
+                const saleBranchId = s.branch_id || "all";
+                s.items.forEach(it => {
+                    if (!it || !it.product_id || !it.product_name) return;
+                    const pid = String(it.product_id);
+                    if (explicitDelSet.has(pid) || combinedMap.has(pid)) return;
+                    // Evitar duplicar si en la misma sucursal ya existe exactamente el mismo nombre y precio en el catálogo base
+                    const normName = String(it.product_name).trim().toLowerCase();
+                    const alreadyHasSameNameInBranch = Array.from(combinedMap.values()).some(existingP => {
+                        if (String(existingP.product_name || "").trim().toLowerCase() !== normName) return false;
+                        return isProductAllowedInBranch(existingP, saleBranch);
+                    });
+                    if (alreadyHasSameNameInBranch) return;
+
+                    let cat = "helados";
+                    if (normName.includes("paleta") || normName.includes("esquimal") || normName.includes("chaparrita") || normName.includes("mini")) cat = "paletas";
+                    else if (normName.includes("agua") || normName.includes("litro")) cat = "aguas";
+                    else if (normName.includes("tosti") || normName.includes("nacho") || normName.includes("cheto") || normName.includes("dorito") || normName.includes("escamocha") || normName.includes("fresa") || normName.includes("papa") || normName.includes("sabrita") || normName.includes("chechi")) cat = "preparados";
+                    else if (normName.includes("mordisco") || normName.includes("chocobanana") || normName.includes("helado") || normName.includes("cono") || normName.includes("vaso") || normName.includes("trol")) cat = "helados";
+
+                    combinedMap.set(pid, {
+                        product_id: pid,
+                        product_code: "LF-" + pid.slice(-4).toUpperCase(),
+                        product_name: it.product_name,
+                        category: cat,
+                        price: Number(it.price || 25),
+                        branch_name: saleBranch,
+                        branch_id: saleBranchId,
+                        initial_stock: 80,
+                        is_supply: false,
+                        units_per_package: 1
+                    });
+                });
             });
+        } catch(e) {}
+
+        // 5. Blindar inclusión de productos base
+        calzadaPermanent.forEach(cp => {
+            const cpid = String(cp.product_id);
+            if (cp && cpid && !explicitDelSet.has(cpid) && !combinedMap.has(cpid)) {
+                combinedMap.set(cpid, sanitizeSharedCatalogProduct({ ...cp }));
+            }
+        });
+
+        // 6. Aplicar precios exclusivos solicitados SOLO para la sucursal La Fuente Calzada:
+        //    - Esquimal Grande: $45 (solo en La Fuente Calzada)
+        //    - Medio Litro de Nieve: $60 (solo en La Fuente Calzada)
+        //    - Chetos Queso: $45 (solo en La Fuente Calzada)
+        const isCurrentCalzada = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
+        for (const [pid, prod] of combinedMap.entries()) {
+            const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+            if (isCurrentCalzada) {
+                if (!prod.user_edited_price_v69) {
+                    if (pid === "prod_1789344787923_spve" || pNameNorm === "esquimal grande") {
+                        prod.price = 45;
+                    } else if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve") {
+                        prod.price = 60;
+                    } else if (pid === "prod_calz_chetos_queso" || pNameNorm === "chetos queso") {
+                        prod.price = 45;
+                    }
+                }
+            } else {
+                // En las demás sucursales, conservar su precio original del catálogo general si provienen de los IDs compartidos
+                if (!prod.user_edited_price_v69) {
+                    if (pid === "prod_1789344787923_spve") prod.price = 30;
+                    else if (pid === "prod_calz_medio_litro") prod.price = 65;
+                    else if (pid === "prod_calz_chetos_queso") prod.price = 35;
+                }
+            }
         }
 
         S.products = Array.from(combinedMap.values()).sort((a,b) => {
@@ -1878,6 +2080,20 @@
 
         // Aplicar reglas estrictas de disponibilidad por sucursal
         p = p.filter(x => isProductAllowedInBranch(x, S.branchName));
+
+        // Garantizar en vivo precios exclusivos si la sucursal activa es La Fuente Calzada
+        const isCurrentCalzada = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
+        if (isCurrentCalzada) {
+            p.forEach(prod => {
+                if (prod && !prod.user_edited_price_v69) {
+                    const pid = String(prod.product_id || "");
+                    const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                    if (pid === "prod_1789344787923_spve" || pNameNorm === "esquimal grande") prod.price = 45;
+                    else if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve") prod.price = 60;
+                    else if (pid === "prod_calz_chetos_queso" || pNameNorm === "chetos queso") prod.price = 45;
+                }
+            });
+        }
 
         if (S.cat !== "all") {
             p = p.filter(x => String(x.category || "").toLowerCase() === S.cat);
@@ -2113,7 +2329,11 @@
             date_key: currentTodayKey
         };
 
-        // 1. GUARDADO LOCAL Y POR SUCURSAL INSTANTÁNEO
+        // 1. GUARDADO EN MEMORIA DE SESIÓN Y ALMACENAMIENTO LOCAL COMPACTO (SIN DESBORDAR CUOTA)
+        if (!_sessionSales.some(x => String(x.id) === String(saleRecord.id) || String(x.sale_number) === String(saleRecord.sale_number))) {
+            _sessionSales.unshift(saleRecord);
+        }
+
         const localSales = lr("sales", []);
         localSales.unshift(saleRecord);
         lw("sales", localSales);
@@ -2122,34 +2342,17 @@
         allGlobalSales.unshift(saleRecord);
         gw("all_sales", allGlobalSales);
 
-        // Guardar explícitamente en la llave de la sucursal activa para sincronización multiusuario
+        // Guardar explícitamente en la llave compacta de la sucursal activa
         const bKey = getBranchKeyName(saleRecord.branch_name);
         try {
-            const rawBSales = localStorage.getItem("lf_" + bKey + "_sales");
-            const bSalesList = rawBSales ? JSON.parse(rawBSales) : [];
+            const bSalesList = lr(bKey + "_sales", []);
             bSalesList.unshift(saleRecord);
-            localStorage.setItem("lf_" + bKey + "_sales", JSON.stringify(bSalesList));
-            localStorage.setItem("lf_" + saleRecord.branch_id + "_sales", JSON.stringify(bSalesList));
-            if (isTag1) {
-                localStorage.setItem("lf_tagarete_1_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_branch-4_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_tagarete 1_sales", JSON.stringify(bSalesList));
-            } else if (isTag2) {
-                localStorage.setItem("lf_tagarete_2_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_branch-5_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_tagarete 2_sales", JSON.stringify(bSalesList));
-            } else if (isCalzada) {
-                localStorage.setItem("lf_calzada_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_branch-1_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_c188dd82-7faf-41b8-948b-af8e789facba_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_la_fuente_calzada_sales", JSON.stringify(bSalesList));
+            lw(bKey + "_sales", bSalesList);
+            if (isCalzada) {
                 const calzToday = lr("calzada_today_sales", []);
                 calzToday.unshift(saleRecord);
                 lw("calzada_today_sales", calzToday);
-            } else if (isMollotes) {
-                localStorage.setItem("lf_mollotes_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_branch-3_sales", JSON.stringify(bSalesList));
-                localStorage.setItem("lf_molotes_sales", JSON.stringify(bSalesList));
+                lw("calzada_sales", bSalesList);
             }
         } catch(e) {}
 
@@ -2766,12 +2969,12 @@
 
     async function printSaleReceipt(sale) {
         if (!sale) return;
-        localStorage.setItem("lf_last_printed_sale", JSON.stringify(sale));
+        lw("last_printed_sale", sale);
         try {
             const printedHistory = lr("all_printed_tickets", []);
             if (!printedHistory.some(x => String(x.id) === String(sale.id) || String(x.sale_number) === String(sale.sale_number))) {
                 printedHistory.unshift(sale);
-                if (printedHistory.length > 200) printedHistory.pop();
+                if (printedHistory.length > 100) printedHistory.pop();
                 lw("all_printed_tickets", printedHistory);
             }
         } catch(e) {}
@@ -3533,12 +3736,14 @@
         c.querySelectorAll(".btn-del-sup").forEach(btn => btn.addEventListener("click", async () => {
             const supId = btn.dataset.id;
             const supName = btn.dataset.name;
-            const ok = await toastConfirm("¿Eliminar el insumo '" + supName + "' del catálogo?");
+            const ok = await toastConfirm("¿Eliminar el insumo '" + supName + "' del catálogo de esta sucursal?");
             if (!ok) return;
 
-            const deletedIds = gr("deleted_product_ids", []);
-            deletedIds.push(String(supId));
-            gw("deleted_product_ids", deletedIds);
+            const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
+            const deletedIds = gr(branchDelKey, []);
+            if (!deletedIds.includes(String(supId))) deletedIds.push(String(supId));
+            gw(branchDelKey, deletedIds);
+            lw(branchDelKey, deletedIds);
 
             broadcastCatalogChanges("Insumo '" + supName + "' eliminado");
             toast("✓ Insumo '" + supName + "' eliminado.", "info");
@@ -3627,6 +3832,8 @@
                                     bId === "branch-1" ||
                                     targetBranch === "all";
 
+            const branchDelKey = getBranchExplicitDeletedKey(targetBranch === "all" ? S.branchName : targetBranch);
+
             if (editingProductId) {
                 // MODIFICAR PRODUCTO EXISTENTE
                 const customList = gr("custom_products", []);
@@ -3637,14 +3844,18 @@
                     customList.push(prodToEdit);
                 }
 
+                const isSharedId = DEFAULT_PRODUCTS.some(dp => String(dp.product_id) === String(editingProductId)) ||
+                                   CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === String(editingProductId));
+
                 prodToEdit.product_name = name;
                 prodToEdit.product_code = code || prodToEdit.product_code || ("LF-" + Math.floor(Math.random()*900+100));
                 prodToEdit.category = cat;
                 prodToEdit.price = price;
+                prodToEdit.user_edited_price_v69 = true;
                 prodToEdit.initial_stock = stockInp;
                 prodToEdit.units_per_package = packUnits;
-                prodToEdit.branch_id = bId;
-                prodToEdit.branch_name = targetBranch === "all" ? "General" : targetBranch;
+                prodToEdit.branch_id = isSharedId ? "all" : bId;
+                prodToEdit.branch_name = (targetBranch === "all" || isSharedId) ? "General" : targetBranch;
                 prodToEdit.is_composite = isComp;
                 prodToEdit.components = isComp ? [...tempComponents] : [];
                 prodToEdit.is_supply = (cat === "desechables" || price === 0);
@@ -3659,7 +3870,6 @@
                 gw("custom_products", customList);
                 lw("custom_products", customList);
 
-                // Si aplica a Calzada, actualizar en el almacén permanente de Calzada
                 if (isCalzadaTarget) {
                     try {
                         const rawCalz = localStorage.getItem("lf_calzada_permanent_products") || "[]";
@@ -3669,19 +3879,13 @@
                         if (cIdx >= 0) calzList[cIdx] = { ...prodToEdit };
                         else calzList.push({ ...prodToEdit });
                         localStorage.setItem("lf_calzada_permanent_products", JSON.stringify(calzList));
-                        localStorage.setItem("lf_calzada_custom_products", JSON.stringify(calzList));
-                        localStorage.setItem("lf_la_fuente_calzada_custom_products", JSON.stringify(calzList));
-                        localStorage.setItem("lf_branch-1_custom_products", JSON.stringify(calzList));
                     } catch(e) {}
                 }
 
-                // Si estaba en deleted_product_ids o explicit_deleted_ids, removerlo para rehabilitarlo
-                const cleanDel = gr("deleted_product_ids", []).filter(id => String(id) !== String(editingProductId));
-                gw("deleted_product_ids", cleanDel);
-                lw("deleted_product_ids", cleanDel);
-                const cleanExpDel = gr("explicit_deleted_ids", []).filter(id => String(id) !== String(editingProductId));
-                gw("explicit_deleted_ids", cleanExpDel);
-                lw("explicit_deleted_ids", cleanExpDel);
+                // Si estaba en eliminados de esta sucursal, removerlo para rehabilitarlo
+                const cleanExpDel = gr(branchDelKey, []).filter(id => String(id) !== String(editingProductId));
+                gw(branchDelKey, cleanExpDel);
+                lw(branchDelKey, cleanExpDel);
 
                 broadcastCatalogChanges("Producto '" + name + "' editado");
                 editingProductId = null;
@@ -3695,6 +3899,7 @@
                     product_code: code || ("LF-" + Math.floor(Math.random()*900+100)),
                     category: cat,
                     price: price,
+                    user_edited_price_v69: true,
                     branch_id: bId,
                     branch_name: targetBranch === "all" ? "General" : targetBranch,
                     is_active: true,
@@ -3716,7 +3921,6 @@
                 gw("custom_products", customList);
                 lw("custom_products", customList);
 
-                // Almacenamiento específico para la sucursal de La Fuente Calzada
                 if (isCalzadaTarget) {
                     try {
                         const rawCalz = localStorage.getItem("lf_calzada_permanent_products") || "[]";
@@ -3724,9 +3928,6 @@
                         if (!Array.isArray(calzList)) calzList = [];
                         calzList.push(newProd);
                         localStorage.setItem("lf_calzada_permanent_products", JSON.stringify(calzList));
-                        localStorage.setItem("lf_calzada_custom_products", JSON.stringify(calzList));
-                        localStorage.setItem("lf_la_fuente_calzada_custom_products", JSON.stringify(calzList));
-                        localStorage.setItem("lf_branch-1_custom_products", JSON.stringify(calzList));
                     } catch(e) {}
                 }
 
@@ -3739,13 +3940,9 @@
                     localStorage.setItem(bKey, JSON.stringify(bList));
                 } catch(e) {}
 
-                // Asegurar que no esté en deleted_product_ids ni explicit_deleted_ids
-                const cleanDel = gr("deleted_product_ids", []).filter(id => String(id) !== String(newProdId));
-                gw("deleted_product_ids", cleanDel);
-                lw("deleted_product_ids", cleanDel);
-                const cleanExpDel = gr("explicit_deleted_ids", []).filter(id => String(id) !== String(newProdId));
-                gw("explicit_deleted_ids", cleanExpDel);
-                lw("explicit_deleted_ids", cleanExpDel);
+                const cleanExpDel = gr(branchDelKey, []).filter(id => String(id) !== String(newProdId));
+                gw(branchDelKey, cleanExpDel);
+                lw(branchDelKey, cleanExpDel);
 
                 broadcastCatalogChanges("Nuevo producto '" + name + "' registrado");
                 if (db) {
@@ -3768,48 +3965,18 @@
         });
 
         c.querySelectorAll(".btn-del-prod").forEach(btn => btn.addEventListener("click", async () => {
-            const ok = await toastConfirm("¿Estás seguro de eliminar el producto '" + btn.dataset.name + "' del catálogo?");
+            const ok = await toastConfirm("¿Estás seguro de eliminar el producto '" + btn.dataset.name + "' del catálogo de esta sucursal?");
             if (!ok) return;
 
             const prodId = String(btn.dataset.id);
-            const deletedIds = gr("deleted_product_ids", []);
-            if (!deletedIds.includes(prodId)) deletedIds.push(prodId);
-            gw("deleted_product_ids", deletedIds);
-            lw("deleted_product_ids", deletedIds);
-
-            const explicitDelIds = gr("explicit_deleted_ids", []);
+            const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
+            const explicitDelIds = gr(branchDelKey, []);
             if (!explicitDelIds.includes(prodId)) explicitDelIds.push(prodId);
-            gw("explicit_deleted_ids", explicitDelIds);
-            lw("explicit_deleted_ids", explicitDelIds);
+            gw(branchDelKey, explicitDelIds);
+            lw(branchDelKey, explicitDelIds);
 
-            // Eliminar de las listas de productos personalizados
-            const customList = gr("custom_products", []).filter(p => String(p.product_id) !== prodId);
-            gw("custom_products", customList);
-            lw("custom_products", customList);
-
-            // Eliminar manualmente de los almacenes permanentes de Calzada y de sucursales
-            try {
-                const keysToClean = [
-                    "lf_calzada_permanent_products",
-                    "lf_calzada_custom_products",
-                    "lf_la_fuente_calzada_custom_products",
-                    "lf_la fuente calzada_custom_products",
-                    "lf_branch-1_custom_products"
-                ];
-                keysToClean.forEach(k => {
-                    const raw = localStorage.getItem(k);
-                    if (raw) {
-                        const parsed = JSON.parse(raw);
-                        if (Array.isArray(parsed)) {
-                            const filtered = parsed.filter(p => String(p.product_id) !== prodId);
-                            localStorage.setItem(k, JSON.stringify(filtered));
-                        }
-                    }
-                });
-            } catch(e) {}
-
-            broadcastCatalogChanges("Producto '" + btn.dataset.name + "' eliminado");
-            toast("✓ Producto '" + btn.dataset.name + "' eliminado del catálogo.", "info", 3500);
+            broadcastCatalogChanges("Producto '" + btn.dataset.name + "' eliminado en " + S.branchName);
+            toast("✓ Producto '" + btn.dataset.name + "' eliminado del catálogo de " + S.branchName + ".", "info", 3500);
             await loadProducts();
             await loadProductsAdmin();
         }));
@@ -12625,6 +12792,14 @@
             BASE_ACTIVE_SALES.forEach(addSaleToMap);
         }
 
+        // 0.1 Preservar siempre ventas en memoria de la sesión actual (_sessionSales y _cachedConsolidatedSales)
+        if (Array.isArray(_cachedConsolidatedSales)) {
+            _cachedConsolidatedSales.forEach(addSaleToMap);
+        }
+        if (Array.isArray(_sessionSales)) {
+            _sessionSales.forEach(addSaleToMap);
+        }
+
         // 1. Cargar explícitamente desde todas las llaves locales de sucursales conocidas
         const branchKeySuffixes = [
             "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
@@ -12847,7 +13022,7 @@
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
         }
 
-        const consolidated = await getConsolidatedSalesForChain();
+        const consolidated = await getConsolidatedSalesForChain(true);
         const activeBranchFilter = S.isSU ? (S.salesFilterBranchId || "all") : S.branchId;
 
         const targetBranchRef = (activeBranchFilter === "all")
@@ -12875,6 +13050,7 @@
         // Garantizar que las ventas registradas para Calzada estén siempre en branchSales
         if (isCalzadaFilter) {
             const localSources = [
+                _sessionSales,
                 lr("sales", []),
                 gr("all_sales", []),
                 lr("calzada_sales", []),
@@ -13654,8 +13830,8 @@
             })
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
-        // Calcular ventas activas del turno actual para el corte
-        const consolidatedSales = await getConsolidatedSalesForChain();
+        // Calcular ventas activas del turno/día actual para el corte
+        const consolidatedSales = await getConsolidatedSalesForChain(true);
         const currentBranchSales = consolidatedSales.filter(s => {
             if (isSystemNonSaleRecord(s)) return false;
             if (isCalzadaBranch) return resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada");
@@ -13664,9 +13840,10 @@
         const todayStr = toDateKey();
         let todayActiveSales = currentBranchSales.filter(s => !isSystemNonSaleRecord(s) && isTodaySale(s, todayStr) && String(s.status||"").toUpperCase() !== "CANCELLED");
 
-        // Para Calzada: asegurar inclusión directa de ventas locales recientes
+        // Para Calzada: asegurar inclusión directa de todas las ventas en memoria y locales recientes
         if (isCalzadaBranch) {
             const localSources = [
+                _sessionSales,
                 lr("sales", []),
                 gr("all_sales", []),
                 lr("calzada_sales", []),
@@ -13708,12 +13885,34 @@
         }
         
         const currentCategory = (S.shift.toLowerCase().includes("tarde") || S.shift.toLowerCase().includes("vesp")) ? "vespertino" : "matutino";
-        let currentTurnSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory || String(s.shift_name||"").toLowerCase().includes(currentCategory.slice(0,4)));
-        if (!currentTurnSales.length && todayActiveSales.length) {
-            const sShift = (S.shift || "").toLowerCase();
-            currentTurnSales = todayActiveSales.filter(s => String(s.shift_name||"").toLowerCase().includes(sShift));
-            if (!currentTurnSales.length) {
+        let currentTurnSales = [];
+        if (isCalzadaBranch) {
+            // En La Fuente Calzada: acumular todas las ventas del día que aún no hayan sido cortadas hoy,
+            // para que cada venta insertada aumente de inmediato el acumulado del corte sin quedarse estancada
+            const todayCuts = cutsList.filter(ct => ct && ct.created_at && toDateKey(ct.created_at) === todayStr);
+            if (todayCuts.length > 0) {
+                const lastCutTime = Math.max(...todayCuts.map(ct => new Date(ct.created_at).getTime()).filter(t => !isNaN(t)));
+                const salesAfterLastCut = todayActiveSales.filter(s => {
+                    const st = new Date(s.created_at || 0).getTime();
+                    return !isNaN(st) && st > lastCutTime;
+                });
+                const shiftMatchedSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory || String(s.shift_name||"").toLowerCase().includes(currentCategory.slice(0,4)));
+                const combinedCalzMap = new Map();
+                salesAfterLastCut.forEach(s => combinedCalzMap.set(String(s.id || s.sale_number), s));
+                shiftMatchedSales.forEach(s => combinedCalzMap.set(String(s.id || s.sale_number), s));
+                currentTurnSales = combinedCalzMap.size > 0 ? Array.from(combinedCalzMap.values()) : todayActiveSales;
+            } else {
+                // Si aún no se ha hecho ningún corte hoy en Calzada, incluir todas las ventas activas del día
                 currentTurnSales = todayActiveSales;
+            }
+        } else {
+            currentTurnSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory || String(s.shift_name||"").toLowerCase().includes(currentCategory.slice(0,4)));
+            if (!currentTurnSales.length && todayActiveSales.length) {
+                const sShift = (S.shift || "").toLowerCase();
+                currentTurnSales = todayActiveSales.filter(s => String(s.shift_name||"").toLowerCase().includes(sShift));
+                if (!currentTurnSales.length) {
+                    currentTurnSales = todayActiveSales;
+                }
             }
         }
 
@@ -16387,26 +16586,21 @@
                     if (payload.custom_products && Array.isArray(payload.custom_products)) {
                         const localCustom = gr("custom_products", []);
                         const map = new Map();
-                        localCustom.forEach(p => map.set(String(p.product_id), p));
+                        localCustom.forEach(p => { if (p && p.product_id) map.set(String(p.product_id), sanitizeSharedCatalogProduct(p)); });
                         payload.custom_products.forEach(p => {
-                            map.set(String(p.product_id), p);
-                            modified = true;
-                        });
-                        gw("custom_products", Array.from(map.values()));
-                    }
-                    if (payload.deleted_product_ids && Array.isArray(payload.deleted_product_ids)) {
-                        const localDel = new Set(gr("deleted_product_ids", []));
-                        let rawCalzPerm = [];
-                        try { rawCalzPerm = JSON.parse(localStorage.getItem("lf_calzada_permanent_products") || "[]"); } catch(e) {}
-                        payload.deleted_product_ids.forEach(id => {
-                            const isCalz = Array.isArray(rawCalzPerm) && rawCalzPerm.some(cp => String(cp.product_id) === String(id));
-                            if (!isCalz) {
-                                localDel.add(String(id));
+                            if (p && p.product_id) {
+                                map.set(String(p.product_id), sanitizeSharedCatalogProduct(p));
                                 modified = true;
                             }
                         });
-                        gw("deleted_product_ids", Array.from(localDel));
-                        lw("deleted_product_ids", Array.from(localDel));
+                        gw("custom_products", Array.from(map.values()));
+                    }
+                    if (payload.deleted_product_ids && Array.isArray(payload.deleted_product_ids) && payload.deleted_branch_key) {
+                        const bKey = payload.deleted_branch_key;
+                        const localDel = new Set(gr(bKey, []).map(String));
+                        payload.deleted_product_ids.forEach(id => localDel.add(String(id)));
+                        gw(bKey, Array.from(localDel));
+                        lw(bKey, Array.from(localDel));
                     }
                     if (payload.damage_reports && Array.isArray(payload.damage_reports)) {
                         const localReps = gr("all_damage_reports", []);
@@ -16484,6 +16678,9 @@
                     if (!payload || !payload.sale) return;
                     const s = payload.sale;
                     const sid = String(s.id);
+                    if (!_sessionSales.some(x => String(x.id) === sid || (x.sale_number && x.sale_number === s.sale_number))) {
+                        _sessionSales.unshift(s);
+                    }
                     let allGSales = gr("all_sales", []);
                     const exists = allGSales.some(x => String(x.id) === sid || (x.local_id && x.local_id === s.local_id) || (x.sale_number && x.sale_number === s.sale_number));
                     if (!exists) {
@@ -16601,7 +16798,7 @@
                     const allGCuts = gr("all_cuts", []);
                     const allGShifts = gr("all_shifts", []);
                     const myShifts = lr("shifts", []);
-                    const salesToSend = (mySales.length ? mySales : allGSales);
+                    const salesToSend = (_sessionSales.length ? _sessionSales : (mySales.length ? mySales : allGSales));
                     const cutsToSend = (myCuts.length ? myCuts : allGCuts);
 
                     if (realtimeChannel) {
@@ -16618,7 +16815,6 @@
                                     shifts: (myShifts && myShifts.length) ? myShifts : allGShifts,
                                     inv: S.inv,
                                     custom_products: gr("custom_products", []),
-                                    deleted_product_ids: gr("deleted_product_ids", []),
                                     damage_reports: gr("all_damage_reports", []),
                                     notices: gr("all_notices", [])
                                 }
@@ -16636,6 +16832,9 @@
                         allGSales.forEach(s => map.set(String(s.id || s.sale_number), s));
                         payload.sales.filter(s => !isSystemNonSaleRecord(s)).forEach(s => {
                             const sid = String(s.id || s.sale_number);
+                            if (!isStaticBaseSale(s) && !_sessionSales.some(x => String(x.id || x.sale_number) === sid)) {
+                                _sessionSales.unshift(s);
+                            }
                             if (!map.has(sid)) {
                                 map.set(sid, s);
                                 hasNew = true;
@@ -16676,23 +16875,13 @@
                         gw("inv_" + payload.branch_id, payload.inv);
                     }
                     if (payload.custom_products && Array.isArray(payload.custom_products)) {
-                        const explicitDelSet = new Set(gr("explicit_deleted_ids", []).map(String));
+                        const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
+                        const explicitDelSet = new Set(gr(branchDelKey, []).map(String));
                         const localCustom = gr("custom_products", []);
                         const map = new Map();
-                        localCustom.forEach(p => { if (p && !explicitDelSet.has(String(p.product_id))) map.set(String(p.product_id), p); });
-                        payload.custom_products.forEach(p => { if (p && !explicitDelSet.has(String(p.product_id))) map.set(String(p.product_id), p); });
+                        localCustom.forEach(p => { if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) map.set(String(p.product_id), sanitizeSharedCatalogProduct(p)); });
+                        payload.custom_products.forEach(p => { if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) map.set(String(p.product_id), sanitizeSharedCatalogProduct(p)); });
                         gw("custom_products", Array.from(map.values()));
-                    }
-                    if (payload.deleted_product_ids && Array.isArray(payload.deleted_product_ids)) {
-                        const explicitDelSet = new Set(gr("explicit_deleted_ids", []).map(String));
-                        const localDel = new Set(gr("deleted_product_ids", []).map(String));
-                        payload.deleted_product_ids.forEach(id => {
-                            const sid = String(id);
-                            const isCalzBase = CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === sid);
-                            if (!isCalzBase || explicitDelSet.has(sid)) localDel.add(sid);
-                        });
-                        gw("deleted_product_ids", Array.from(localDel));
-                        lw("deleted_product_ids", Array.from(localDel));
                     }
                     _cachedConsolidatedSales = null;
                     await getConsolidatedSalesForChain(true);
