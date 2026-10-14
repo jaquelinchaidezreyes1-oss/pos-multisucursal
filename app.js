@@ -2157,6 +2157,7 @@
         }
 
         // 6. Aplicar precios exclusivos solicitados SOLO para la sucursal La Fuente Calzada:
+        // 6. Aplicar precios exclusivos solicitados SOLO para la sucursal La Fuente Calzada:
         //    - Esquimal Grande: $45 (solo en La Fuente Calzada)
         //    - Medio Litro de Nieve: $60 (solo en La Fuente Calzada)
         //    - Chetos Queso: $45 (solo en La Fuente Calzada)
@@ -2180,6 +2181,245 @@
                     else if (pid === "prod_calz_medio_litro") prod.price = 65;
                     else if (pid === "prod_calz_chetos_queso") prod.price = 35;
                 }
+            }
+        }
+
+        // 6.1. Corregir y blindar catálogo y precios oficiales EXCLUSIVAMENTE para la sucursal Rescate:
+        const isCurrentRescate = resolveCanonicalBranch(S.branchName) === "Rescate";
+        if (isCurrentRescate) {
+            // A. Sanear almacenamiento corrupto de Rescate (remover sobreescrituras indebidas de Zanahoria o precios inflados, botanas en paletas y duplicados)
+            try {
+                const rescateStorageKeys = ["lf_rescate_custom_products", "lf_branch-2_custom_products", "custom_products"];
+                rescateStorageKeys.forEach(rk => {
+                    const raw = localStorage.getItem(rk);
+                    if (raw) {
+                        let arr = JSON.parse(raw);
+                        if (Array.isArray(arr)) {
+                            let modified = false;
+                            const seenListCodes = new Set();
+                            arr = arr.filter(p => {
+                                if (!p) return false;
+                                const pName = String(p.product_name || "").trim().toLowerCase();
+                                const pCode = String(p.product_code || "").trim().toUpperCase();
+                                const pId = String(p.product_id || "");
+                                const isZanah = pName === "zanahoria" || pCode === "ZANAH";
+                                const isHighPrice = Number(p.price) >= 100 || Number(p.price) === 440;
+                                const isDefaultPaletaId = DEFAULT_PRODUCTS.some(dp => dp.category === "paletas" && String(dp.product_id) === pId && pId !== "p_paleta_zanahoria");
+                                const isBotana = pName.includes("sabrita") || pName.includes("tosti") || pName.includes("dorito") || pName.includes("nacho") || pName.includes("papa") || pCode.startsWith("SP");
+                                
+                                if (isDefaultPaletaId && (isZanah || isHighPrice || isBotana)) {
+                                    modified = true;
+                                    return false;
+                                }
+                                if (isZanah && isHighPrice) {
+                                    modified = true;
+                                    return false;
+                                }
+                                // Botanas jamás en paletas: corregir categoría a preparados
+                                if (p.category === "paletas" && isBotana) {
+                                    p.category = "preparados";
+                                    modified = true;
+                                }
+                                // Si es un código repetido (como SPBD repetido en paletas)
+                                if (pCode && !pCode.startsWith("LF-")) {
+                                    const codeKey = pCode + "_" + (p.category || "");
+                                    if (seenListCodes.has(codeKey)) {
+                                        modified = true;
+                                        return false;
+                                    }
+                                    seenListCodes.add(codeKey);
+                                }
+                                return true;
+                            });
+                            if (modified) {
+                                localStorage.setItem(rk, JSON.stringify(arr));
+                                if (rk === "custom_products") {
+                                    gw("custom_products", arr);
+                                    lw("custom_products", arr);
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch(e) {}
+
+            // B. Quitar de la lista de eliminados cualquier producto oficial del catálogo base para Rescate
+            try {
+                const rescateDelKeys = ["explicit_deleted_ids_v69_rescate", "explicit_deleted_ids_v69_branch-2"];
+                rescateDelKeys.forEach(dk => {
+                    const rawDel = localStorage.getItem(dk);
+                    if (rawDel) {
+                        let delList = JSON.parse(rawDel);
+                        if (Array.isArray(delList)) {
+                            const beforeLen = delList.length;
+                            delList = delList.filter(id => !DEFAULT_PRODUCTS.some(dp => String(dp.product_id) === String(id)));
+                            if (delList.length !== beforeLen) {
+                                localStorage.setItem(dk, JSON.stringify(delList));
+                                gw(dk, delList);
+                                lw(dk, delList);
+                            }
+                        }
+                    }
+                });
+            } catch(e) {}
+
+            // C. Restaurar en combinedMap todas las paletas base y productos oficiales de DEFAULT_PRODUCTS para Rescate
+            DEFAULT_PRODUCTS.forEach(dp => {
+                const dpid = String(dp.product_id);
+                const existing = combinedMap.get(dpid);
+                const isCorrupted = existing && (
+                    (existing.category === "paletas" && String(existing.product_name||"").trim().toLowerCase() === "zanahoria" && dpid !== "p_paleta_zanahoria") ||
+                    (existing.category === "paletas" && Number(existing.price) >= 100)
+                );
+                if (!existing || isCorrupted) {
+                    combinedMap.set(dpid, { ...dp });
+                }
+            });
+
+            // D. Eliminar duplicados fantasmas de Zanahoria y corregir botanas en paletas en combinedMap
+            for (const [pid, prod] of combinedMap.entries()) {
+                const pName = String(prod.product_name || "").trim().toLowerCase();
+                const pCode = String(prod.product_code || "").trim().toUpperCase();
+                const isBotana = pName.includes("sabrita") || pName.includes("tosti") || pName.includes("dorito") || pName.includes("nacho") || pName.includes("papa") || pCode.startsWith("SP");
+
+                if (pName === "zanahoria" && pid !== "p_paleta_zanahoria") {
+                    const origDp = DEFAULT_PRODUCTS.find(dp => String(dp.product_id) === pid);
+                    if (origDp) {
+                        combinedMap.set(pid, { ...origDp });
+                    } else {
+                        combinedMap.delete(pid);
+                    }
+                }
+
+                if (prod.category === "paletas" && isBotana) {
+                    prod.category = "preparados";
+                }
+            }
+
+            // D.1. Nombres claros, categoría preparados y precios oficiales para Sabritas Preparadas en Rescate
+            for (const [pid, prod] of combinedMap.entries()) {
+                const pCode = String(prod.product_code || "").trim().toUpperCase();
+                if (pCode === "SPBC") {
+                    prod.product_name = "Sabrita Prep. Chica";
+                    prod.category = "preparados";
+                    prod.price = 55;
+                } else if (pCode === "SPBD") {
+                    prod.product_name = "Sabrita Prep. Bolsa";
+                    prod.category = "preparados";
+                    prod.price = 55;
+                } else if (pCode === "SPVD") {
+                    prod.product_name = "Sabrita Prep. Vaso";
+                    prod.category = "preparados";
+                    prod.price = 55;
+                }
+            }
+
+            // E. Aplicar la lista oficial de precios estándar e inalterables exclusivamente para El Rescate:
+            for (const [pid, prod] of combinedMap.entries()) {
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                
+                // 1. Zanahoria siempre a $40
+                if (pNameNorm === "zanahoria" || pid === "p_paleta_zanahoria") {
+                    prod.price = 40;
+                    prod.product_name = "Zanahoria";
+                    prod.product_code = "ZANAH";
+                }
+                
+                // 2. Paletas oficiales en El Rescate
+                else if (pid === "prod_1789344787923_spve" || pNameNorm === "esquimal grande") { prod.price = 30; prod.product_name = "Esquimal Grande"; }
+                else if (pid === "prod_calz_paleta_leche" || pNameNorm === "paleta de leche") { prod.price = 30; prod.product_name = "Paleta de Leche"; }
+                else if (pid === "prod_calz_paleta_agua" || pNameNorm === "paleta de agua") { prod.price = 25; prod.product_name = "Paleta de Agua"; }
+                else if (pid === "prod_calz_paleta_mini" || pNameNorm === "paleta mini") { prod.price = 5; prod.product_name = "Paleta mini"; }
+                else if (pid === "p_paleta_crema_gde" || pNameNorm === "paleta crema grande") { prod.price = 30; prod.product_name = "Paleta Crema Grande"; }
+                else if (pid === "p_paleta_agua_gde" || pNameNorm === "paleta agua grande") { prod.price = 25; prod.product_name = "Paleta Agua Grande"; }
+                else if (pid === "p_paleta_agua_chica" || pNameNorm === "paleta agua chica") { prod.price = 12; prod.product_name = "Paleta Agua Chica"; }
+                else if (pid === "p_paleta_chapurrita" || pNameNorm === "paleta chapurrita") { prod.price = 20; prod.product_name = "Paleta Chapurrita"; }
+                else if (pid === "p_paleta_payaso" || pNameNorm === "paleta payaso") { prod.price = 30; prod.product_name = "Paleta Payaso"; }
+                else if (pid === "p_paleta_michelada" || pNameNorm === "paleta michelada") { prod.price = 40; prod.product_name = "Paleta Michelada"; }
+                else if (pid === "p_paleta_nuez_esp" || pNameNorm === "nuez especial") { prod.price = 40; prod.product_name = "Nuez Especial"; }
+                else if (pid === "p_paleta_pinon" || pNameNorm === "piñón" || pNameNorm === "pinon") { prod.price = 40; prod.product_name = "Piñón"; }
+                else if (pid === "p_paleta_tequila" || pNameNorm === "tequila") { prod.price = 40; prod.product_name = "Tequila"; }
+                else if (pid === "p_paleta_bombon" || pNameNorm === "paleta bombón" || pNameNorm === "paleta bombon") { prod.price = 20; prod.product_name = "Paleta Bombón"; }
+                else if (pid === "p_mini_esquimal" || pNameNorm === "mini esquimal") { prod.price = 15; prod.product_name = "Mini Esquimal"; }
+                else if (pid === "p_mini" || pNameNorm === "mini") { prod.price = 5; prod.product_name = "Mini"; }
+
+                // 3. Helados y Nieves oficiales en El Rescate
+                else if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve") { prod.price = 65; prod.product_name = "Medio Litro de Nieve"; }
+                else if (pid === "prod_calz_nieve_vaso_12" || pNameNorm === "nieve vaso #12" || pNameNorm === "nieve vaso 12") { prod.price = 40; }
+                else if (pid === "prod_calz_extra_nuez" || pNameNorm === "extra nuez") { prod.price = 10; }
+                else if (pid === "p_cono_sencillo" || pNameNorm === "cono sencillo") { prod.price = 25; }
+                else if (pid === "p_cono_doble_choco" || pNameNorm === "cono doble chocolate") { prod.price = 45; }
+                else if (pid === "p_cono_doble_vain" || pNameNorm === "cono doble vainilla") { prod.price = 45; }
+                else if (pid === "p_cono_cubierto" || pNameNorm === "cono cubierto") { prod.price = 45; }
+                else if (pid === "p_canasta_doble" || pNameNorm === "canasta doble") { prod.price = 40; }
+                else if (pid === "p_canasta_triple" || pNameNorm === "canasta triple") { prod.price = 50; }
+                else if (pid === "p_helado_vaso1" || pNameNorm === "vaso 1 bolita") { prod.price = 20; }
+                else if (pid === "p_helado_vaso2" || pNameNorm === "helado vaso 2 bolitas") { prod.price = 35; }
+                else if (pid === "p_helado_vaso3" || pNameNorm === "helado vaso 3 bolitas") { prod.price = 40; }
+                else if (pid === "p_helado_vaso4" || pNameNorm === "helado vaso 4") { prod.price = 50; }
+                else if (pid === "p_helado_maquina" || pNameNorm === "helado máquina" || pNameNorm === "helado maquina") { prod.price = 15; }
+                else if (pid === "p_helado_maq_sencillo" || pNameNorm === "helado máquina sencillo" || pNameNorm === "helado maquina sencillo") { prod.price = 18; }
+
+                // 4. Exclusivos de El Rescate
+                else if (pid === "p_sodas_italianas" || pNameNorm.includes("soda italiana")) { prod.price = 75; }
+                else if (pid === "p_frappe" || pNameNorm.includes("frapp")) { prod.price = 50; }
+                else if (pid === "p_waffle" || pNameNorm.includes("waffle")) { prod.price = 85; }
+
+                // 5. Preparados y Botanas oficiales en El Rescate
+                else if (pid === "prod_calz_chetos_queso" || pNameNorm === "chetos queso") { prod.price = 35; prod.product_name = "Chetos queso"; }
+                else if (pid === "prod_calz_chetos_nachos" || pNameNorm === "chetos nachos") { prod.price = 45; }
+                else if (pid === "prod_calz_chetos_prep" || pNameNorm === "chetos preparados") { prod.price = 50; }
+                else if (pid === "prod_calz_cheetos_solos" || pNameNorm === "cheetos solos") { prod.price = 22; }
+                else if (pid === "prod_calz_doritos_queso" || pNameNorm === "doritos queso") { prod.price = 22; }
+                else if (pid === "prod_calz_sabrita_sola" || pNameNorm === "sabrita sola") { prod.price = 22; }
+                else if (pid === "prod_calz_tostiloco_morado" || pNameNorm === "tostiloco morados") { prod.price = 55; }
+                else if (pid === "prod_calz_tostitos_vaso" || pNameNorm === "tostitos vaso") { prod.price = 60; }
+                else if (pid === "prod_calz_barcel_loco" || pNameNorm === "barcel loco") { prod.price = 55; }
+                else if (pid === "p_tostilocos" || pNameNorm === "tostilocos") { prod.price = 55; }
+                else if (pid === "p_tostiloco_barcel" || pNameNorm === "tostiloco barcel") { prod.price = 55; }
+                else if (pid === "p_tostiloco_vaso" || pNameNorm === "tostiloco en vaso") { prod.price = 60; }
+                else if (pid === "p_tostiloco_vaso_barcel" || pNameNorm === "tostiloco en vaso barcel") { prod.price = 60; }
+                else if (pid === "p_nachos" || pNameNorm === "nachos") { prod.price = 45; }
+                else if (pid === "p_dorinachos" || pNameNorm === "dorinachos") { prod.price = 45; }
+                else if (pid === "p_barcel_nacho" || pNameNorm === "barcel nacho") { prod.price = 45; }
+                else if (pid === "p_papas_cueros" || pNameNorm === "papas con cueros") { prod.price = 50; }
+                else if (pid === "p_cacahuatadas" || pNameNorm === "cacahuatadas") { prod.price = 35; }
+                else if (pid === "p_escamocha_gde" || pNameNorm === "escamocha grande") { prod.price = 75; }
+                else if (pid === "p_escamocha_chica" || pNameNorm === "escamocha chica") { prod.price = 55; }
+                else if (pid === "p_carne_seca" || pNameNorm === "carne seca") { prod.price = 40; }
+                else if (pid === "p_chechis_bolsa" || pNameNorm === "chechis preparado bolsa") { prod.price = 20; }
+                else if (pid === "p_chechis_vaso" || pNameNorm === "chechis preparados vaso") { prod.price = 25; }
+                else if (pid === "p_tostito_solo" || pNameNorm === "tostito solo") { prod.price = 22; }
+                else if (pid === "p_barcel_solo" || pNameNorm === "barcel solo") { prod.price = 22; }
+                else if (pid === "p_churros_camaron" || pNameNorm.includes("churros camar")) { prod.price = 20; }
+                else if (pid === "p_papas" || pNameNorm === "papas") { prod.price = 50; }
+
+                // 6. Aguas oficiales en El Rescate
+                else if (pid === "p_ag_grande" || pNameNorm === "agua grande") { prod.price = 45; }
+                else if (pid === "p_ag_mediana" || pNameNorm === "agua mediana") { prod.price = 30; }
+                else if (pid === "p_ag_chica" || pNameNorm === "agua chica") { prod.price = 25; }
+                else if (pid === "p_ag_nat_chica" || pNameNorm === "agua natural chica") { prod.price = 15; }
+                else if (pid === "p_ag_nat_grande" || pNameNorm === "agua natural grande") { prod.price = 20; }
+
+                // 7. Congelados oficiales en El Rescate
+                else if (pid === "p_fresa_congelada" || pNameNorm === "fresa congelada") { prod.price = 45; }
+                else if (pid === "p_fresa_natural" || pNameNorm === "fresa natural") { prod.price = 55; }
+                else if (pid === "p_mordisco" || pNameNorm === "mordisco") { prod.price = 25; }
+                else if (pid === "p_trol" || pNameNorm === "trol") { prod.price = 30; }
+                else if (pid === "p_mango_congelado" || pNameNorm === "mango congelado") { prod.price = 45; }
+                else if (pid === "p_mangonadas" || pNameNorm === "mangonadas") { prod.price = 45; }
+                else if (pid === "p_bolis" || pNameNorm === "bolis") { prod.price = 15; }
+
+                // 8. Postres y dulces oficiales en El Rescate
+                else if (pid === "p_donas" || pNameNorm === "donas") { prod.price = 20; }
+                else if (pid === "p_semillas" || pNameNorm === "semillas") { prod.price = 20; }
+                else if (pid === "p_choco_corazon" || pNameNorm.includes("chocolate coraz")) { prod.price = 10; }
+                else if (pid === "p_trufa" || pNameNorm === "trufa") { prod.price = 15; }
+                else if (pid === "p_gomi_fish" || pNameNorm === "gomi fish") { prod.price = 5; }
+                else if (pid === "p_manzana" || pNameNorm === "manzana") { prod.price = 50; }
+                else if (pid === "p_gomitas_carrucel" || pNameNorm === "gomitas carrucel") { prod.price = 15; }
+                else if (pid === "p_rebanada_pay" || pNameNorm === "rebanada pay") { prod.price = 50; }
+                else if (pid === "p_chocoflan" || pNameNorm === "chocoflan") { prod.price = 50; }
             }
         }
 
@@ -2217,6 +2457,85 @@
                     else if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve") prod.price = 60;
                     else if (pid === "prod_calz_chetos_queso" || pNameNorm === "chetos queso") prod.price = 45;
                 }
+            });
+        }
+
+        // Garantizar en vivo catálogo limpio y precios oficiales si la sucursal activa es Rescate
+        const isCurrentRescate = resolveCanonicalBranch(S.branchName) === "Rescate";
+        if (isCurrentRescate) {
+            p.forEach(prod => {
+                if (!prod) return;
+                const pid = String(prod.product_id || "");
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pCode = String(prod.product_code || "").trim().toUpperCase();
+
+                // 1. Zanahoria siempre a $40
+                if (pNameNorm === "zanahoria" || pid === "p_paleta_zanahoria") {
+                    prod.price = 40;
+                    prod.product_name = "Zanahoria";
+                    prod.product_code = "ZANAH";
+                    prod.category = "paletas";
+                }
+
+                // 2. Si es una botana/sabrita, su categoría NUNCA es paletas
+                const isBotana = pNameNorm.includes("sabrita") || pNameNorm.includes("tosti") || pNameNorm.includes("dorito") || pNameNorm.includes("nacho") || pNameNorm.includes("papa") || pCode.startsWith("SP");
+                if (isBotana && prod.category === "paletas") {
+                    prod.category = "preparados";
+                }
+
+                // 3. Nombres claros y precios oficiales para Sabritas Preparadas en Rescate
+                if (pCode === "SPBC") {
+                    prod.product_name = "Sabrita Prep. Chica";
+                    prod.category = "preparados";
+                    prod.price = 55;
+                } else if (pCode === "SPBD") {
+                    prod.product_name = "Sabrita Prep. Bolsa";
+                    prod.category = "preparados";
+                    prod.price = 55;
+                } else if (pCode === "SPVD") {
+                    prod.product_name = "Sabrita Prep. Vaso";
+                    prod.category = "preparados";
+                    prod.price = 55;
+                }
+
+                // 4. Precios de paletas seguros (máximo $40)
+                if (prod.category === "paletas" && Number(prod.price) > 40) {
+                    const defMatch = DEFAULT_PRODUCTS.find(dp => String(dp.product_id) === pid);
+                    if (defMatch) {
+                        prod.price = defMatch.price;
+                        prod.product_name = defMatch.product_name;
+                        prod.product_code = defMatch.product_code;
+                    } else {
+                        prod.price = 30;
+                    }
+                }
+            });
+
+            // 5. Excluir de la categoría paletas cualquier botana infiltrada
+            p = p.filter(prod => {
+                const pName = String(prod.product_name || "").toLowerCase();
+                const pCode = String(prod.product_code || "").toUpperCase();
+                const isBotana = pName.includes("sabrita") || pName.includes("dorito") || pName.includes("tosti") || pName.includes("nacho") || pName.includes("papa") || pCode.startsWith("SP");
+                if (prod.category === "paletas" && isBotana) {
+                    return false;
+                }
+                return true;
+            });
+
+            // 6. Deduplicar productos por código conocido y por (categoría + nombre) en Rescate para evitar tarjetas repetidas
+            const seenCodes = new Set();
+            const seenRescateKeys = new Set();
+            p = p.filter(prod => {
+                const code = String(prod.product_code || "").trim().toUpperCase();
+                if (code && !code.startsWith("LF-") && seenCodes.has(code)) {
+                    return false;
+                }
+                if (code && !code.startsWith("LF-")) seenCodes.add(code);
+
+                const k = String(prod.category || "").toLowerCase() + "__" + String(prod.product_name || "").trim().toLowerCase();
+                if (seenRescateKeys.has(k)) return false;
+                seenRescateKeys.add(k);
+                return true;
             });
         }
 
@@ -2362,6 +2681,16 @@
             const payBtn = $("#pay-button");
             if (payBtn) { payBtn.disabled = true; payBtn.style.opacity = "0.6"; }
             return;
+        }
+
+        // Sanear precios en carrito en vivo si la sucursal activa es Rescate
+        if (resolveCanonicalBranch(S.branchName) === "Rescate") {
+            S.cart.forEach(item => {
+                const normName = String(item.product_name || "").toLowerCase().trim();
+                if ((normName.includes("zanahoria") || item.product_id === "p_paleta_zanahoria") && Number(item.price) === 440) {
+                    item.price = 40;
+                }
+            });
         }
 
         const total = S.cart.reduce((s,i) => s + (i.price * i.quantity), 0);
