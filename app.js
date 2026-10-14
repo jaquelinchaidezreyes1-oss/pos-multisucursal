@@ -525,6 +525,37 @@
         return false;
     }
 
+    /* ── DETECCIÓN ESTRICTA Y BLINDADA EXCLUSIVAMENTE PARA USUARIOS DE TAGARETE 2 ── */
+    function isTagarete2Active() {
+        const bName = S.branchName || "";
+        const canon = resolveCanonicalBranch(bName);
+        if (canon === "Tagarete 2") return true;
+        const bKey = getBranchKeyName(bName);
+        if (bKey === "tagarete_2") return true;
+        const email = String(S.user?.email || "").toLowerCase().trim();
+        if (/encargad[oa]9(?!\d)/i.test(email) || /encargad[oa]10(?!\d)/i.test(email) || email.includes("tagarete2") || email.includes("tagarete 2")) return true;
+        const role = String(S.role || "").toLowerCase().trim();
+        if (role.includes("tagarete 2") || role.includes("tagarete2")) return true;
+        return false;
+    }
+
+    function isProductInTagarete2Store(id) {
+        if (!id) return false;
+        try {
+            const strId = String(id);
+            const pKeys = [
+                "lf_tagarete_2_permanent_products",
+                "lf_tagarete_2_custom_products",
+                "lf_branch-5_custom_products"
+            ];
+            for (const k of pKeys) {
+                const raw = localStorage.getItem(k);
+                if (raw && raw.includes(strId)) return true;
+            }
+        } catch(e) {}
+        return false;
+    }
+
     function isProductInCalzadaStore(id) {
         if (!id) return false;
         try {
@@ -1330,11 +1361,20 @@
     function saveBranchInv(customInv = null) {
         const invToSave = customInv || S.inv;
         const branchKey = getBranchKeyName(S.branchName);
+        const isTag2 = isTagarete2Active();
         
         lw("inv", invToSave);
         gw("inv_" + branchKey, invToSave);
         gw("inv_" + (S.branchId || "x"), invToSave);
         try { localStorage.setItem("lf_inv_" + branchKey, JSON.stringify(invToSave)); } catch(e) {}
+
+        // Persistencia permanente específica y blindada para las encargadas de Tagarete 2
+        if (isTag2) {
+            try {
+                localStorage.setItem("lf_tagarete_2_inv_permanent", JSON.stringify(invToSave));
+                localStorage.setItem("lf_inv_tagarete_2", JSON.stringify(invToSave));
+            } catch(e) {}
+        }
         
         // Difundir en tiempo real a todas las pantallas activas
         if (realtimeChannel) {
@@ -1354,34 +1394,9 @@
     }
 
     function initInv() { 
+        const isTag2 = isTagarete2Active();
         const branchKey = getBranchKeyName(S.branchName);
         const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
-        
-        // 1. Intentar cargar stock guardado para esta sucursal
-        let stored = null;
-        try {
-            const raw = localStorage.getItem("lf_inv_" + branchKey);
-            if (raw) stored = JSON.parse(raw);
-        } catch(e) {}
-
-        if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
-            stored = gr("inv_" + branchKey, null);
-        }
-        if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
-            stored = lr("inv", null);
-        }
-
-        // Evaluar si stored tiene productos masivamente en 0 (causado por stock=0 de nube)
-        let zeroCount = 0;
-        let totalKeys = 0;
-        if (stored && typeof stored === "object") {
-            const entries = Object.values(stored);
-            totalKeys = entries.length;
-            entries.forEach(v => { if (Number(v) <= 0) zeroCount++; });
-        }
-
-        const isCalzadaNeedsHeal = branchKey === "calzada" && (!localStorage.getItem("lf_calzada_inv_healed_v68") || zeroCount >= 8);
-        const isWiped = totalKeys > 0 && ((zeroCount / totalKeys) > 0.35 || zeroCount >= 12 || isCalzadaNeedsHeal);
 
         const computeHealthyDefault = (p) => {
             const maxS = getMaxStock(p);
@@ -1396,6 +1411,59 @@
             }
             return Math.min(maxS, Math.max(1, baseStk));
         };
+        
+        // 1. Intentar cargar stock guardado para esta sucursal
+        let stored = null;
+        if (isTag2) {
+            try {
+                const rawT2 = localStorage.getItem("lf_tagarete_2_inv_permanent") || localStorage.getItem("lf_inv_tagarete_2");
+                if (rawT2) stored = JSON.parse(rawT2);
+            } catch(e) {}
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = gr("inv_tagarete_2", null);
+            }
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = lr("inv", null);
+            }
+
+            // Para las encargadas de Tagarete 2: preservar 100% de sus ajustes, adiciones, modificaciones y descuentos de venta
+            if (stored && typeof stored === "object" && Object.keys(stored).length > 0) {
+                S.inv = { ...stored };
+                let addedAny = false;
+                S.products.forEach(p => {
+                    if (S.inv[p.product_id] === undefined || S.inv[p.product_id] === null || isNaN(S.inv[p.product_id])) {
+                        S.inv[p.product_id] = computeHealthyDefault(p);
+                        addedAny = true;
+                    }
+                });
+                if (addedAny) saveBranchInv();
+                return; // Tagarete 2 queda intacto: jamás ejecutar isWiped ni sobrescribir sus modificaciones
+            }
+        } else {
+            try {
+                const raw = localStorage.getItem("lf_inv_" + branchKey);
+                if (raw) stored = JSON.parse(raw);
+            } catch(e) {}
+
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = gr("inv_" + branchKey, null);
+            }
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = lr("inv", null);
+            }
+        }
+
+        // Evaluar si stored tiene productos masivamente en 0 (causado por stock=0 de nube)
+        let zeroCount = 0;
+        let totalKeys = 0;
+        if (stored && typeof stored === "object") {
+            const entries = Object.values(stored);
+            totalKeys = entries.length;
+            entries.forEach(v => { if (Number(v) <= 0) zeroCount++; });
+        }
+
+        const isCalzadaNeedsHeal = branchKey === "calzada" && (!localStorage.getItem("lf_calzada_inv_healed_v68") || zeroCount >= 8);
+        const isWiped = totalKeys > 0 && ((zeroCount / totalKeys) > 0.35 || zeroCount >= 12 || isCalzadaNeedsHeal);
 
         if (stored && typeof stored === "object" && totalKeys > 0 && !isWiped) {
             S.inv = { ...stored };
@@ -1461,6 +1529,12 @@
                 prod = calz.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
             } catch(e) {}
         }
+        if (!prod) {
+            try {
+                const tag2 = JSON.parse(localStorage.getItem("lf_tagarete_2_permanent_products") || localStorage.getItem("lf_tagarete_2_custom_products") || "[]");
+                prod = tag2.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+            } catch(e) {}
+        }
 
         // 3. Descontar automáticamente todos sus insumos/desechables/ingredientes asociados
         const componentsToDeduct = (dynamicComponents && Array.isArray(dynamicComponents) && dynamicComponents.length)
@@ -1522,6 +1596,12 @@
             try {
                 const calz = JSON.parse(localStorage.getItem("lf_calzada_permanent_products") || "[]");
                 prod = calz.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+            } catch(e) {}
+        }
+        if (!prod) {
+            try {
+                const tag2 = JSON.parse(localStorage.getItem("lf_tagarete_2_permanent_products") || localStorage.getItem("lf_tagarete_2_custom_products") || "[]");
+                prod = tag2.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
             } catch(e) {}
         }
 
@@ -1898,6 +1978,27 @@
                 customProds.push(p);
             }
         });
+
+        // Asegurar productos permanentes y modificados exclusivamente por las encargadas de Tagarete 2
+        if (isTagarete2Active()) {
+            try {
+                const rawTag2 = localStorage.getItem("lf_tagarete_2_permanent_products");
+                if (rawTag2) {
+                    const parsed = JSON.parse(rawTag2);
+                    if (Array.isArray(parsed)) {
+                        parsed.forEach(rawP => {
+                            const p = sanitizeSharedCatalogProduct(rawP);
+                            if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                                const idx = customProds.findIndex(x => String(x.product_id) === String(p.product_id));
+                                if (idx >= 0) customProds[idx] = sanitizeSharedCatalogProduct({ ...customProds[idx], ...p });
+                                else customProds.push(p);
+                            }
+                        });
+                    }
+                }
+            } catch(e) {}
+        }
+
         gw("custom_products", customProds);
         lw("custom_products", customProds);
 
@@ -2030,6 +2131,30 @@
                 combinedMap.set(cpid, sanitizeSharedCatalogProduct({ ...cp }));
             }
         });
+
+        // 5.1. Para las encargadas de Tagarete 2: blindar inclusión de productos modificados, recetas y compuestos
+        if (isTagarete2Active()) {
+            try {
+                const rawTag2 = localStorage.getItem("lf_tagarete_2_permanent_products");
+                if (rawTag2) {
+                    const parsed = JSON.parse(rawTag2);
+                    if (Array.isArray(parsed)) {
+                        parsed.forEach(p => {
+                            const pid = String(p.product_id);
+                            if (p && pid && !explicitDelSet.has(pid)) {
+                                let existing = combinedMap.get(pid) || {};
+                                combinedMap.set(pid, sanitizeSharedCatalogProduct({
+                                    ...existing,
+                                    ...p,
+                                    is_composite: p.is_composite !== undefined ? !!p.is_composite : !!existing.is_composite,
+                                    components: Array.isArray(p.components) ? p.components : (existing.components || [])
+                                }));
+                            }
+                        });
+                    }
+                }
+            } catch(e) {}
+        }
 
         // 6. Aplicar precios exclusivos solicitados SOLO para la sucursal La Fuente Calzada:
         //    - Esquimal Grande: $45 (solo en La Fuente Calzada)
@@ -2215,7 +2340,16 @@
         if (!p) return;
         const ex = S.cart.find(i => String(i.product_id) === String(pid));
         if (ex) ex.quantity++;
-        else S.cart.push({product_id: p.product_id, product_name: p.product_name, price: Number(p.price||0), quantity: 1});
+        else {
+            S.cart.push({
+                product_id: p.product_id,
+                product_name: p.product_name,
+                price: Number(p.price || 0),
+                quantity: 1,
+                is_composite: !!p.is_composite,
+                components: Array.isArray(p.components) ? JSON.parse(JSON.stringify(p.components)) : []
+            });
+        }
         renderCart();
     }
 
@@ -3882,6 +4016,24 @@
                     } catch(e) {}
                 }
 
+                const isTag2Target = isTagarete2Active() ||
+                                     resolveCanonicalBranch(targetBranch) === "Tagarete 2" ||
+                                     resolveCanonicalBranch(S.branchName) === "Tagarete 2" ||
+                                     bId === "branch-5";
+
+                if (isTag2Target) {
+                    try {
+                        const rawTag2 = localStorage.getItem("lf_tagarete_2_permanent_products") || "[]";
+                        let tag2List = JSON.parse(rawTag2);
+                        if (!Array.isArray(tag2List)) tag2List = [];
+                        const tIdx = tag2List.findIndex(p => String(p.product_id) === String(editingProductId));
+                        if (tIdx >= 0) tag2List[tIdx] = { ...prodToEdit };
+                        else tag2List.push({ ...prodToEdit });
+                        localStorage.setItem("lf_tagarete_2_permanent_products", JSON.stringify(tag2List));
+                        localStorage.setItem("lf_tagarete_2_custom_products", JSON.stringify(tag2List));
+                    } catch(e) {}
+                }
+
                 // Si estaba en eliminados de esta sucursal, removerlo para rehabilitarlo
                 const cleanExpDel = gr(branchDelKey, []).filter(id => String(id) !== String(editingProductId));
                 gw(branchDelKey, cleanExpDel);
@@ -3928,6 +4080,17 @@
                         if (!Array.isArray(calzList)) calzList = [];
                         calzList.push(newProd);
                         localStorage.setItem("lf_calzada_permanent_products", JSON.stringify(calzList));
+                    } catch(e) {}
+                }
+
+                if (isTag2Target) {
+                    try {
+                        const rawTag2 = localStorage.getItem("lf_tagarete_2_permanent_products") || "[]";
+                        let tag2List = JSON.parse(rawTag2);
+                        if (!Array.isArray(tag2List)) tag2List = [];
+                        tag2List.push(newProd);
+                        localStorage.setItem("lf_tagarete_2_permanent_products", JSON.stringify(tag2List));
+                        localStorage.setItem("lf_tagarete_2_custom_products", JSON.stringify(tag2List));
                     } catch(e) {}
                 }
 
@@ -4022,6 +4185,11 @@
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 ${branchSelectHtml}
+                ${isTagarete2Active() ? `
+                <button type="button" id="btn-tag2-add-product"
+                    style="padding:8px 14px;background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff;border:1.5px solid #fcd34d;border-radius:10px;cursor:pointer;font-weight:900;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.25)">
+                    ➕ Nuevo Producto / Compuesto
+                </button>` : ''}
                 <button type="button" class="btn-open-printer-modal" style="padding:8px 14px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)"><span>🖨️</span><span>Impresora</span></button>
                 <button type="button" id="btn-ref-inv"
                     style="padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950);box-shadow:0 2px 8px rgba(0,0,0,0.2)">
@@ -4117,7 +4285,7 @@
                 </div>
 
                 <!-- BOTONES DE ACCIÓN -->
-                <div style="display:grid;grid-template-columns:${isSupply ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr'};gap:5px">
+                <div style="display:grid;grid-template-columns:${isSupply ? (isTagarete2Active() ? '1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr') : (isTagarete2Active() ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr')};gap:5px">
                     ${isSupply ? `
                     <button type="button" class="btn-add-pack" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}" data-pack="${unitsPack}"
                         style="padding:8px 4px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:8px;font-weight:900;font-size:10.5px;cursor:pointer">
@@ -4131,6 +4299,11 @@
                         style="padding:8px 3px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:8px;font-weight:800;font-size:10px;cursor:pointer">
                         ✎ Ajustar
                     </button>
+                    ${isTagarete2Active() ? `
+                    <button type="button" class="btn-edit-prod-from-inv" data-id="${esc(p.product_id)}"
+                        style="padding:8px 3px;background:#f3e8ff;color:#7e22ce;border:1px solid #d8b4fe;border-radius:8px;font-weight:900;font-size:10px;cursor:pointer" title="Modificar datos, precio o receta del compuesto">
+                        ⚙️ Modificar
+                    </button>` : ''}
                     <button type="button" class="btn-withdraw-stk" data-id="${esc(p.product_id)}" data-name="${esc(p.product_name)}"
                         style="padding:8px 3px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:8px;font-weight:900;font-size:10px;cursor:pointer" title="Retirar producto por merma o traslado">
                         ➖ Retirar
@@ -4155,6 +4328,52 @@
             await loadInventory();
             toast("Inventario actualizado.", "info");
         });
+
+        // Acciones exclusivas para encargadas de Tagarete 2: agregar nuevo producto o modificar receta/producto
+        document.getElementById("btn-tag2-add-product")?.addEventListener("click", () => {
+            editingProductId = null;
+            if (window.changeView) window.changeView("products");
+        });
+
+        c.querySelectorAll(".btn-edit-prod-from-inv").forEach(btn => btn.addEventListener("click", () => {
+            const pid = btn.dataset.id;
+            editingProductId = pid;
+            if (window.changeView) window.changeView("products");
+            setTimeout(() => {
+                const p = S.products.find(x => String(x.product_id) === String(pid));
+                if (p) {
+                    const nameInp = document.getElementById("np-name");
+                    if (nameInp) nameInp.value = p.product_name || "";
+                    const codeInp = document.getElementById("np-code");
+                    if (codeInp) codeInp.value = p.product_code || "";
+                    const catInp = document.getElementById("np-cat");
+                    if (catInp) catInp.value = p.category || "helados";
+                    const priceInp = document.getElementById("np-price");
+                    if (priceInp) priceInp.value = p.price || 0;
+                    const stkInput = document.getElementById("np-stock");
+                    if (stkInput) stkInput.value = getStock(p.product_id);
+                    const packInp = document.getElementById("np-pack-units");
+                    if (packInp) packInp.value = p.units_per_package || 50;
+
+                    const isComp = !!p.is_composite;
+                    const chk = document.getElementById("np-is-composite");
+                    const builder = document.getElementById("composite-builder");
+                    if (chk) chk.checked = isComp;
+                    if (builder) builder.style.display = isComp ? "block" : "none";
+
+                    tempComponents = isComp && Array.isArray(p.components) ? JSON.parse(JSON.stringify(p.components)) : [];
+                    renderTempComponents();
+
+                    const title = document.getElementById("form-product-title");
+                    if (title) title.textContent = "✏️ Modificando Producto / Compuesto: " + p.product_name;
+                    const btnAdd = document.getElementById("btn-add-prod");
+                    if (btnAdd) btnAdd.textContent = "💾 Guardar Cambios en Producto";
+                    const btnCancel = document.getElementById("btn-cancel-edit");
+                    if (btnCancel) btnCancel.style.display = "inline-block";
+                    document.getElementById("form-product-card")?.scrollIntoView({ behavior: "smooth" });
+                }
+            }, 80);
+        }));
 
         // Agregar por paquetes/bolsas
         c.querySelectorAll(".btn-add-pack").forEach(btn => btn.addEventListener("click", async () => {
@@ -13548,20 +13767,6 @@
                 targetSale.items.forEach(it => {
                     addStock(it.product_id, Number(it.quantity || 1), it.product_name);
                 });
-            }
-
-            // Devolver existencias al inventario local
-            const saleItems = (target?.items || lTarget?.items || []);
-            if (saleItems.length) {
-                const inv = getBranchInventoryMap(S.branchId || S.branchName);
-                saleItems.forEach(it => {
-                    const pid = it.product_id || it.id;
-                    const qty = Number(it.quantity || 1);
-                    if (pid && inv[pid] !== undefined) {
-                        inv[pid] = Math.min(STOCK_MAX, Math.max(0, (inv[pid] || 0) + qty));
-                    }
-                });
-                saveBranchInventoryMap(S.branchId || S.branchName, inv);
             }
 
             if (db) {
