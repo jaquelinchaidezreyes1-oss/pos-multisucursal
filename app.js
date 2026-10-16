@@ -525,6 +525,22 @@
         return false;
     }
 
+    /* ── DETECCIÓN ESTRICTA Y BLINDADA EXCLUSIVAMENTE PARA USUARIOS DE TAGARETE 1 ── */
+    function isTagarete1Active() {
+        const bName = S.branchName || "";
+        const canon = resolveCanonicalBranch(bName);
+        if (canon === "Tagarete 1") return true;
+        const bKey = getBranchKeyName(bName);
+        if (bKey === "tagarete_1") return true;
+        const bId = String(S.branchId || "").toLowerCase().trim();
+        if (bId === "branch-4" || bId.includes("tagarete_1") || bId.includes("tagarete 1")) return true;
+        const email = String(S.user?.email || "").toLowerCase().trim();
+        if (/encargad[oa]7(?!\d)/i.test(email) || /encargad[oa]8(?!\d)/i.test(email) || (email.includes("tagarete") && (email.includes("1") || !email.includes("2")))) return true;
+        const role = String(S.role || "").toLowerCase().trim();
+        if (role.includes("tagarete 1") || role.includes("tagarete1")) return true;
+        return false;
+    }
+
     /* ── DETECCIÓN ESTRICTA Y BLINDADA EXCLUSIVAMENTE PARA USUARIOS DE TAGARETE 2 ── */
     function isTagarete2Active() {
         const bName = S.branchName || "";
@@ -1361,12 +1377,23 @@
     function saveBranchInv(customInv = null) {
         const invToSave = customInv || S.inv;
         const branchKey = getBranchKeyName(S.branchName);
+        const isTag1 = isTagarete1Active();
         const isTag2 = isTagarete2Active();
         
         lw("inv", invToSave);
         gw("inv_" + branchKey, invToSave);
         gw("inv_" + (S.branchId || "x"), invToSave);
         try { localStorage.setItem("lf_inv_" + branchKey, JSON.stringify(invToSave)); } catch(e) {}
+
+        // Persistencia permanente específica y blindada para las encargadas de Tagarete 1
+        if (isTag1) {
+            try {
+                localStorage.setItem("lf_tagarete_1_inv_permanent", JSON.stringify(invToSave));
+                localStorage.setItem("lf_inv_tagarete_1", JSON.stringify(invToSave));
+                gw("inv_tagarete_1", invToSave);
+                lw("inv_tagarete_1", invToSave);
+            } catch(e) {}
+        }
 
         // Persistencia permanente específica y blindada para las encargadas de Tagarete 2
         if (isTag2) {
@@ -1396,6 +1423,7 @@
     }
 
     function initInv() { 
+        const isTag1 = isTagarete1Active();
         const isTag2 = isTagarete2Active();
         const branchKey = getBranchKeyName(S.branchName);
         const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
@@ -1407,7 +1435,8 @@
                 baseStk = (p.initial_stock !== undefined && p.initial_stock !== null && Number(p.initial_stock) > 0) 
                     ? Number(p.initial_stock) 
                     : (p.is_supply || p.category === "desechables" ? 250 : (p.category === "paletas" ? 100 : (p.category === "helados" ? 80 : 60)));
-                if (branchKey === "tagarete_2") baseStk = Math.max(25, Math.floor(baseStk * 0.75));
+                if (branchKey === "tagarete_1") baseStk = Math.max(25, Math.floor(baseStk * 0.75));
+                else if (branchKey === "tagarete_2") baseStk = Math.max(25, Math.floor(baseStk * 0.75));
                 else if (branchKey === "cnop") baseStk = Math.max(20, Math.floor(baseStk * 0.65));
                 else if (branchKey === "rescate") baseStk = Math.max(30, Math.floor(baseStk * 0.85));
             }
@@ -1416,7 +1445,32 @@
         
         // 1. Intentar cargar stock guardado para esta sucursal
         let stored = null;
-        if (isTag2) {
+        if (isTag1) {
+            try {
+                const rawT1 = localStorage.getItem("lf_tagarete_1_inv_permanent") || localStorage.getItem("lf_inv_tagarete_1");
+                if (rawT1) stored = JSON.parse(rawT1);
+            } catch(e) {}
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = gr("inv_tagarete_1", null);
+            }
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = lr("inv_tagarete_1", null);
+            }
+
+            // Para las encargadas de Tagarete 1: preservar 100% de sus existencias y descuentos de venta
+            if (stored && typeof stored === "object" && Object.keys(stored).length > 0) {
+                S.inv = { ...stored };
+                let addedAny = false;
+                S.products.forEach(p => {
+                    if (S.inv[p.product_id] === undefined || S.inv[p.product_id] === null || isNaN(S.inv[p.product_id])) {
+                        S.inv[p.product_id] = computeHealthyDefault(p);
+                        addedAny = true;
+                    }
+                });
+                if (addedAny) saveBranchInv();
+                return; // Tagarete 1 queda protegido
+            }
+        } else if (isTag2) {
             try {
                 const rawT2 = localStorage.getItem("lf_tagarete_2_inv_permanent") || localStorage.getItem("lf_inv_tagarete_2");
                 if (rawT2) stored = JSON.parse(rawT2);
@@ -1535,6 +1589,85 @@
             }
         }
 
+        // 1.2 Sincronizar identificadores y aliases exclusivos para Tagarete 1
+        if (isTagarete1Active()) {
+            if (id === "p_ag_grande" || id === "prod_1789434022899_psz1" || id === "prod_1789700411818_dozi" || id === "prod_1789439246280_ciwz") {
+                S.inv["p_ag_grande"] = S.inv[id];
+                S.inv["prod_1789434022899_psz1"] = S.inv[id];
+                S.inv["prod_1789700411818_dozi"] = S.inv[id];
+                S.inv["prod_1789439246280_ciwz"] = S.inv[id];
+            }
+            if (id === "prod_1789344787923_spve" || id === "prod_1789427668265_puwa" || id === "prod_1789426455958_he78") {
+                S.inv["prod_1789344787923_spve"] = S.inv[id];
+                S.inv["prod_1789427668265_puwa"] = S.inv[id];
+                S.inv["prod_1789426455958_he78"] = S.inv[id];
+            }
+            if (id === "p_fresa_congelada" || id === "prod_1789519605495_luuy" || id === "prod_1789501746703_ww8e") {
+                S.inv["p_fresa_congelada"] = S.inv[id];
+                S.inv["prod_1789519605495_luuy"] = S.inv[id];
+                S.inv["prod_1789501746703_ww8e"] = S.inv[id];
+            }
+            if (id === "p_fresa_natural" || id === "prod_1789520111905_q9lr" || id === "prod_1789522734663_85bg") {
+                S.inv["p_fresa_natural"] = S.inv[id];
+                S.inv["prod_1789520111905_q9lr"] = S.inv[id];
+                S.inv["prod_1789522734663_85bg"] = S.inv[id];
+            }
+            if (id === "p_mini" || id === "prod_1789698424044_shdx" || id === "prod_calz_paleta_mini" || id === "prod_1789506101474_lslp") {
+                S.inv["p_mini"] = S.inv[id];
+                S.inv["prod_1789698424044_shdx"] = S.inv[id];
+                S.inv["prod_calz_paleta_mini"] = S.inv[id];
+            }
+            if (id === "p_mordisco" || id === "prod_1789602349227_tspm" || id === "prod_1789599530518_4toy") {
+                S.inv["p_mordisco"] = S.inv[id];
+                S.inv["prod_1789602349227_tspm"] = S.inv[id];
+                S.inv["prod_1789599530518_4toy"] = S.inv[id];
+            }
+            if (id === "p_paleta_agua_gde" || id === "prod_1789511159938_cxxn" || id === "prod_1789503512135_chg1" || id === "p_paleta_agua_gd") {
+                S.inv["p_paleta_agua_gde"] = S.inv[id];
+                S.inv["prod_1789511159938_cxxn"] = S.inv[id];
+                S.inv["prod_1789503512135_chg1"] = S.inv[id];
+            }
+            if (id === "p_paleta_crema_gde" || id === "prod_1789511204856_eev0") {
+                S.inv["p_paleta_crema_gde"] = S.inv[id];
+                S.inv["prod_1789511204856_eev0"] = S.inv[id];
+            }
+            if (id === "p_trol" || id === "prod_1789697863281_0x5g" || id === "prod_1789516901690_gyei" || id === "prod_1789523132831_1n2c") {
+                S.inv["p_trol"] = S.inv[id];
+                S.inv["prod_1789697863281_0x5g"] = S.inv[id];
+                S.inv["prod_1789516901690_gyei"] = S.inv[id];
+                S.inv["prod_1789523132831_1n2c"] = S.inv[id];
+            }
+            if (id === "p_tostilocos" || id === "prod_1789523192471_i682") {
+                S.inv["p_tostilocos"] = S.inv[id];
+                S.inv["prod_1789523192471_i682"] = S.inv[id];
+            }
+            if (id === "p_helado_vaso1" || id === "prod_1789440083334_8qwx" || id === "p_nieve_vaso" || id === "prod_1789439454737_s9hc" || id === "prod_1789439461017_qaqo") {
+                S.inv["p_helado_vaso1"] = S.inv[id];
+                S.inv["prod_1789440083334_8qwx"] = S.inv[id];
+            }
+            if (id === "p_helado_vaso2" || id === "prod_1789578850152_p01a" || id === "prod_1789439085479_k88o") {
+                S.inv["p_helado_vaso2"] = S.inv[id];
+            }
+            if (id === "p_helado_vaso3" || id === "prod_1789592822603_7wpm" || id === "prod_1789494305417_z1ao") {
+                S.inv["p_helado_vaso3"] = S.inv[id];
+            }
+            if (id === "p_helado_vaso4" || id === "prod_1789592822603_7wp4") {
+                S.inv["p_helado_vaso4"] = S.inv[id];
+            }
+            if (id === "p_chechis_vaso" || id === "prod_chechis_vaso") {
+                S.inv["p_chechis_vaso"] = S.inv[id];
+            }
+            if (id === "p_paleta_pinon" || id === "prod_paleta_pinon") {
+                S.inv["p_paleta_pinon"] = S.inv[id];
+            }
+            if (id === "p_semillas" || id === "prod_semillas") {
+                S.inv["p_semillas"] = S.inv[id];
+            }
+            if (id === "p_tostiloco_vaso" || id === "prod_tostiloco_vaso") {
+                S.inv["p_tostiloco_vaso"] = S.inv[id];
+            }
+        }
+
         // 2. Resolver el producto en catálogo para verificar si es compuesto
         let prod = S.products.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
         if (!prod && typeof DEFAULT_PRODUCTS !== "undefined") {
@@ -1556,8 +1689,32 @@
                 prod = tag2.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
             } catch(e) {}
         }
+        if (!prod) {
+            try {
+                const tag1 = JSON.parse(localStorage.getItem("lf_tagarete_1_permanent_products") || localStorage.getItem("lf_tagarete_1_custom_products") || "[]");
+                prod = tag1.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase() === String(name).toLowerCase()));
+            } catch(e) {}
+        }
 
-        // 2.1 Para Tagarete 2: Si el producto fue modificado o se le agregaron componentes en Tagarete 2, priorizar su receta
+        // 2.1 Priorizar recetas y compuestos exclusivos para Tagarete 1 y Tagarete 2
+        if (isTagarete1Active()) {
+            try {
+                const t1Sources = ["lf_tagarete_1_permanent_products", "lf_tagarete_1_custom_products", "lf_branch-4_custom_products"];
+                for (const tKey of t1Sources) {
+                    const rawT1 = localStorage.getItem(tKey);
+                    if (rawT1) {
+                        const parsedT1 = JSON.parse(rawT1);
+                        if (Array.isArray(parsedT1)) {
+                            const tMatch = parsedT1.find(p => String(p.product_id) === String(id) || (name && String(p.product_name || "").toLowerCase().trim() === String(name).toLowerCase().trim()));
+                            if (tMatch && (tMatch.is_composite || (Array.isArray(tMatch.components) && tMatch.components.length > 0))) {
+                                prod = { ...(prod || {}), ...tMatch };
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch(e) {}
+        }
         if (isTagarete2Active()) {
             try {
                 const t2Sources = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
@@ -2020,6 +2177,26 @@
             }
         });
 
+        // Asegurar productos permanentes y modificados exclusivamente por las encargadas de Tagarete 1
+        if (isTagarete1Active()) {
+            try {
+                const rawTag1 = localStorage.getItem("lf_tagarete_1_permanent_products");
+                if (rawTag1) {
+                    const parsed = JSON.parse(rawTag1);
+                    if (Array.isArray(parsed)) {
+                        parsed.forEach(rawP => {
+                            const p = sanitizeSharedCatalogProduct(rawP);
+                            if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                                const idx = customProds.findIndex(x => String(x.product_id) === String(p.product_id));
+                                if (idx >= 0) customProds[idx] = sanitizeSharedCatalogProduct({ ...customProds[idx], ...p });
+                                else customProds.push(p);
+                            }
+                        });
+                    }
+                }
+            } catch(e) {}
+        }
+
         // Asegurar productos permanentes y modificados exclusivamente por las encargadas de Tagarete 2
         if (isTagarete2Active()) {
             try {
@@ -2173,7 +2350,39 @@
             }
         });
 
-        // 5.1. Para las encargadas de Tagarete 2: blindar inclusión de productos modificados, recetas y compuestos
+        // 5.1. Para las encargadas de Tagarete 1: blindar inclusión de productos modificados, recetas y compuestos
+        if (isTagarete1Active()) {
+            try {
+                const t1ProductSources = [
+                    "lf_tagarete_1_permanent_products",
+                    "lf_tagarete_1_custom_products",
+                    "lf_branch-4_custom_products"
+                ];
+                t1ProductSources.forEach(sourceKey => {
+                    const rawTag1 = localStorage.getItem(sourceKey);
+                    if (rawTag1) {
+                        const parsed = JSON.parse(rawTag1);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(p => {
+                                const pid = String(p.product_id || p.id || "");
+                                if (p && pid && !explicitDelSet.has(pid)) {
+                                    let existing = combinedMap.get(pid) || {};
+                                    combinedMap.set(pid, sanitizeSharedCatalogProduct({
+                                        ...existing,
+                                        ...p,
+                                        product_id: pid,
+                                        is_composite: p.is_composite !== undefined ? !!p.is_composite : !!existing.is_composite,
+                                        components: Array.isArray(p.components) ? p.components : (existing.components || [])
+                                    }));
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+        }
+
+        // 5.2. Para las encargadas de Tagarete 2: blindar inclusión de productos modificados, recetas y compuestos
         if (isTagarete2Active()) {
             try {
                 const t2ProductSources = [
@@ -2597,6 +2806,217 @@
             }
         }
 
+        // 6.3. Reglas exclusivas, deduplicación y saneamiento estricto SOLO para la sucursal Tagarete 1:
+        const isCurrentTagarete1 = isTagarete1Active();
+        if (isCurrentTagarete1) {
+            // A. Sanear almacenamiento local de Tagarete 1 si hay duplicados guardados
+            try {
+                const t1Keys = ["lf_tagarete_1_custom_products", "lf_branch-4_custom_products", "custom_products"];
+                t1Keys.forEach(tk => {
+                    const raw = localStorage.getItem(tk);
+                    if (raw) {
+                        let arr = JSON.parse(raw);
+                        if (Array.isArray(arr)) {
+                            let modified = false;
+                            arr = arr.filter(p => {
+                                if (!p) return false;
+                                const pNameNorm = String(p.product_name || "").trim().toLowerCase();
+                                const pid = String(p.product_id || p.id || "");
+                                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") { modified = true; return false; }
+                                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") { modified = true; return false; }
+                                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande") && pid !== "prod_1789344787923_spve") { modified = true; return false; }
+                                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") { modified = true; return false; }
+                                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") { modified = true; return false; }
+                                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") { modified = true; return false; }
+                                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") { modified = true; return false; }
+                                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") { modified = true; return false; }
+                                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro") || pNameNorm.includes("cruato")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) { modified = true; return false; }
+                                if (pNameNorm === "helado") { modified = true; return false; }
+                                if ((pNameNorm === "mini" || pNameNorm === "paleta mini") && pid !== "p_mini") { modified = true; return false; }
+                                if (pNameNorm === "mordisco" && pid !== "p_mordisco") { modified = true; return false; }
+                                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") { modified = true; return false; }
+                                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") { modified = true; return false; }
+                                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") { modified = true; return false; }
+                                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") { modified = true; return false; }
+                                if (pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso") && pid !== "p_tostiloco_vaso")) { modified = true; return false; }
+                                if (pNameNorm === "trol" && pid !== "p_trol") { modified = true; return false; }
+                                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") { modified = true; return false; }
+                                return true;
+                            });
+                            if (modified) localStorage.setItem(tk, JSON.stringify(arr));
+                        }
+                    }
+                });
+            } catch(e) {}
+
+            // B. Sanear combinedMap exclusivamente para Tagarete 1
+            for (const [pid, prod] of Array.from(combinedMap.entries())) {
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+
+                // 1. Quitar duplicados de Agua Grande
+                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") {
+                    combinedMap.delete(pid);
+                }
+
+                // 2. Quitar duplicados de Chechis preparados en vaso
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") {
+                    combinedMap.delete(pid);
+                }
+
+                // 3. Quitar duplicados de Esquimal Grande (conservar prod_1789344787923_spve a $30)
+                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande") && pid !== "prod_1789344787923_spve") {
+                    combinedMap.delete(pid);
+                }
+
+                // 4. Quitar duplicados de Fresas Congeladas y Naturales
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") {
+                    combinedMap.delete(pid);
+                }
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") {
+                    combinedMap.delete(pid);
+                }
+
+                // 5. Quitar duplicados de Helados (una bolita, dos bolitas, tres bolitas, cuatro bolitas o genéricos)
+                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") {
+                    combinedMap.delete(pid);
+                }
+                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") {
+                    combinedMap.delete(pid);
+                }
+                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") {
+                    combinedMap.delete(pid);
+                }
+                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro") || pNameNorm.includes("cruato")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) {
+                    combinedMap.delete(pid);
+                }
+                if (pNameNorm === "helado") {
+                    combinedMap.delete(pid);
+                }
+
+                // 6. Quitar Paleta mini y duplicados de Mini (conservar únicamente p_mini a $5)
+                if ((pNameNorm === "mini" || pNameNorm === "paleta mini") && pid !== "p_mini") {
+                    combinedMap.delete(pid);
+                }
+
+                // 7. Quitar duplicados de Mordisco
+                if (pNameNorm === "mordisco" && pid !== "p_mordisco") {
+                    combinedMap.delete(pid);
+                }
+
+                // 8. Quitar duplicados de Paleta de agua grande
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") {
+                    combinedMap.delete(pid);
+                }
+
+                // 9. Quitar duplicados de Paleta crema grande
+                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") {
+                    combinedMap.delete(pid);
+                }
+
+                // 10. Quitar duplicados de Paleta Piñón
+                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") {
+                    combinedMap.delete(pid);
+                }
+
+                // 11. Quitar duplicados de Semilla
+                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") {
+                    combinedMap.delete(pid);
+                }
+
+                // 12. Quitar duplicados de Tostiloco vaso
+                if ((pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso"))) && pid !== "p_tostiloco_vaso") {
+                    combinedMap.delete(pid);
+                }
+
+                // 13. Quitar duplicados de Trol (conservar únicamente p_trol de DEFAULT_PRODUCTS a $30)
+                if (pNameNorm === "trol" && pid !== "p_trol") {
+                    combinedMap.delete(pid);
+                }
+
+                // 14. Quitar duplicados de Tostilocos
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") {
+                    combinedMap.delete(pid);
+                }
+            }
+
+            // C. Garantizar productos oficiales intactos con nombres y precios correctos para Tagarete 1
+            const officialTag1Config = [
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG-GDE" },
+                { id: "p_chechis_vaso", name: "Chechis Preparados Vaso", cat: "preparados", price: 25, code: "CHV" },
+                { id: "prod_1789344787923_spve", name: "Esquimal Grande", cat: "paletas", price: 30, code: "EG" },
+                { id: "p_fresa_congelada", name: "Fresa Congelada", cat: "congelados", price: 45, code: "FC" },
+                { id: "p_fresa_natural", name: "Fresa Natural", cat: "congelados", price: 55, code: "FN" },
+                { id: "p_helado_vaso1", name: "Vaso 1 bolita", cat: "helados", price: 20, code: "HV-1" },
+                { id: "p_helado_vaso2", name: "Helado Vaso 2 bolitas", cat: "helados", price: 35, code: "HV-2" },
+                { id: "p_helado_vaso3", name: "Helado Vaso 3 bolitas", cat: "helados", price: 40, code: "HV-3" },
+                { id: "p_helado_vaso4", name: "Helado Vaso 4", cat: "helados", price: 50, code: "HV-4" },
+                { id: "p_mini", name: "Mini", cat: "paletas", price: 5, code: "MINI" },
+                { id: "p_mordisco", name: "Mordisco", cat: "congelados", price: 25, code: "MOR" },
+                { id: "p_paleta_agua_gde", name: "Paleta Agua Grande", cat: "paletas", price: 25, code: "PAG" },
+                { id: "p_paleta_crema_gde", name: "Paleta Crema Grande", cat: "paletas", price: 30, code: "PCG" },
+                { id: "p_paleta_pinon", name: "Piñón", cat: "paletas", price: 40, code: "PINON" },
+                { id: "p_semillas", name: "Semillas", cat: "dulces", price: 20, code: "SEM" },
+                { id: "p_tostiloco_vaso", name: "Tostiloco en Vaso", cat: "preparados", price: 60, code: "TLV" },
+                { id: "p_trol", name: "Trol", cat: "congelados", price: 30, code: "Trol" },
+                { id: "p_tostilocos", name: "Tostilocos", cat: "preparados", price: 55, code: "TL" }
+            ];
+
+            officialTag1Config.forEach(cfg => {
+                let existing = combinedMap.get(cfg.id);
+                if (existing) {
+                    existing.product_name = cfg.name;
+                    existing.category = cfg.cat;
+                    if (!existing.user_edited_price_v69) existing.price = cfg.price;
+                    if (cfg.code) existing.product_code = cfg.code;
+                } else {
+                    const def = DEFAULT_PRODUCTS.find(dp => dp.product_id === cfg.id);
+                    if (def) {
+                        combinedMap.set(cfg.id, {
+                            ...def,
+                            product_name: cfg.name,
+                            category: cfg.cat,
+                            price: cfg.price,
+                            product_code: cfg.code || def.product_code
+                        });
+                    }
+                }
+            });
+
+            // D. Deduplicación general y blindaje de nombres únicos para Tagarete 1
+            const seenTag1General = new Map();
+            for (const [pid, prod] of Array.from(combinedMap.entries())) {
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                // Si contiene kiwi y ya existe otro con kiwi, borrar duplicado
+                if (pNameNorm.includes("kiwi")) {
+                    let hasOtherKiwi = false;
+                    for (const [otherPid, otherP] of combinedMap.entries()) {
+                        if (otherPid !== pid && String(otherP.product_name || "").toLowerCase().includes("kiwi")) {
+                            hasOtherKiwi = true;
+                            break;
+                        }
+                    }
+                    if (hasOtherKiwi && pid.startsWith("prod_")) {
+                        combinedMap.delete(pid);
+                        continue;
+                    }
+                }
+                const normKey = String(prod.category || "").toLowerCase() + "__" + pNameNorm.replace(/\s+/g, " ");
+                if (!seenTag1General.has(normKey)) {
+                    seenTag1General.set(normKey, pid);
+                } else {
+                    const prevPid = seenTag1General.get(normKey);
+                    const isCurOfficial = officialTag1Config.some(c => c.id === pid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === pid);
+                    const isPrevOfficial = officialTag1Config.some(c => c.id === prevPid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === prevPid);
+                    if (isCurOfficial && !isPrevOfficial) {
+                        combinedMap.delete(prevPid);
+                        seenTag1General.set(normKey, pid);
+                    } else {
+                        combinedMap.delete(pid);
+                    }
+                }
+            }
+        }
+
         S.products = Array.from(combinedMap.values()).sort((a,b) => {
             if (a.is_supply !== b.is_supply) return a.is_supply ? 1 : -1;
             return a.product_name.localeCompare(b.product_name);
@@ -2746,6 +3166,97 @@
                     if (seenTag2Keys.has(normName)) return false;
                     seenTag2Keys.add(normName);
                 }
+                return true;
+            });
+        }
+
+        // Garantizar catálogo limpio sin duplicados si la sucursal activa es Tagarete 1
+        if (isTagarete1Active()) {
+            p = p.filter(prod => {
+                if (!prod) return false;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+
+                // 1. Quitar duplicados de Agua Grande
+                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") return false;
+
+                // 2. Quitar duplicados de Chechis preparados en vaso
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") return false;
+
+                // 3. Quitar duplicados de Esquimal Grande
+                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande") && pid !== "prod_1789344787923_spve") return false;
+
+                // 4. Quitar duplicados de Fresas Congeladas y Naturales
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") return false;
+
+                // 5. Quitar duplicados de Helados (una bolita, dos bolitas, tres bolitas, cuatro bolitas o genéricos)
+                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") return false;
+                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") return false;
+                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") return false;
+                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro") || pNameNorm.includes("cruato")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) return false;
+                if (pNameNorm === "helado") return false;
+
+                // 6. Quitar Paleta mini y duplicados de Mini
+                if ((pNameNorm === "mini" || pNameNorm === "paleta mini") && pid !== "p_mini") return false;
+
+                // 7. Quitar duplicados de Mordisco
+                if (pNameNorm === "mordisco" && pid !== "p_mordisco") return false;
+
+                // 8. Quitar duplicados de Paleta de agua grande
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") return false;
+
+                // 9. Quitar duplicados de Paleta crema grande
+                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") return false;
+
+                // 10. Quitar duplicados de Paleta Piñón
+                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") return false;
+
+                // 11. Quitar duplicados de Semilla
+                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") return false;
+
+                // 12. Quitar duplicados de Tostiloco vaso
+                if ((pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso"))) && pid !== "p_tostiloco_vaso") return false;
+
+                // 13. Quitar duplicados de Trol
+                if (pNameNorm === "trol" && pid !== "p_trol") return false;
+
+                // 14. Quitar duplicados de Tostilocos
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") return false;
+
+                return true;
+            });
+
+            // Establecer nombres y precios oficiales en vivo para Tagarete 1
+            p.forEach(prod => {
+                if (prod.product_id === "p_ag_grande") { prod.product_name = "Agua Grande"; prod.category = "aguas"; prod.price = 45; }
+                if (prod.product_id === "p_chechis_vaso") { prod.product_name = "Chechis Preparados Vaso"; prod.category = "preparados"; prod.price = 25; }
+                if (prod.product_id === "prod_1789344787923_spve") { prod.product_name = "Esquimal Grande"; prod.category = "paletas"; prod.price = 30; }
+                if (prod.product_id === "p_fresa_congelada") { prod.product_name = "Fresa Congelada"; prod.category = "congelados"; prod.price = 45; }
+                if (prod.product_id === "p_fresa_natural") { prod.product_name = "Fresa Natural"; prod.category = "congelados"; prod.price = 55; }
+                if (prod.product_id === "p_helado_vaso1") { prod.product_name = "Vaso 1 bolita"; prod.category = "helados"; prod.price = 20; }
+                if (prod.product_id === "p_helado_vaso2") { prod.product_name = "Helado Vaso 2 bolitas"; prod.category = "helados"; prod.price = 35; }
+                if (prod.product_id === "p_helado_vaso3") { prod.product_name = "Helado Vaso 3 bolitas"; prod.category = "helados"; prod.price = 40; }
+                if (prod.product_id === "p_helado_vaso4") { prod.product_name = "Helado Vaso 4"; prod.category = "helados"; prod.price = 50; }
+                if (prod.product_id === "p_mini") { prod.product_name = "Mini"; prod.category = "paletas"; prod.price = 5; }
+                if (prod.product_id === "p_mordisco") { prod.product_name = "Mordisco"; prod.category = "congelados"; prod.price = 25; }
+                if (prod.product_id === "p_paleta_agua_gde") { prod.product_name = "Paleta Agua Grande"; prod.category = "paletas"; prod.price = 25; }
+                if (prod.product_id === "p_paleta_crema_gde") { prod.product_name = "Paleta Crema Grande"; prod.category = "paletas"; prod.price = 30; }
+                if (prod.product_id === "p_paleta_pinon") { prod.product_name = "Piñón"; prod.category = "paletas"; prod.price = 40; }
+                if (prod.product_id === "p_semillas") { prod.product_name = "Semillas"; prod.category = "dulces"; prod.price = 20; }
+                if (prod.product_id === "p_tostiloco_vaso") { prod.product_name = "Tostiloco en Vaso"; prod.category = "preparados"; prod.price = 60; }
+                if (prod.product_id === "p_trol") { prod.product_name = "Trol"; prod.category = "congelados"; prod.price = 30; }
+                if (prod.product_id === "p_tostilocos") { prod.product_name = "Tostilocos"; prod.category = "preparados"; prod.price = 55; }
+            });
+
+            // Deduplicación blindada por nombre y clave en Tagarete 1 para no repetir ninguna tarjeta jamás en POS
+            const seenTag1Keys = new Set();
+            p = p.filter(prod => {
+                const normName = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenTag1Keys.has(key) || seenTag1Keys.has(normName)) return false;
+                seenTag1Keys.add(key);
+                seenTag1Keys.add(normName);
                 return true;
             });
         }
@@ -4122,6 +4633,47 @@
             });
         }
 
+        const isTag1Admin = isTagarete1Active() ||
+                            String(activeAdminFilter) === "branch-4" ||
+                            resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Tagarete 1";
+
+        if (isTag1Admin) {
+            displayedProducts = displayedProducts.filter(p => {
+                if (!p) return false;
+                const pNameNorm = String(p.product_name || "").trim().toLowerCase();
+                const pid = String(p.product_id || "");
+                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") return false;
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") return false;
+                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande") && pid !== "prod_1789344787923_spve") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") return false;
+                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") return false;
+                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") return false;
+                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") return false;
+                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro") || pNameNorm.includes("cruato")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) return false;
+                if (pNameNorm === "helado") return false;
+                if ((pNameNorm === "mini" || pNameNorm === "paleta mini") && pid !== "p_mini") return false;
+                if (pNameNorm === "mordisco" && pid !== "p_mordisco") return false;
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") return false;
+                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") return false;
+                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") return false;
+                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") return false;
+                if ((pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso"))) && pid !== "p_tostiloco_vaso") return false;
+                if (pNameNorm === "trol" && pid !== "p_trol") return false;
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") return false;
+                return true;
+            });
+            const seenTag1Admin = new Set();
+            displayedProducts = displayedProducts.filter(p => {
+                const normName = String(p.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(p.category || "").toLowerCase() + "__" + normName;
+                if (seenTag1Admin.has(key) || seenTag1Admin.has(normName)) return false;
+                seenTag1Admin.add(key);
+                seenTag1Admin.add(normName);
+                return true;
+            });
+        }
+
         const activeBranchName = S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name || S.branchName;
 
         c.innerHTML = `
@@ -4590,6 +5142,24 @@
                     } catch(e) {}
                 }
 
+                const isTag1Target = isTagarete1Active() ||
+                                     resolveCanonicalBranch(targetBranch) === "Tagarete 1" ||
+                                     resolveCanonicalBranch(S.branchName) === "Tagarete 1" ||
+                                     bId === "branch-4";
+
+                if (isTag1Target) {
+                    try {
+                        const rawTag1 = localStorage.getItem("lf_tagarete_1_permanent_products") || "[]";
+                        let tag1List = JSON.parse(rawTag1);
+                        if (!Array.isArray(tag1List)) tag1List = [];
+                        const tIdx = tag1List.findIndex(p => String(p.product_id) === String(editingProductId));
+                        if (tIdx >= 0) tag1List[tIdx] = { ...prodToEdit };
+                        else tag1List.push({ ...prodToEdit });
+                        localStorage.setItem("lf_tagarete_1_permanent_products", JSON.stringify(tag1List));
+                        localStorage.setItem("lf_tagarete_1_custom_products", JSON.stringify(tag1List));
+                    } catch(e) {}
+                }
+
                 const isTag2Target = isTagarete2Active() ||
                                      resolveCanonicalBranch(targetBranch) === "Tagarete 2" ||
                                      resolveCanonicalBranch(S.branchName) === "Tagarete 2" ||
@@ -4654,6 +5224,17 @@
                         if (!Array.isArray(calzList)) calzList = [];
                         calzList.push(newProd);
                         localStorage.setItem("lf_calzada_permanent_products", JSON.stringify(calzList));
+                    } catch(e) {}
+                }
+
+                if (isTag1Target) {
+                    try {
+                        const rawTag1 = localStorage.getItem("lf_tagarete_1_permanent_products") || "[]";
+                        let tag1List = JSON.parse(rawTag1);
+                        if (!Array.isArray(tag1List)) tag1List = [];
+                        tag1List.push(newProd);
+                        localStorage.setItem("lf_tagarete_1_permanent_products", JSON.stringify(tag1List));
+                        localStorage.setItem("lf_tagarete_1_custom_products", JSON.stringify(tag1List));
                     } catch(e) {}
                 }
 
@@ -4753,6 +5334,42 @@
                     if (seenTag2Inv.has(normName)) return false;
                     seenTag2Inv.add(normName);
                 }
+                return true;
+            });
+        }
+        if (isTagarete1Active()) {
+            branchAllowedProducts = branchAllowedProducts.filter(prod => {
+                if (!prod) return false;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") return false;
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") return false;
+                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande") && pid !== "prod_1789344787923_spve") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") return false;
+                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") return false;
+                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") return false;
+                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") return false;
+                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro") || pNameNorm.includes("cruato")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) return false;
+                if (pNameNorm === "helado") return false;
+                if ((pNameNorm === "mini" || pNameNorm === "paleta mini") && pid !== "p_mini") return false;
+                if (pNameNorm === "mordisco" && pid !== "p_mordisco") return false;
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") return false;
+                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") return false;
+                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") return false;
+                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") return false;
+                if ((pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso"))) && pid !== "p_tostiloco_vaso") return false;
+                if (pNameNorm === "trol" && pid !== "p_trol") return false;
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") return false;
+                return true;
+            });
+            const seenTag1Inv = new Set();
+            branchAllowedProducts = branchAllowedProducts.filter(prod => {
+                const normName = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenTag1Inv.has(key) || seenTag1Inv.has(normName)) return false;
+                seenTag1Inv.add(key);
+                seenTag1Inv.add(normName);
                 return true;
             });
         }
