@@ -232,12 +232,6 @@
         if (s.date_key && s.date_key === todayStr) return true;
         const d = toDateKey(s.created_at);
         if (d === todayStr) return true;
-        if (!targetDate || targetDate === "today" || targetDate === todayStr) {
-            if (s.created_at) {
-                const t = new Date(s.created_at).getTime();
-                if (!isNaN(t) && (Date.now() - t) < 18 * 3600 * 1000) return true;
-            }
-        }
         return false;
     };
     /* ── ALMACENAMIENTO LOCAL, COMPACTACIÓN AUTOMÁTICA Y MEMORIA EN VIVO ── */
@@ -327,7 +321,7 @@
                     return b.includes("calzada") || bid === "branch-1" || bid === "c188dd82-7faf-41b8-948b-af8e789facba" || c.includes("encargado1") || c.includes("encargado2") || c.includes("calzada");
                 });
                 localStorage.setItem("lf_calzada_sales", JSON.stringify(calzOnly.slice(0, 400)));
-                localStorage.setItem("lf_calzada_today_sales", JSON.stringify(calzOnly.slice(0, 300)));
+                localStorage.setItem("lf_calzada_today_sales", JSON.stringify(calzOnly.filter(s => isTodaySale(s)).slice(0, 300)));
             } catch(e) {}
         } catch(e) {}
     }
@@ -667,6 +661,85 @@
         if (Number(s.total || 0) <= 0 && (!Array.isArray(s.items) || s.items.length === 0)) return true;
         return false;
     }
+
+    /* ── PURGA INMEDIATA DE VENTAS FANTASMA VESPERTINAS EN LA FUENTE CALZADA ── */
+    function cleanCalzadaGhostSales() {
+        try {
+            if (typeof localStorage === "undefined") return;
+            const isCalzGhost = (s) => {
+                if (!s || typeof s !== "object") return false;
+                const sid = String(s.id || s.local_id || "");
+                if (sid.startsWith("sale_calz_today_v")) return true;
+                const b = resolveCanonicalBranch(s);
+                if (b === "La Fuente Calzada") {
+                    const cat = getShiftCategory(s);
+                    if (cat === "vespertino") {
+                        if (isStaticBaseSale(s)) return true;
+                        if (s.date_key === "2026-09-18" || (s.created_at && String(s.created_at).startsWith("2026-09-18"))) return true;
+                    }
+                }
+                return false;
+            };
+
+            const filterList = (arr) => {
+                if (!Array.isArray(arr)) return arr;
+                return arr.filter(s => !isCalzGhost(s));
+            };
+
+            const keysToClean = [
+                "lf_sales", "lf_all_sales", "lf_calzada_sales", "lf_calzada_today_sales",
+                "lf_c188dd82-7faf-41b8-948b-af8e789facba_sales", "lf_branch-1_sales",
+                "lf_la_fuente_calzada_sales", "lf_pending_sync_sales", "lf_all_printed_tickets"
+            ];
+            keysToClean.forEach(k => {
+                try {
+                    const raw = localStorage.getItem(k);
+                    if (raw && raw.startsWith("[")) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            const cleaned = filterList(parsed);
+                            if (cleaned.length !== parsed.length) {
+                                localStorage.setItem(k, JSON.stringify(cleaned));
+                            }
+                        }
+                    }
+                } catch(e) {}
+            });
+
+            if (Array.isArray(_sessionSales)) {
+                _sessionSales = filterList(_sessionSales);
+            }
+            if (Array.isArray(_cachedConsolidatedSales)) {
+                _cachedConsolidatedSales = filterList(_cachedConsolidatedSales);
+            }
+
+            const cutKeys = [
+                "lf_all_cuts", "lf_cuts", "lf_calzada_cuts", "lf_branch-1_cuts",
+                "lf_c188dd82-7faf-41b8-948b-af8e789facba_cuts", "lf_la_fuente_calzada_cuts"
+            ];
+            cutKeys.forEach(k => {
+                try {
+                    const raw = localStorage.getItem(k);
+                    if (raw && raw.startsWith("[")) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            const cleaned = parsed.filter(ct => ct && String(ct.id) !== "cut_calzada_today_ves");
+                            if (cleaned.length !== parsed.length) {
+                                localStorage.setItem(k, JSON.stringify(cleaned));
+                            }
+                        }
+                    }
+                } catch(e) {}
+            });
+            if (Array.isArray(_sessionCuts)) {
+                _sessionCuts = _sessionCuts.filter(ct => ct && String(ct.id) !== "cut_calzada_today_ves");
+            }
+            if (Array.isArray(_cachedConsolidatedCuts)) {
+                _cachedConsolidatedCuts = _cachedConsolidatedCuts.filter(ct => ct && String(ct.id) !== "cut_calzada_today_ves");
+            }
+        } catch(e) {}
+    }
+    cleanCalzadaGhostSales();
 
     /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE ── */
     let _isSyncingSales = false;
@@ -5886,203 +5959,6 @@
                         { "product_id": "prod_calz_extra_nuez", "product_name": "Extra Nuez", "quantity": 1, "price": 10, "subtotal": 10 }
                 ],
                 "created_at": "2026-09-18T19:35:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v1",
-                "sale_number": "TICK-120301",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 125,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "p_helado_vaso3", "product_name": "Helado Vaso 3 bolitas", "quantity": 2, "price": 40, "subtotal": 80 },
-                        { "product_id": "p_cono_cubierto", "product_name": "Cono Cubierto", "quantity": 1, "price": 45, "subtotal": 45 }
-                ],
-                "created_at": "2026-09-18T20:15:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v2",
-                "sale_number": "TICK-120302",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 90,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "prod_1789344787923_spve", "product_name": "Esquimal Grande", "quantity": 3, "price": 30, "subtotal": 90 }
-                ],
-                "created_at": "2026-09-18T20:40:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v3",
-                "sale_number": "TICK-120303",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 155,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "p_tostilocos", "product_name": "Tostilocos", "quantity": 2, "price": 55, "subtotal": 110 },
-                        { "product_id": "p_ag_grande", "product_name": "Agua Grande", "quantity": 1, "price": 45, "subtotal": 45 }
-                ],
-                "created_at": "2026-09-18T21:05:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v4",
-                "sale_number": "TICK-120304",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 80,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "p_mordisco", "product_name": "Mordisco", "quantity": 2, "price": 25, "subtotal": 50 },
-                        { "product_id": "p_paleta_crema_gde", "product_name": "Paleta Crema Grande", "quantity": 1, "price": 30, "subtotal": 30 }
-                ],
-                "created_at": "2026-09-18T21:30:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v5",
-                "sale_number": "TICK-120305",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 130,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "prod_calz_medio_litro", "product_name": "Medio Litro de Nieve", "quantity": 2, "price": 65, "subtotal": 130 }
-                ],
-                "created_at": "2026-09-18T21:55:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v6",
-                "sale_number": "TICK-120306",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 100,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "p_helado_vaso2", "product_name": "Helado Vaso 2 bolitas", "quantity": 2, "price": 35, "subtotal": 70 },
-                        { "product_id": "p_ag_mediana", "product_name": "Agua Mediana", "quantity": 1, "price": 30, "subtotal": 30 }
-                ],
-                "created_at": "2026-09-18T22:15:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v7",
-                "sale_number": "TICK-120307",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 115,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "prod_calz_tostitos_vaso", "product_name": "Tostitos vaso", "quantity": 1, "price": 60, "subtotal": 60 },
-                        { "product_id": "prod_calz_barcel_loco", "product_name": "Barcel Loco", "quantity": 1, "price": 55, "subtotal": 55 }
-                ],
-                "created_at": "2026-09-18T22:35:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v8",
-                "sale_number": "TICK-120308",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 95,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "p_helado_vaso3", "product_name": "Helado Vaso 3 bolitas", "quantity": 1, "price": 40, "subtotal": 40 },
-                        { "product_id": "prod_calz_paleta_leche", "product_name": "Paleta de Leche", "quantity": 1, "price": 30, "subtotal": 30 },
-                        { "product_id": "prod_calz_paleta_agua", "product_name": "Paleta de Agua", "quantity": 1, "price": 25, "subtotal": 25 }
-                ],
-                "created_at": "2026-09-18T22:50:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v9",
-                "sale_number": "TICK-120309",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 95,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "prod_calz_chetos_prep", "product_name": "Chetos preparados", "quantity": 1, "price": 50, "subtotal": 50 },
-                        { "product_id": "p_ag_grande", "product_name": "Agua Grande", "quantity": 1, "price": 45, "subtotal": 45 }
-                ],
-                "created_at": "2026-09-18T23:05:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v10",
-                "sale_number": "TICK-120310",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 80,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "p_cono_sencillo", "product_name": "Cono Sencillo", "quantity": 2, "price": 25, "subtotal": 50 },
-                        { "product_id": "p_paleta_payaso", "product_name": "Paleta Payaso", "quantity": 1, "price": 30, "subtotal": 30 }
-                ],
-                "created_at": "2026-09-18T23:15:00.000Z",
-                "date_key": "2026-09-18"
-        },
-        {
-                "id": "sale_calz_today_v11",
-                "sale_number": "TICK-120311",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_id": "usr_encargado2lafuente_gmail_com",
-                "cashier_name": "Encargada Calzada (Vespertino) (encargado2lafuente@gmail.com)",
-                "total": 80,
-                "payment_method": "cash",
-                "status": "COMPLETADA",
-                "items": [
-                        { "product_id": "p_helado_vaso4", "product_name": "Helado Vaso 4", "quantity": 1, "price": 50, "subtotal": 50 },
-                        { "product_id": "prod_1789344787923_spve", "product_name": "Esquimal Grande", "quantity": 1, "price": 30, "subtotal": 30 }
-                ],
-                "created_at": "2026-09-18T23:25:00.000Z",
                 "date_key": "2026-09-18"
         },
         {
@@ -13777,23 +13653,6 @@
                 "created_at": "2026-09-18T20:00:00.000Z"
         },
         {
-                "id": "cut_calzada_today_ves",
-                "branch_id": "c188dd82-7faf-41b8-948b-af8e789facba",
-                "branch_name": "La Fuente Calzada",
-                "shift_name": "Tarde",
-                "cashier_name": "Encargada Calzada (Vespertino)",
-                "performed_by_name": "Encargada Calzada (Vespertino)",
-                "opening_amount": 1000,
-                "cash_sales": 1145,
-                "card_sales": 0,
-                "total_sales": 1145,
-                "expected_cash": 2145,
-                "counted_cash": 2145,
-                "difference": 0,
-                "net_sales_without_fund": 1145,
-                "created_at": "2026-09-18T23:30:00.000Z"
-        },
-        {
                 "id": "cut_tag1_today_mat",
                 "branch_id": "branch-4",
                 "branch_name": "Tagarete 1",
@@ -14434,6 +14293,7 @@
     async function loadSales(silent = false) {
         const c = $("#sales-container");
         if (!c) return;
+        cleanCalzadaGhostSales();
         if (!S.isSU && !S.branchId) {
             const userEm = String(S.user?.email || "").toLowerCase();
             const bResolved = resolveCanonicalBranch(userEm) || resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
@@ -14563,13 +14423,6 @@
                         });
                     }
                 });
-            }
-            // Si para 'today' aún no hay ventas en esta sucursal pero sí hay ventas en la jornada activa reciente
-            if (!rawDaySales.length && branchSales.length) {
-                const latestDate = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse()[0];
-                if (latestDate) {
-                    rawDaySales = datesMap.get(latestDate) || [];
-                }
             }
         } else {
             rawDaySales = datesMap.get(selectedDate) || [];
@@ -14857,6 +14710,7 @@
         }));
 
         document.getElementById("btn-ref-sales")?.addEventListener("click", async () => {
+            cleanCalzadaGhostSales();
             _cachedConsolidatedSales = null;
             await loadSales();
             toast("Ventas actualizadas.", "info");
@@ -15208,6 +15062,7 @@
     async function loadCuts(silent = false) {
         const c = $("#cuts-container");
         if (!c) return;
+        cleanCalzadaGhostSales();
         if (!S.isSU && !S.branchId) {
             const userEm = String(S.user?.email || "").toLowerCase();
             const bResolved = resolveCanonicalBranch(userEm) || resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
@@ -15284,52 +15139,28 @@
             });
         }
 
-        if (!todayActiveSales.length && currentBranchSales.length) {
-            const datesMap = new Map();
-            currentBranchSales.forEach(s => {
-                if (isSystemNonSaleRecord(s)) return;
-                const d = toDateKey(s.created_at);
-                if (d && String(s.status||"").toUpperCase() !== "CANCELLED") {
-                    if (!datesMap.has(d)) datesMap.set(d, []);
-                    datesMap.get(d).push(s);
-                }
-            });
-            const latestDate = Array.from(datesMap.keys()).sort().reverse()[0];
-            if (latestDate) {
-                todayActiveSales = datesMap.get(latestDate) || [];
-            }
-        }
-        
         const currentCategory = (S.shift.toLowerCase().includes("tarde") || S.shift.toLowerCase().includes("vesp")) ? "vespertino" : "matutino";
+        
+        // Ventas de hoy que corresponden estrictamente al turno activo
+        const shiftSalesToday = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory);
+        
+        // Cortes realizados hoy para este mismo turno en la sucursal activa
+        const cutsOfThisShiftToday = cutsList.filter(ct => {
+            if (!ct || !ct.created_at || toDateKey(ct.created_at) !== todayStr) return false;
+            return getShiftCategory(ct) === currentCategory;
+        });
+
         let currentTurnSales = [];
-        if (isCalzadaBranch) {
-            // En La Fuente Calzada: acumular todas las ventas del día que aún no hayan sido cortadas hoy,
-            // para que cada venta insertada aumente de inmediato el acumulado del corte sin quedarse estancada
-            const todayCuts = cutsList.filter(ct => ct && ct.created_at && toDateKey(ct.created_at) === todayStr);
-            if (todayCuts.length > 0) {
-                const lastCutTime = Math.max(...todayCuts.map(ct => new Date(ct.created_at).getTime()).filter(t => !isNaN(t)));
-                const salesAfterLastCut = todayActiveSales.filter(s => {
-                    const st = new Date(s.created_at || 0).getTime();
-                    return !isNaN(st) && st > lastCutTime;
-                });
-                const shiftMatchedSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory || String(s.shift_name||"").toLowerCase().includes(currentCategory.slice(0,4)));
-                const combinedCalzMap = new Map();
-                salesAfterLastCut.forEach(s => combinedCalzMap.set(String(s.id || s.sale_number), s));
-                shiftMatchedSales.forEach(s => combinedCalzMap.set(String(s.id || s.sale_number), s));
-                currentTurnSales = combinedCalzMap.size > 0 ? Array.from(combinedCalzMap.values()) : todayActiveSales;
-            } else {
-                // Si aún no se ha hecho ningún corte hoy en Calzada, incluir todas las ventas activas del día
-                currentTurnSales = todayActiveSales;
-            }
+        if (cutsOfThisShiftToday.length > 0) {
+            // Si ya se realizó al menos un corte en este turno hoy, acumular únicamente las ventas posteriores al último corte
+            const lastCutTime = Math.max(...cutsOfThisShiftToday.map(ct => new Date(ct.created_at).getTime()).filter(t => !isNaN(t)));
+            currentTurnSales = shiftSalesToday.filter(s => {
+                const st = new Date(s.created_at || 0).getTime();
+                return !isNaN(st) && st > lastCutTime;
+            });
         } else {
-            currentTurnSales = todayActiveSales.filter(s => getShiftCategory(s) === currentCategory || String(s.shift_name||"").toLowerCase().includes(currentCategory.slice(0,4)));
-            if (!currentTurnSales.length && todayActiveSales.length) {
-                const sShift = (S.shift || "").toLowerCase();
-                currentTurnSales = todayActiveSales.filter(s => String(s.shift_name||"").toLowerCase().includes(sShift));
-                if (!currentTurnSales.length) {
-                    currentTurnSales = todayActiveSales;
-                }
-            }
+            // Si aún no se ha hecho ningún corte en este turno hoy, tomar todas las ventas acumuladas del turno hoy
+            currentTurnSales = shiftSalesToday;
         }
 
         const currentCashSales = currentTurnSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a,s)=>a+Number(s.total||0), 0);
@@ -15509,6 +15340,9 @@
         });
 
         document.getElementById("btn-ref-cuts")?.addEventListener("click", async () => {
+            cleanCalzadaGhostSales();
+            _cachedConsolidatedCuts = null;
+            _cachedConsolidatedSales = null;
             await loadCuts();
             toast("Cortes actualizados.", "info");
         });
@@ -16720,15 +16554,6 @@
             ? consolidatedSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED")
             : (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
 
-        // Si para 'today' aún no hay ventas pero la red tiene ventas registradas, utilizar la jornada activa reciente
-        if (!todaySales.length && consolidatedSales.length && (selectedDate === "today" || selectedDate === todayStr)) {
-            const availableDates = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse();
-            if (availableDates.length) {
-                const fallbackDate = availableDates[0];
-                todaySales = (datesMap.get(fallbackDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
-            }
-        }
-
         const allReps = gr("all_damage_reports", []);
         const pendingReps = allReps.filter(r => r.status !== "reviewed");
 
@@ -16795,7 +16620,7 @@
                     ...(lr("last_printed_sale") ? [lr("last_printed_sale")] : [])
                 ];
                 localCalz.forEach(ls => {
-                    if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED") {
+                    if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED" && isTodaySale(ls, selectedDate === "today" ? todayStr : selectedDate)) {
                         if (!branchTargetSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
                             branchTargetSales.unshift(ls);
                         }
@@ -17272,15 +17097,6 @@
             ? allHistoricalActive
             : (datesMap.get(selectedDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
 
-        // Fallback a jornada activa si hoy aún no tiene ventas registradas
-        if (!activeUnarchivedSales.length && allHistoricalActive.length && (selectedDate === "today" || selectedDate === todayStr)) {
-            const availableDates = Array.from(datesMap.keys()).filter(k => (datesMap.get(k)||[]).length > 0).sort().reverse();
-            if (availableDates.length) {
-                const fallbackDate = availableDates[0];
-                activeUnarchivedSales = (datesMap.get(fallbackDate) || []).filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
-            }
-        }
-
         let dateCuts = isAllDates
             ? allCuts
             : allCuts.filter(c => toDateKey(c.created_at) === (selectedDate === "today" ? todayStr : selectedDate) || String(c.created_at||"").slice(0,10) === (selectedDate === "today" ? todayStr : selectedDate));
@@ -17308,7 +17124,7 @@
                     ...(lr("last_printed_sale") ? [lr("last_printed_sale")] : [])
                 ];
                 localCalz.forEach(ls => {
-                    if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED") {
+                    if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED" && isTodaySale(ls, selectedDate === "today" ? todayStr : selectedDate)) {
                         if (!displaySales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
                             displaySales.unshift(ls);
                         }
