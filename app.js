@@ -443,47 +443,65 @@
         if (!ref) return "";
         if (typeof ref === "string") {
             const s = ref.toLowerCase().trim();
-            if (s === "branch-4" || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || s.includes("encargado7") || s.includes("encargado8")) return "Tagarete 1";
+            if (s === "branch-4" || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || s.includes("encargado7") || s.includes("encargado8") || s.includes("encargada7") || s.includes("encargada8")) return "Tagarete 1";
             if (s === "branch-5" || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || /encargad[oa]9(?!\d)/i.test(s) || /encargad[oa]10(?!\d)/i.test(s)) return "Tagarete 2";
             if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargada11") || s.includes("encargado12") || s.includes("encargada12")) return "CNOP";
             if (s === "branch-3" || s.includes("mollotes") || s.includes("molotes") || /encargad[oa]5(?!\d)/i.test(s) || /encargad[oa]6(?!\d)/i.test(s)) return "Mollotes";
-            if (s === "branch-2" || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4")) return "Rescate";
+            if (s === "branch-2" || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4") || s.includes("encargada3") || s.includes("encargada4")) return "Rescate";
             if (s === "branch-1" || s === "c188dd82-7faf-41b8-948b-af8e789facba" || s.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(s) && !s.includes("10") && !s.includes("11") && !s.includes("12")) || /encargad[oa]2(?!\d)/i.test(s) || s.includes("calzada1") || s.includes("calzada2")) return "La Fuente Calzada";
             return ref.trim();
         }
 
-        // 1. Identificación directa por ID prioritario de sucursal
-        const bId = String(ref.branch_id || ref.id || "").toLowerCase().trim();
-        if (bId === "branch-4" || bId.includes("tagarete_1") || bId.includes("tagarete 1")) return "Tagarete 1";
-        if (bId === "branch-5" || bId.includes("tagarete_2") || bId.includes("tagarete 2")) return "Tagarete 2";
-        if (bId === "branch-6" || bId.includes("cnop")) return "CNOP";
-        if (bId === "branch-3" || bId.includes("mollotes") || bId.includes("molotes")) return "Mollotes";
-        if (bId === "branch-2" || bId.includes("rescate")) return "Rescate";
-        if (bId === "branch-1" || bId === "c188dd82-7faf-41b8-948b-af8e789facba" || bId.includes("calzada")) return "La Fuente Calzada";
-
-        // 2. Identificación por correo / ID de encargada oficial asignada
-        const cInfo = (String(ref.cashier_id || "") + " " + String(ref.cashier_name || "") + " " + String(ref.user_email || "")).toLowerCase();
-        if (cInfo.includes("encargado7") || cInfo.includes("encargado8") || cInfo.includes("tagarete 1") || cInfo.includes("tagarete1")) return "Tagarete 1";
-        if (/encargad[oa]9(?!\d)/i.test(cInfo) || /encargad[oa]10(?!\d)/i.test(cInfo) || cInfo.includes("tagarete 2") || cInfo.includes("tagarete2") || (cInfo.includes("tagarete") && (cInfo.includes("2") || cInfo.includes("dos")))) return "Tagarete 2";
-        if (cInfo.includes("encargado11") || cInfo.includes("encargada11") || cInfo.includes("encargado12") || cInfo.includes("encargada12") || cInfo.includes("cnop")) return "CNOP";
-        if (/encargad[oa]5(?!\d)/i.test(cInfo) || /encargad[oa]6(?!\d)/i.test(cInfo) || cInfo.includes("mollotes") || cInfo.includes("molotes")) return "Mollotes";
-        if (cInfo.includes("encargado3") || cInfo.includes("encargado4") || cInfo.includes("rescate")) return "Rescate";
-        if ((/encargad[oa]1(?!\d)/i.test(cInfo) && !cInfo.includes("10") && !cInfo.includes("11") && !cInfo.includes("12")) || /encargad[oa]2(?!\d)/i.test(cInfo) || cInfo.includes("calzada") || cInfo.includes("calzada1") || cInfo.includes("calzada2")) return "La Fuente Calzada";
-
-        // 3. Extracción de observaciones y metadatos con Tagarete 1 prioritario
+        // Extracción exhaustiva de observaciones y metadatos
         let obs = {};
         try { obs = typeof ref.observations === "string" ? JSON.parse(ref.observations) : (ref.observations || {}); } catch(e) {}
-        let str = `${ref.name || ""} ${ref.branch_name || ""} ${ref.id || ""} ${ref.branch_id || ""} ${cInfo} ${obs.branch_name || ""} ${obs.cashier_name || ""} ${obs.user_email || ""}`;
-        const s = String(str).toLowerCase().trim();
+        
+        const bName = String(obs.branch_name || ref.branch_name || ref.name || "").toLowerCase().trim();
+        const obsBId = String(obs.branch_id || "").toLowerCase().trim();
+        const rawBId = String(ref.branch_id || ref.id || "").toLowerCase().trim();
+        const cashier = String(obs.cashier_name || obs.performed_by_name || ref.cashier_name || ref.performed_by_name || ref.user_name || "").toLowerCase().trim();
+        const email = String(obs.user_email || ref.user_email || ref.cashier_id || ref.performed_by || "").toLowerCase().trim();
+        const allClues = `${bName} ${obsBId} ${cashier} ${email} ${rawBId}`;
 
-        if (s.includes("branch-4") || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno")))) return "Tagarete 1";
-        if (s.includes("branch-5") || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || /encargad[oa]9(?!\d)/i.test(s) || /encargad[oa]10(?!\d)/i.test(s)) return "Tagarete 2";
-        if (s.includes("branch-6") || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargada11") || s.includes("encargado12") || s.includes("encargada12")) return "CNOP";
-        if (s.includes("branch-3") || s.includes("mollotes") || s.includes("molotes") || /encargad[oa]5(?!\d)/i.test(s) || /encargad[oa]6(?!\d)/i.test(s)) return "Mollotes";
-        if (s.includes("branch-2") || s.includes("rescate")) return "Rescate";
-        if (s.includes("branch-1") || s.includes("c188dd82-7faf-41b8-948b-af8e789facba") || s.includes("calzada")) return "La Fuente Calzada";
+        // 1. Tagarete 1
+        if (bName.includes("tagarete 1") || bName.includes("tagarete1") || bName.includes("tagarete_1") ||
+            obsBId === "branch-4" || rawBId === "branch-4" || rawBId.includes("tagarete_1") || rawBId.includes("tagarete 1") ||
+            cashier.includes("tagarete 1") || cashier.includes("tagarete1") || /encargad[oa]7(?!\d)/i.test(allClues) || /encargad[oa]8(?!\d)/i.test(allClues)) {
+            return "Tagarete 1";
+        }
 
-        // 4. Soporte dinámico para cualquier sucursal futura que se habilite
+        // 2. Tagarete 2
+        if (bName.includes("tagarete 2") || bName.includes("tagarete2") || bName.includes("tagarete_2") ||
+            obsBId === "branch-5" || rawBId === "branch-5" || rawBId.includes("tagarete_2") || rawBId.includes("tagarete 2") ||
+            cashier.includes("tagarete 2") || cashier.includes("tagarete2") || /encargad[oa]9(?!\d)/i.test(allClues) || /encargad[oa]10(?!\d)/i.test(allClues)) {
+            return "Tagarete 2";
+        }
+
+        // 3. CNOP
+        if (bName.includes("cnop") || bName.includes("cenop") || obsBId === "branch-6" || rawBId === "branch-6" || rawBId.includes("cnop") ||
+            cashier.includes("cnop") || /encargad[oa]11(?!\d)/i.test(allClues) || /encargad[oa]12(?!\d)/i.test(allClues)) {
+            return "CNOP";
+        }
+
+        // 4. Mollotes (PROTECCIÓN ESTRICTA: nunca clasificar como Calzada aunque tenga el UUID fallback c188dd82...)
+        if (bName.includes("mollotes") || bName.includes("molotes") || obsBId === "branch-3" || rawBId === "branch-3" || rawBId.includes("mollotes") || rawBId.includes("molotes") ||
+            cashier.includes("mollotes") || cashier.includes("molotes") || /encargad[oa]5(?!\d)/i.test(allClues) || /encargad[oa]6(?!\d)/i.test(allClues)) {
+            return "Mollotes";
+        }
+
+        // 5. Rescate
+        if (bName.includes("rescate") || obsBId === "branch-2" || rawBId === "branch-2" || rawBId.includes("rescate") ||
+            cashier.includes("rescate") || /encargad[oa]3(?!\d)/i.test(allClues) || /encargad[oa]4(?!\d)/i.test(allClues)) {
+            return "Rescate";
+        }
+
+        // 6. La Fuente Calzada (ÚNICAMENTE si ninguna de las otras sucursales coincide)
+        if (bName.includes("calzada") || obsBId === "branch-1" || rawBId === "branch-1" || rawBId === "c188dd82-7faf-41b8-948b-af8e789facba" ||
+            cashier.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(allClues) && !allClues.includes("10") && !allClues.includes("11") && !allClues.includes("12")) || /encargad[oa]2(?!\d)/i.test(allClues)) {
+            return "La Fuente Calzada";
+        }
+
+        // 7. Soporte dinámico para cualquier sucursal futura que se habilite
         if (ref.name && String(ref.name).trim()) return String(ref.name).trim();
         if (ref.branch_name && String(ref.branch_name).trim()) return String(ref.branch_name).trim();
 
@@ -662,42 +680,93 @@
         return false;
     }
 
-    /* ── PURGA INMEDIATA DE VENTAS FANTASMA VESPERTINAS EN LA FUENTE CALZADA ── */
+    /* ── PURGA INMEDIATA DE VENTAS FANTASMA Y CONTAMINACIÓN ENTRE SUCURSALES EN LA FUENTE CALZADA ── */
     function cleanCalzadaGhostSales() {
         try {
             if (typeof localStorage === "undefined") return;
+            const todayStr = toDateKey();
+
+            // Identificador de ventas que NO deben estar en Calzada o que son remanentes vespertinos no auténticos
             const isCalzGhost = (s) => {
                 if (!s || typeof s !== "object") return false;
                 const sid = String(s.id || s.local_id || "");
-                if (sid.startsWith("sale_calz_today_v")) return true;
-                const b = resolveCanonicalBranch(s);
-                if (b === "La Fuente Calzada") {
+                if (sid.startsWith("sale_calz_today_v") || sid.startsWith("sale_calz_ghost")) return true;
+
+                let obs = {};
+                try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
+                const cashier = String(obs.cashier_name || obs.performed_by_name || s.cashier_name || s.user_name || "").toLowerCase();
+                const bObs = String(obs.branch_name || s.branch_name || "").toLowerCase();
+
+                // Si la venta pertenece explícitamente a otra sucursal (Mollotes, Rescate, CNOP, Tagarete)
+                if (cashier.includes("mollotes") || cashier.includes("molotes") || bObs.includes("mollotes") || bObs.includes("molotes") ||
+                    cashier.includes("rescate") || bObs.includes("rescate") ||
+                    cashier.includes("cnop") || bObs.includes("cnop") ||
+                    cashier.includes("tagarete") || bObs.includes("tagarete")) {
+                    return true;
+                }
+
+                const canonB = resolveCanonicalBranch(s);
+                if (canonB && canonB !== "La Fuente Calzada") {
+                    return true;
+                }
+
+                // Si es de La Fuente Calzada:
+                if (canonB === "La Fuente Calzada") {
                     const cat = getShiftCategory(s);
                     if (cat === "vespertino") {
                         if (isStaticBaseSale(s)) return true;
                         if (s.date_key === "2026-09-18" || (s.created_at && String(s.created_at).startsWith("2026-09-18"))) return true;
+                        // Para la sucursal Calzada: poner en ceros los valores de la tarde hasta que las muchachas comiencen a registrar sus ventas de hoy
+                        // Mantener únicamente ventas en vivo que hayan sido marcadas explícitamente como realizadas en la sesión actual
+                        if (!s._is_today_live_pm) {
+                            return true;
+                        }
                     }
                 }
                 return false;
             };
 
-            const filterList = (arr) => {
+            const filterList = (arr, isStrictCalzadaKey = false) => {
                 if (!Array.isArray(arr)) return arr;
-                return arr.filter(s => !isCalzGhost(s));
+                return arr.filter(s => {
+                    if (!s) return false;
+                    if (isCalzGhost(s)) return false;
+                    if (isStrictCalzadaKey) {
+                        return resolveCanonicalBranch(s) === "La Fuente Calzada";
+                    }
+                    return true;
+                });
             };
 
-            const keysToClean = [
-                "lf_sales", "lf_all_sales", "lf_calzada_sales", "lf_calzada_today_sales",
+            // 1. Limpieza de llaves exclusivas de Calzada
+            const calzadaSpecificSalesKeys = [
+                "lf_calzada_sales", "lf_calzada_today_sales",
                 "lf_c188dd82-7faf-41b8-948b-af8e789facba_sales", "lf_branch-1_sales",
-                "lf_la_fuente_calzada_sales", "lf_pending_sync_sales", "lf_all_printed_tickets"
+                "lf_la_fuente_calzada_sales", "lf_la fuente calzada_sales"
             ];
-            keysToClean.forEach(k => {
+            calzadaSpecificSalesKeys.forEach(k => {
                 try {
                     const raw = localStorage.getItem(k);
                     if (raw && raw.startsWith("[")) {
                         const parsed = JSON.parse(raw);
                         if (Array.isArray(parsed)) {
-                            const cleaned = filterList(parsed);
+                            const cleaned = filterList(parsed, true);
+                            localStorage.setItem(k, JSON.stringify(cleaned));
+                        }
+                    }
+                } catch(e) {}
+            });
+
+            // 2. Limpieza de llaves generales de ventas
+            const generalSalesKeys = ["lf_sales", "lf_pending_sync_sales", "lf_all_printed_tickets"];
+            generalSalesKeys.forEach(k => {
+                try {
+                    const raw = localStorage.getItem(k);
+                    if (raw && raw.startsWith("[")) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            const isCalzActive = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
+                            const cleaned = filterList(parsed, isCalzActive);
                             if (cleaned.length !== parsed.length) {
                                 localStorage.setItem(k, JSON.stringify(cleaned));
                             }
@@ -705,38 +774,101 @@
                     }
                 } catch(e) {}
             });
+
+            // Re-asignar ventas globales para que las de Mollotes/Rescate lleven su branch_name correcto y no Calzada
+            try {
+                const rawAll = localStorage.getItem("lf_all_sales");
+                if (rawAll && rawAll.startsWith("[")) {
+                    let parsedAll = JSON.parse(rawAll);
+                    if (Array.isArray(parsedAll)) {
+                        let mod = false;
+                        parsedAll.forEach(s => {
+                            if (s) {
+                                const cb = resolveCanonicalBranch(s);
+                                if (cb && cb !== s.branch_name && cb !== "La Fuente Calzada") {
+                                    s.branch_name = cb;
+                                    mod = true;
+                                }
+                            }
+                        });
+                        parsedAll = parsedAll.filter(s => {
+                            if (resolveCanonicalBranch(s) === "La Fuente Calzada") {
+                                return !isCalzGhost(s);
+                            }
+                            return true;
+                        });
+                        localStorage.setItem("lf_all_sales", JSON.stringify(parsedAll));
+                    }
+                }
+            } catch(e) {}
 
             if (Array.isArray(_sessionSales)) {
-                _sessionSales = filterList(_sessionSales);
+                _sessionSales = filterList(_sessionSales, resolveCanonicalBranch(S.branchName) === "La Fuente Calzada");
             }
             if (Array.isArray(_cachedConsolidatedSales)) {
-                _cachedConsolidatedSales = filterList(_cachedConsolidatedSales);
+                _cachedConsolidatedSales = null;
             }
 
-            const cutKeys = [
-                "lf_all_cuts", "lf_cuts", "lf_calzada_cuts", "lf_branch-1_cuts",
+            // 3. Limpieza de cortes en Calzada: expulsar cortes de Mollotes/Rescate y resetear tarde si es necesario
+            const calzadaCutKeys = [
+                "lf_calzada_cuts", "lf_branch-1_cuts",
                 "lf_c188dd82-7faf-41b8-948b-af8e789facba_cuts", "lf_la_fuente_calzada_cuts"
             ];
-            cutKeys.forEach(k => {
+            calzadaCutKeys.forEach(k => {
                 try {
                     const raw = localStorage.getItem(k);
                     if (raw && raw.startsWith("[")) {
                         const parsed = JSON.parse(raw);
                         if (Array.isArray(parsed)) {
+                            const cleaned = parsed.filter(ct => {
+                                if (!ct) return false;
+                                if (String(ct.id) === "cut_calzada_today_ves" || String(ct.id) === "cut_calzada_today_mat") return false;
+                                let obs = {};
+                                try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
+                                const pLow = String(obs.performed_by_name || obs.cashier_name || ct.performed_by_name || ct.cashier_name || "").toLowerCase();
+                                if (pLow.includes("mollotes") || pLow.includes("molotes") || pLow.includes("rescate") || pLow.includes("cnop") || pLow.includes("tagarete")) return false;
+                                return resolveCanonicalBranch(ct) === "La Fuente Calzada";
+                            });
+                            localStorage.setItem(k, JSON.stringify(cleaned));
+                        }
+                    }
+                } catch(e) {}
+            });
+
+            // En llaves generales de cortes, asegurar que cortes de Mollotes/Rescate tengan su nombre de sucursal auténtico
+            const generalCutKeys = ["lf_all_cuts", "lf_cuts"];
+            generalCutKeys.forEach(k => {
+                try {
+                    const raw = localStorage.getItem(k);
+                    if (raw && raw.startsWith("[")) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            let mod = false;
+                            parsed.forEach(ct => {
+                                if (ct) {
+                                    let obs = {};
+                                    try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
+                                    const pLow = String(obs.performed_by_name || obs.cashier_name || ct.performed_by_name || ct.cashier_name || "").toLowerCase();
+                                    const cb = resolveCanonicalBranch({ ...ct, observations: obs, cashier_name: pLow });
+                                    if (cb && ct.branch_name !== cb) {
+                                        ct.branch_name = cb;
+                                        mod = true;
+                                    }
+                                }
+                            });
                             const cleaned = parsed.filter(ct => ct && String(ct.id) !== "cut_calzada_today_ves");
-                            if (cleaned.length !== parsed.length) {
+                            if (mod || cleaned.length !== parsed.length) {
                                 localStorage.setItem(k, JSON.stringify(cleaned));
                             }
                         }
                     }
                 } catch(e) {}
             });
+
             if (Array.isArray(_sessionCuts)) {
                 _sessionCuts = _sessionCuts.filter(ct => ct && String(ct.id) !== "cut_calzada_today_ves");
             }
-            if (Array.isArray(_cachedConsolidatedCuts)) {
-                _cachedConsolidatedCuts = _cachedConsolidatedCuts.filter(ct => ct && String(ct.id) !== "cut_calzada_today_ves");
-            }
+            _cachedConsolidatedCuts = null;
         } catch(e) {}
     }
     cleanCalzadaGhostSales();
@@ -1477,6 +1609,17 @@
                 lw("inv_tagarete_2", invToSave);
             } catch(e) {}
         }
+
+        // Persistencia permanente específica y blindada para las encargadas de Rescate
+        const isRescateBranch = resolveCanonicalBranch(S.branchName) === "Rescate";
+        if (isRescateBranch) {
+            try {
+                localStorage.setItem("lf_rescate_inv_permanent", JSON.stringify(invToSave));
+                localStorage.setItem("lf_inv_rescate", JSON.stringify(invToSave));
+                gw("inv_rescate", invToSave);
+                lw("inv_rescate", invToSave);
+            } catch(e) {}
+        }
         
         // Difundir en tiempo real a todas las pantallas activas
         if (realtimeChannel) {
@@ -1498,6 +1641,7 @@
     function initInv() { 
         const isTag1 = isTagarete1Active();
         const isTag2 = isTagarete2Active();
+        const isRescate = resolveCanonicalBranch(S.branchName) === "Rescate";
         const branchKey = getBranchKeyName(S.branchName);
         const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
 
@@ -1567,6 +1711,31 @@
                 });
                 if (addedAny) saveBranchInv();
                 return; // Tagarete 2 queda intacto: jamás ejecutar isWiped ni sobrescribir sus modificaciones
+            }
+        } else if (isRescate) {
+            try {
+                const rawR = localStorage.getItem("lf_rescate_inv_permanent") || localStorage.getItem("lf_inv_rescate");
+                if (rawR) stored = JSON.parse(rawR);
+            } catch(e) {}
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = gr("inv_rescate", null);
+            }
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = lr("inv_rescate", null);
+            }
+
+            // Para las encargadas de Rescate: preservar 100% de sus ajustes, existencias y modificaciones
+            if (stored && typeof stored === "object" && Object.keys(stored).length > 0) {
+                S.inv = { ...stored };
+                let addedAny = false;
+                S.products.forEach(p => {
+                    if (S.inv[p.product_id] === undefined || S.inv[p.product_id] === null || isNaN(S.inv[p.product_id])) {
+                        S.inv[p.product_id] = computeHealthyDefault(p);
+                        addedAny = true;
+                    }
+                });
+                if (addedAny) saveBranchInv();
+                return; // Rescate queda protegido
             }
         } else {
             try {
@@ -2487,6 +2656,38 @@
             } catch(e) {}
         }
 
+        // 5.3. Para las encargadas de Rescate: blindar inclusión de productos modificados, recetas y compuestos
+        if (resolveCanonicalBranch(S.branchName) === "Rescate") {
+            try {
+                const rescateProductSources = [
+                    "lf_rescate_permanent_products",
+                    "lf_rescate_custom_products",
+                    "lf_branch-2_custom_products"
+                ];
+                rescateProductSources.forEach(sourceKey => {
+                    const rawRescate = localStorage.getItem(sourceKey);
+                    if (rawRescate) {
+                        const parsed = JSON.parse(rawRescate);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(p => {
+                                const pid = String(p.product_id || p.id || "");
+                                if (p && pid && !explicitDelSet.has(pid)) {
+                                    let existing = combinedMap.get(pid) || {};
+                                    combinedMap.set(pid, sanitizeSharedCatalogProduct({
+                                        ...existing,
+                                        ...p,
+                                        product_id: pid,
+                                        is_composite: p.is_composite !== undefined ? !!p.is_composite : !!existing.is_composite,
+                                        components: Array.isArray(p.components) ? p.components : (existing.components || [])
+                                    }));
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+        }
+
         // 6. Aplicar precios exclusivos solicitados SOLO para la sucursal La Fuente Calzada:
         // 6. Aplicar precios exclusivos solicitados SOLO para la sucursal La Fuente Calzada:
         //    - Esquimal Grande: $45 (solo en La Fuente Calzada)
@@ -2629,6 +2830,7 @@
 
             // D.1. Nombres claros, categoría preparados y precios oficiales para Sabritas Preparadas en Rescate
             for (const [pid, prod] of combinedMap.entries()) {
+                if (prod.user_edited_price_v69) continue;
                 const pCode = String(prod.product_code || "").trim().toUpperCase();
                 if (pCode === "SPBC") {
                     prod.product_name = "Sabrita Prep. Chica";
@@ -2647,6 +2849,7 @@
 
             // E. Aplicar la lista oficial de precios estándar e inalterables exclusivamente para El Rescate:
             for (const [pid, prod] of combinedMap.entries()) {
+                if (prod.user_edited_price_v69) continue;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
                 
                 // 1. Zanahoria siempre a $40
@@ -3131,7 +3334,7 @@
         const isCurrentRescate = resolveCanonicalBranch(S.branchName) === "Rescate";
         if (isCurrentRescate) {
             p.forEach(prod => {
-                if (!prod) return;
+                if (!prod || prod.user_edited_price_v69) return;
                 const pid = String(prod.product_id || "");
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
                 const pCode = String(prod.product_code || "").trim().toUpperCase();
@@ -3189,7 +3392,91 @@
                 return true;
             });
 
-            // 6. Deduplicar productos por código conocido y por (categoría + nombre) en Rescate para evitar tarjetas repetidas
+            // 6. Eliminar productos duplicados específicos en El Rescate
+            p = p.filter(prod => {
+                if (!prod) return false;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+
+                // Chaparrita / Chapurrita: mantener solo la oficial p_paleta_chapurrita
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") return false;
+
+                // Mini / Paleta mini: mantener solo p_mini
+                if (pid === "prod_calz_paleta_mini" || ((pNameNorm === "paleta mini" || pNameNorm === "mini") && pid !== "p_mini")) return false;
+
+                // Trol: mantener solo p_trol
+                if (pNameNorm === "trol" && pid !== "p_trol") return false;
+
+                // Esquimal Grande: mantener prod_1789344787923_spve
+                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande" || pNameNorm === "paleta esquimal grande") && pid !== "prod_1789344787923_spve") return false;
+
+                // Zanahoria: mantener solo p_paleta_zanahoria
+                if (pNameNorm === "zanahoria" && pid !== "p_paleta_zanahoria") return false;
+
+                // Bolis: mantener solo p_bolis
+                if ((pNameNorm === "bolis" || pNameNorm === "boli") && pid !== "p_bolis") return false;
+
+                // Chechis
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("bolsa") && pid !== "p_chechis_bolsa") return false;
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") return false;
+
+                // Waffle, Frappé, Sodas Italianas
+                if (pNameNorm.includes("waffle") && pid !== "p_waffle") return false;
+                if (pNameNorm.includes("frapp") && pid !== "p_frappe") return false;
+                if (pNameNorm.includes("soda italiana") && pid !== "p_sodas_italianas") return false;
+
+                // Aguas
+                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") return false;
+                if (pNameNorm.includes("agua mediana") && pid !== "p_ag_mediana") return false;
+                if (pNameNorm.includes("agua chica") && pid !== "p_ag_chica") return false;
+                if (pNameNorm.includes("agua natural chica") && pid !== "p_ag_nat_chica") return false;
+                if (pNameNorm.includes("agua natural grande") && pid !== "p_ag_nat_grande") return false;
+
+                // Fresas
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") return false;
+
+                // Helados
+                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") return false;
+                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") return false;
+                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") return false;
+                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) return false;
+                if (pNameNorm === "helado") return false;
+
+                // Otros congelados y postres
+                if (pNameNorm === "mordisco" && pid !== "p_mordisco") return false;
+                if (pNameNorm === "mangonadas" && pid !== "p_mangonadas") return false;
+                if (pNameNorm === "mango congelado" && pid !== "p_mango_congelado") return false;
+                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") return false;
+                if (pNameNorm === "donas" && pid !== "p_donas") return false;
+
+                // Paletas
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") return false;
+                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") return false;
+                if ((pNameNorm === "paleta agua chica" || pNameNorm === "paleta de agua chica") && pid !== "p_paleta_agua_chica") return false;
+                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") return false;
+
+                // Tostilocos
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") return false;
+                if ((pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso"))) && pid !== "p_tostiloco_vaso") return false;
+
+                return true;
+            });
+
+            // Establecer nombres claros oficiales para El Rescate
+            p.forEach(prod => {
+                if (prod.product_id === "p_paleta_chapurrita") { prod.product_name = "Paleta Chapurrita"; }
+                if (prod.product_id === "p_mini") { prod.product_name = "Mini"; }
+                if (prod.product_id === "p_trol") { prod.product_name = "Trol"; }
+                if (prod.product_id === "prod_1789344787923_spve") { prod.product_name = "Esquimal Grande"; }
+                if (prod.product_id === "p_paleta_zanahoria") { prod.product_name = "Zanahoria"; prod.category = "paletas"; }
+                if (prod.product_id === "p_bolis") { prod.product_name = "Bolis"; }
+                if (prod.product_id === "p_waffle") { prod.product_name = "Waffle"; }
+                if (prod.product_id === "p_frappe") { prod.product_name = "Frappé"; }
+                if (prod.product_id === "p_sodas_italianas") { prod.product_name = "Sodas Italianas"; }
+            });
+
+            // 7. Deduplicación blindada por código conocido y por (categoría + nombre normalizado) en Rescate para evitar tarjetas repetidas
             const seenCodes = new Set();
             const seenRescateKeys = new Set();
             p = p.filter(prod => {
@@ -3199,9 +3486,13 @@
                 }
                 if (code && !code.startsWith("LF-")) seenCodes.add(code);
 
-                const k = String(prod.category || "").toLowerCase() + "__" + String(prod.product_name || "").trim().toLowerCase();
-                if (seenRescateKeys.has(k)) return false;
+                const normName = String(prod.product_name || "")
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                    .trim().toLowerCase().replace(/\s+/g, " ");
+                const k = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenRescateKeys.has(k) || seenRescateKeys.has(normName)) return false;
                 seenRescateKeys.add(k);
+                seenRescateKeys.add(normName);
                 return true;
             });
         }
@@ -3584,7 +3875,8 @@
             status: "COMPLETADA",
             items: S.cart.map(i => ({product_id: i.product_id, product_name: i.product_name, quantity: i.quantity, price: i.price, subtotal: i.price*i.quantity})),
             created_at: now(),
-            date_key: currentTodayKey
+            date_key: currentTodayKey,
+            _is_today_live_pm: true
         };
 
         // 1. GUARDADO EN MEMORIA DE SESIÓN Y ALMACENAMIENTO LOCAL COMPACTO (SIN DESBORDAR CUOTA)
@@ -4747,6 +5039,64 @@
             });
         }
 
+        const isRescateAdmin = resolveCanonicalBranch(S.branchName) === "Rescate" ||
+                               String(activeAdminFilter) === "branch-2" ||
+                               resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Rescate";
+
+        if (isRescateAdmin) {
+            displayedProducts = displayedProducts.filter(p => {
+                if (!p) return false;
+                const pNameNorm = String(p.product_name || "").trim().toLowerCase();
+                const pid = String(p.product_id || "");
+
+                // 1. Quitar duplicados específicos en Rescate
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") return false;
+                if (pid === "prod_calz_paleta_mini" || ((pNameNorm === "paleta mini" || pNameNorm === "mini") && pid !== "p_mini")) return false;
+                if (pNameNorm === "trol" && pid !== "p_trol") return false;
+                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande" || pNameNorm === "paleta esquimal grande") && pid !== "prod_1789344787923_spve") return false;
+                if (pNameNorm === "zanahoria" && pid !== "p_paleta_zanahoria") return false;
+                if ((pNameNorm === "bolis" || pNameNorm === "boli") && pid !== "p_bolis") return false;
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("bolsa") && pid !== "p_chechis_bolsa") return false;
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") return false;
+                if (pNameNorm.includes("waffle") && pid !== "p_waffle") return false;
+                if (pNameNorm.includes("frapp") && pid !== "p_frappe") return false;
+                if (pNameNorm.includes("soda italiana") && pid !== "p_sodas_italianas") return false;
+                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") return false;
+                if (pNameNorm.includes("agua mediana") && pid !== "p_ag_mediana") return false;
+                if (pNameNorm.includes("agua chica") && pid !== "p_ag_chica") return false;
+                if (pNameNorm.includes("agua natural chica") && pid !== "p_ag_nat_chica") return false;
+                if (pNameNorm.includes("agua natural grande") && pid !== "p_ag_nat_grande") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") return false;
+                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") return false;
+                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") return false;
+                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") return false;
+                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) return false;
+                if (pNameNorm === "helado") return false;
+                if (pNameNorm === "mordisco" && pid !== "p_mordisco") return false;
+                if (pNameNorm === "mangonadas" && pid !== "p_mangonadas") return false;
+                if (pNameNorm === "mango congelado" && pid !== "p_mango_congelado") return false;
+                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") return false;
+                if (pNameNorm === "donas" && pid !== "p_donas") return false;
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") return false;
+                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") return false;
+                if ((pNameNorm === "paleta agua chica" || pNameNorm === "paleta de agua chica") && pid !== "p_paleta_agua_chica") return false;
+                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") return false;
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") return false;
+                if ((pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso"))) && pid !== "p_tostiloco_vaso") return false;
+                return true;
+            });
+            const seenRescateAdmin = new Set();
+            displayedProducts = displayedProducts.filter(p => {
+                const normName = String(p.product_name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(p.category || "").toLowerCase() + "__" + normName;
+                if (seenRescateAdmin.has(key) || seenRescateAdmin.has(normName)) return false;
+                seenRescateAdmin.add(key);
+                seenRescateAdmin.add(normName);
+                return true;
+            });
+        }
+
         const activeBranchName = S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name || S.branchName;
 
         c.innerHTML = `
@@ -5251,6 +5601,24 @@
                     } catch(e) {}
                 }
 
+                const isRescateTarget = resolveCanonicalBranch(targetBranch) === "Rescate" ||
+                                        resolveCanonicalBranch(S.branchName) === "Rescate" ||
+                                        bId === "branch-2";
+
+                if (isRescateTarget) {
+                    try {
+                        const rawRescate = localStorage.getItem("lf_rescate_permanent_products") || "[]";
+                        let rescateList = JSON.parse(rawRescate);
+                        if (!Array.isArray(rescateList)) rescateList = [];
+                        const rIdx = rescateList.findIndex(p => String(p.product_id) === String(editingProductId));
+                        if (rIdx >= 0) rescateList[rIdx] = { ...prodToEdit };
+                        else rescateList.push({ ...prodToEdit });
+                        localStorage.setItem("lf_rescate_permanent_products", JSON.stringify(rescateList));
+                        localStorage.setItem("lf_rescate_custom_products", JSON.stringify(rescateList));
+                        localStorage.setItem("lf_branch-2_custom_products", JSON.stringify(rescateList));
+                    } catch(e) {}
+                }
+
                 // Si estaba en eliminados de esta sucursal, removerlo para rehabilitarlo
                 const cleanExpDel = gr(branchDelKey, []).filter(id => String(id) !== String(editingProductId));
                 gw(branchDelKey, cleanExpDel);
@@ -5319,6 +5687,18 @@
                         tag2List.push(newProd);
                         localStorage.setItem("lf_tagarete_2_permanent_products", JSON.stringify(tag2List));
                         localStorage.setItem("lf_tagarete_2_custom_products", JSON.stringify(tag2List));
+                    } catch(e) {}
+                }
+
+                if (isRescateTarget) {
+                    try {
+                        const rawRescate = localStorage.getItem("lf_rescate_permanent_products") || "[]";
+                        let rescateList = JSON.parse(rawRescate);
+                        if (!Array.isArray(rescateList)) rescateList = [];
+                        rescateList.push(newProd);
+                        localStorage.setItem("lf_rescate_permanent_products", JSON.stringify(rescateList));
+                        localStorage.setItem("lf_rescate_custom_products", JSON.stringify(rescateList));
+                        localStorage.setItem("lf_branch-2_custom_products", JSON.stringify(rescateList));
                     } catch(e) {}
                 }
 
@@ -13998,37 +14378,18 @@
                         } catch(e) {}
 
                         const cashierName = obs.cashier_name || s.user_name || obs.performed_by_name || "";
-                        const cLower = (cashierName + " " + (obs.user_email || "")).toLowerCase();
+                        const saleRef = { ...s, cashier_name: cashierName, observations: obs };
 
-                        // 1. Detección prioritaria de sucursal (Tagarete 1 y Staff mapping)
-                        const isTag1 = String(obs.branch_name||"").toLowerCase().includes("tagarete 1") ||
-                                       String(obs.branch_id||"") === "branch-4" ||
-                                       String(s.branch_name||"").toLowerCase().includes("tagarete 1") ||
-                                       cLower.includes("encargado7") || cLower.includes("encargado8") ||
-                                       cLower.includes("tagarete 1") || cLower.includes("tagarete1");
-
-                        let bName = "";
-                        if (isTag1) {
-                            bName = "Tagarete 1";
-                        } else {
-                            for (const [em, staffInfo] of Object.entries(STAFF)) {
-                                const numMatch = em.match(/encargado\d+/);
-                                if (cLower.includes(em.toLowerCase()) || (numMatch && cLower.includes(numMatch[0]))) {
-                                    bName = staffInfo.b;
-                                    break;
-                                }
-                            }
-                            if (!bName) {
-                                bName = obs.branch_name || s.branch_name || "";
-                            }
-                            if (!bName && s.branch_id) {
-                                bName = S.branches.find(b=>String(b.id)===String(s.branch_id))?.name || "";
-                            }
-                            if (!bName && (cLower.includes("cnop") || cLower.includes("cenop"))) bName = "CNOP";
-                            if (!bName && (String(s.branch_id || "") === "c188dd82-7faf-41b8-948b-af8e789facba" || String(s.branch_id || "") === "branch-1" || cLower.includes("calzada") || cLower.includes("encargado1") || cLower.includes("encargado2"))) {
-                                bName = "La Fuente Calzada";
-                            }
+                        // 1. Detección inequívoca de sucursal canónica (prioriza observaciones y cajera auténtica)
+                        let bName = resolveCanonicalBranch(saleRef) || resolveCanonicalBranch(obs) || resolveCanonicalBranch(s.branch_name);
+                        if (!bName && s.branch_id) {
+                            const found = S.branches.find(b => String(b.id) === String(s.branch_id));
+                            if (found) bName = resolveCanonicalBranch(found);
                         }
+                        if (!bName) {
+                            bName = resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
+                        }
+                        const realB = S.branches.find(b => resolveCanonicalBranch(b) === bName);
 
                         // 2. Detección precisa de turno (Matutino vs Vespertino)
                         const rawShift = obs.shift_name || s.shift_name || "";
@@ -14038,8 +14399,8 @@
                         return {
                             id: s.id,
                             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                            branch_id: isTag1 ? "branch-4" : (s.branch_id || (bName ? S.branches.find(b => b.name === bName)?.id : "")),
-                            branch_name: bName || (String(s.branch_id || "") === "c188dd82-7faf-41b8-948b-af8e789facba" ? "La Fuente Calzada" : "CNOP"),
+                            branch_id: realB ? realB.id : (bName === "Tagarete 1" ? "branch-4" : (bName === "La Fuente Calzada" ? "c188dd82-7faf-41b8-948b-af8e789facba" : s.branch_id)),
+                            branch_name: bName,
                             shift_name: rawShift || shiftDisplayName,
                             cashier_id: s.user_id,
                             cashier_name: cashierName || "Encargada",
@@ -14155,10 +14516,15 @@
             }
             if (matchedKey) {
                 const prev = salesMap.get(matchedKey);
-                const isTag1Merge = resolveCanonicalBranch(prev) === "Tagarete 1" || resolveCanonicalBranch(s) === "Tagarete 1";
-                const isCalzadaMerge = resolveCanonicalBranch(prev) === "La Fuente Calzada" || resolveCanonicalBranch(s) === "La Fuente Calzada";
-                const finalBranch = isTag1Merge ? "Tagarete 1" : (isCalzadaMerge ? "La Fuente Calzada" : (prev.branch_name && prev.branch_name !== "CNOP" && prev.branch_name !== "General" ? prev.branch_name : s.branch_name));
-                const finalBranchId = isTag1Merge ? "branch-4" : (isCalzadaMerge ? "c188dd82-7faf-41b8-948b-af8e789facba" : (prev.branch_id && prev.branch_id !== "c188dd82-7faf-41b8-948b-af8e789facba" ? prev.branch_id : s.branch_id));
+                const bPrev = resolveCanonicalBranch(prev);
+                const bS = resolveCanonicalBranch(s);
+                let finalBranch = "";
+                if (bS && bS !== "General") finalBranch = bS;
+                else if (bPrev && bPrev !== "General") finalBranch = bPrev;
+                else finalBranch = s.branch_name || prev.branch_name || "La Fuente Calzada";
+
+                const realB = S.branches.find(b => resolveCanonicalBranch(b) === finalBranch);
+                const finalBranchId = realB ? realB.id : (finalBranch === "Tagarete 1" ? "branch-4" : (finalBranch === "La Fuente Calzada" ? "c188dd82-7faf-41b8-948b-af8e789facba" : (s.branch_id || prev.branch_id)));
                 const finalShift = prev.shift_name || s.shift_name;
                 const finalItems = (prev.items && prev.items.length) ? prev.items : (s.items || []);
 
@@ -14189,7 +14555,10 @@
             const assignedBranch = getBranchForSale(s);
             if (assignedBranch) {
                 s.branch_name = assignedBranch;
-                if (assignedBranch === "Tagarete 1") {
+                const realB = S.branches.find(b => resolveCanonicalBranch(b) === assignedBranch);
+                if (realB) {
+                    s.branch_id = realB.id;
+                } else if (assignedBranch === "Tagarete 1") {
                     s.branch_id = "branch-4";
                 } else if (assignedBranch === "La Fuente Calzada") {
                     s.branch_id = s.branch_id || "c188dd82-7faf-41b8-948b-af8e789facba";
@@ -14332,7 +14701,7 @@
             : consolidated.filter(s => {
                 if (isSystemNonSaleRecord(s)) return false;
                 if (isCalzadaFilter) {
-                    return resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada");
+                    return resolveCanonicalBranch(s) === "La Fuente Calzada";
                 }
                 return matchesBranch(s, targetBranchRef);
             });
@@ -14342,11 +14711,9 @@
             const localSources = [
                 _sessionSales,
                 lr("sales", []),
-                gr("all_sales", []),
                 lr("calzada_sales", []),
                 lr("calzada_today_sales", []),
                 lr("branch-1_sales", []),
-                lr("c188dd82-7faf-41b8-948b-af8e789facba_sales", []),
                 lr("la_fuente_calzada_sales", []),
                 lr("all_printed_tickets", []),
                 lr("last_printed_sale") ? [lr("last_printed_sale")] : []
@@ -14355,7 +14722,7 @@
                 if (Array.isArray(list)) {
                     list.forEach(ls => {
                         if (ls && !isSystemNonSaleRecord(ls)) {
-                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
+                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada";
                             if (isCalz) {
                                 if (!branchSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
                                     branchSales.unshift(ls);
@@ -14402,11 +14769,9 @@
             if (isCalzadaFilter) {
                 const localSources = [
                     lr("sales", []),
-                    gr("all_sales", []),
                     lr("calzada_sales", []),
                     lr("calzada_today_sales", []),
                     lr("branch-1_sales", []),
-                    lr("c188dd82-7faf-41b8-948b-af8e789facba_sales", []),
                     lr("la_fuente_calzada_sales", []),
                     lr("all_printed_tickets", []),
                     lr("last_printed_sale") ? [lr("last_printed_sale")] : []
@@ -14415,7 +14780,7 @@
                     if (Array.isArray(list)) {
                         list.forEach(ls => {
                             if (ls && !isSystemNonSaleRecord(ls) && isTodaySale(ls, todayStr)) {
-                                const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
+                                const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada";
                                 if (isCalz && !rawDaySales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
                                     rawDaySales.unshift(ls);
                                 }
@@ -14922,32 +15287,25 @@
             let obs = {};
             try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
 
-            let bName = obs.branch_name || ct.branch_name || fallbackBranch || "";
             let bId = ct.branch_id || "";
             const pLow = String(obs.performed_by_name || obs.cashier_name || ct.performed_by_name || ct.cashier_name || "").toLowerCase();
 
-            const canonicalB = resolveCanonicalBranch(ct) || resolveCanonicalBranch(obs) || resolveCanonicalBranch(fallbackBranch);
-            if (canonicalB) {
-                bName = canonicalB;
-            } else if (bId === "branch-4" || pLow.includes("tagarete 1") || pLow.includes("tagarete1") || (/encargad[oa]7(?!\d)/i.test(pLow)) || (/encargad[oa]8(?!\d)/i.test(pLow))) {
-                bName = "Tagarete 1";
-            } else if (bId === "branch-5" || pLow.includes("tagarete 2") || pLow.includes("tagarete2") || (/encargad[oa]9(?!\d)/i.test(pLow)) || (/encargad[oa]10(?!\d)/i.test(pLow))) {
-                bName = "Tagarete 2";
-            } else if (bId === "branch-6" || pLow.includes("cnop") || pLow.includes("cenop") || (/encargad[oa]11(?!\d)/i.test(pLow)) || (/encargad[oa]12(?!\d)/i.test(pLow))) {
-                bName = "CNOP";
-            } else if (bId === "branch-2" || pLow.includes("rescate") || (/encargad[oa]3(?!\d)/i.test(pLow)) || (/encargad[oa]4(?!\d)/i.test(pLow))) {
-                bName = "Rescate";
-            } else if (bId === "branch-3" || pLow.includes("mollotes") || pLow.includes("molotes") || (/encargad[oa]5(?!\d)/i.test(pLow)) || (/encargad[oa]6(?!\d)/i.test(pLow))) {
-                bName = "Mollotes";
-            } else if (bId === "branch-1" || bId === "c188dd82-7faf-41b8-948b-af8e789facba" || pLow.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(pLow) && !pLow.includes("10") && !pLow.includes("11") && !pLow.includes("12")) || /encargad[oa]2(?!\d)/i.test(pLow)) {
-                bName = "La Fuente Calzada";
-            }
+            // Identificación estricta por metadatos propios del corte
+            const ctRef = { ...ct, cashier_name: pLow, performed_by_name: pLow, observations: obs };
+            let bName = resolveCanonicalBranch(ctRef) || resolveCanonicalBranch(obs) || resolveCanonicalBranch(ct.branch_name);
 
+            if (!bName && fallbackBranch) {
+                bName = resolveCanonicalBranch(fallbackBranch);
+            }
             if (!bName && bId) {
                 const found = S.branches.find(b => String(b.id) === String(bId));
-                if (found) bName = found.name;
+                if (found) bName = resolveCanonicalBranch(found);
             }
-            if (!bName) bName = resolveCanonicalBranch(S.branchName) || S.branchName || "La Fuente Calzada";
+            if (!bName) {
+                bName = resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
+            }
+
+            const realB = S.branches.find(b => resolveCanonicalBranch(b) === bName);
 
             const shiftCat = getShiftCategory({ cashier_name: pLow, shift_name: obs.shift_name || ct.shift_name, created_at: ct.created_at });
             const sName = (shiftCat === "vespertino") ? "Tarde" : "Mañana";
@@ -14959,7 +15317,7 @@
                     id: ct.id || cid,
                     branch_name: bName,
                     shift_name: obs.shift_name || ct.shift_name || sName,
-                    branch_id: bId || (S.branches.find(b => b.name === bName)?.id || S.branchId),
+                    branch_id: realB ? realB.id : (bId || (S.branches.find(b => b.name === bName)?.id || S.branchId)),
                     created_at: ct.created_at || now()
                 });
             }
@@ -14998,7 +15356,7 @@
             lr("last_printed_cut", null) ? [lr("last_printed_cut", null)] : []
         ];
         localCutSources.forEach(list => {
-            if (Array.isArray(list)) list.forEach(c => addCut(c, S.branchName));
+            if (Array.isArray(list)) list.forEach(c => addCut(c, null));
         });
 
         // Cortes remotos desde Supabase
@@ -15092,11 +15450,11 @@
             .filter(ct => !deletedCutIds.has(String(ct.id)))
             .filter(ct => {
                 if (!S.isSU) {
-                    if (isCalzadaBranch) return resolveCanonicalBranch(ct) === "La Fuente Calzada" || matchesBranch(ct, "La Fuente Calzada");
+                    if (isCalzadaBranch) return resolveCanonicalBranch(ct) === "La Fuente Calzada";
                     return matchesBranch(ct, { id: S.branchId, name: S.branchName });
                 }
                 if (activeFilter === "all") return true;
-                if (isCalzadaBranch) return resolveCanonicalBranch(ct) === "La Fuente Calzada" || matchesBranch(ct, "La Fuente Calzada");
+                if (isCalzadaBranch) return resolveCanonicalBranch(ct) === "La Fuente Calzada";
                 return matchesBranch(ct, { id: activeFilter, name: S.branches.find(b=>String(b.id)===String(activeFilter))?.name || S.branchName });
             })
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
@@ -15105,7 +15463,7 @@
         const consolidatedSales = await getConsolidatedSalesForChain(true);
         const currentBranchSales = consolidatedSales.filter(s => {
             if (isSystemNonSaleRecord(s)) return false;
-            if (isCalzadaBranch) return resolveCanonicalBranch(s) === "La Fuente Calzada" || matchesBranch(s, "La Fuente Calzada");
+            if (isCalzadaBranch) return resolveCanonicalBranch(s) === "La Fuente Calzada";
             return matchesBranch(s, { id: S.branchId, name: S.branchName });
         });
         const todayStr = toDateKey();
@@ -15116,11 +15474,9 @@
             const localSources = [
                 _sessionSales,
                 lr("sales", []),
-                gr("all_sales", []),
                 lr("calzada_sales", []),
                 lr("calzada_today_sales", []),
                 lr("branch-1_sales", []),
-                lr("c188dd82-7faf-41b8-948b-af8e789facba_sales", []),
                 lr("la_fuente_calzada_sales", []),
                 lr("all_printed_tickets", []),
                 lr("last_printed_sale") ? [lr("last_printed_sale")] : []
@@ -15129,7 +15485,7 @@
                 if (Array.isArray(list)) {
                     list.forEach(ls => {
                         if (ls && !isSystemNonSaleRecord(ls) && String(ls.status || "").toUpperCase() !== "CANCELLED" && isTodaySale(ls, todayStr)) {
-                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada" || matchesBranch(ls, "La Fuente Calzada");
+                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada";
                             if (isCalz && !todayActiveSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
                                 todayActiveSales.unshift(ls);
                             }
@@ -18125,7 +18481,8 @@
                         if (isSystemNonSaleRecord(n)) return;
                         let obs = {};
                         try { obs = typeof n.observations === "string" ? JSON.parse(n.observations) : (n.observations || {}); } catch(e) {}
-                        const bName = obs.branch_name || (String(n.branch_id||"") === "c188dd82-7faf-41b8-948b-af8e789facba" ? "La Fuente Calzada" : (S.branches.find(b=>String(b.id)===String(n.branch_id))?.name || "Sucursal"));
+                        const bName = resolveCanonicalBranch({ ...n, observations: obs }) || obs.branch_name || (S.branches.find(b=>String(b.id)===String(n.branch_id))?.name || "Sucursal");
+                        const realB = S.branches.find(b => resolveCanonicalBranch(b) === bName);
                         if (S.isSU) {
                             toast(`🔔 Venta cobrada: ${money(n.total)} en ${bName}`, "success", 3500);
                         }
@@ -18138,8 +18495,8 @@
                             const newSaleObj = {
                                 id: n.id,
                                 sale_number: n.sale_number || ("TICK-" + String(n.id).substring(0,8)),
-                                branch_id: n.branch_id || obs.branch_id,
-                                branch_name: obs.branch_name || bName,
+                                branch_id: realB ? realB.id : (n.branch_id || obs.branch_id),
+                                branch_name: bName,
                                 shift_name: obs.shift_name || (getShiftCategory({ cashier_name: obs.cashier_name, created_at: n.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
                                 cashier_id: n.user_id,
                                 cashier_name: obs.cashier_name || "Encargada",
