@@ -5737,9 +5737,25 @@
                                     bId === "branch-1" ||
                                     targetBranch === "all";
 
+            const isTag1Target = isTagarete1Active() ||
+                                 resolveCanonicalBranch(targetBranch) === "Tagarete 1" ||
+                                 resolveCanonicalBranch(S.branchName) === "Tagarete 1" ||
+                                 bId === "branch-4";
+
+            const isTag2Target = isTagarete2Active() ||
+                                 resolveCanonicalBranch(targetBranch) === "Tagarete 2" ||
+                                 resolveCanonicalBranch(S.branchName) === "Tagarete 2" ||
+                                 bId === "branch-5";
+
+            const isRescateTarget = resolveCanonicalBranch(targetBranch) === "Rescate" ||
+                                    resolveCanonicalBranch(S.branchName) === "Rescate" ||
+                                    bId === "branch-2";
+
             const branchDelKey = getBranchExplicitDeletedKey(targetBranch === "all" ? S.branchName : targetBranch);
+            let savedProdId = null;
 
             if (editingProductId) {
+                savedProdId = String(editingProductId);
                 // MODIFICAR PRODUCTO EXISTENTE
                 const customList = gr("custom_products", []);
                 let prodToEdit = customList.find(p => String(p.product_id) === String(editingProductId));
@@ -5787,11 +5803,6 @@
                     } catch(e) {}
                 }
 
-                const isTag1Target = isTagarete1Active() ||
-                                     resolveCanonicalBranch(targetBranch) === "Tagarete 1" ||
-                                     resolveCanonicalBranch(S.branchName) === "Tagarete 1" ||
-                                     bId === "branch-4";
-
                 if (isTag1Target) {
                     try {
                         const rawTag1 = localStorage.getItem("lf_tagarete_1_permanent_products") || "[]";
@@ -5805,11 +5816,6 @@
                     } catch(e) {}
                 }
 
-                const isTag2Target = isTagarete2Active() ||
-                                     resolveCanonicalBranch(targetBranch) === "Tagarete 2" ||
-                                     resolveCanonicalBranch(S.branchName) === "Tagarete 2" ||
-                                     bId === "branch-5";
-
                 if (isTag2Target) {
                     try {
                         const rawTag2 = localStorage.getItem("lf_tagarete_2_permanent_products") || "[]";
@@ -5822,10 +5828,6 @@
                         localStorage.setItem("lf_tagarete_2_custom_products", JSON.stringify(tag2List));
                     } catch(e) {}
                 }
-
-                const isRescateTarget = resolveCanonicalBranch(targetBranch) === "Rescate" ||
-                                        resolveCanonicalBranch(S.branchName) === "Rescate" ||
-                                        bId === "branch-2";
 
                 if (isRescateTarget) {
                     try {
@@ -5841,17 +5843,25 @@
                     } catch(e) {}
                 }
 
-                // Si estaba en eliminados de esta sucursal, removerlo para rehabilitarlo
-                const cleanExpDel = gr(branchDelKey, []).filter(id => String(id) !== String(editingProductId));
-                gw(branchDelKey, cleanExpDel);
-                lw(branchDelKey, cleanExpDel);
+                // Persistencia blindada específica por sucursal
+                const branchCleanName = normalizeBranchName(targetBranch === "all" ? S.branchName : targetBranch).replace(/\s+/g, "_");
+                try {
+                    const bKey = "lf_" + branchCleanName + "_custom_products";
+                    const bList = JSON.parse(localStorage.getItem(bKey) || "[]");
+                    if (Array.isArray(bList)) {
+                        const bIdx = bList.findIndex(p => String(p.product_id) === String(editingProductId));
+                        if (bIdx >= 0) bList[bIdx] = { ...prodToEdit };
+                        else bList.push({ ...prodToEdit });
+                        localStorage.setItem(bKey, JSON.stringify(bList));
+                    }
+                } catch(e) {}
 
                 broadcastCatalogChanges("Producto '" + name + "' editado");
-                editingProductId = null;
                 toast("✓ Cambios guardados en '" + name + "' (Stock: " + stockInp + " uds).", "success", 3500);
             } else {
                 // CREAR NUEVO PRODUCTO
                 const newProdId = "prod_" + Date.now() + "_" + Math.random().toString(36).substring(2,6);
+                savedProdId = newProdId;
                 const newProd = {
                     product_id: newProdId,
                     product_name: name,
@@ -5929,13 +5939,11 @@
                 try {
                     const bKey = "lf_" + branchCleanName + "_custom_products";
                     const bList = JSON.parse(localStorage.getItem(bKey) || "[]");
-                    bList.push(newProd);
-                    localStorage.setItem(bKey, JSON.stringify(bList));
+                    if (Array.isArray(bList)) {
+                        bList.push(newProd);
+                        localStorage.setItem(bKey, JSON.stringify(bList));
+                    }
                 } catch(e) {}
-
-                const cleanExpDel = gr(branchDelKey, []).filter(id => String(id) !== String(newProdId));
-                gw(branchDelKey, cleanExpDel);
-                lw(branchDelKey, cleanExpDel);
 
                 broadcastCatalogChanges("Nuevo producto '" + name + "' registrado");
                 if (db) {
@@ -5952,6 +5960,100 @@
 
                 toast("✓ Producto '" + name + "' guardado con " + stockInp + " unidades en stock.", "success", 3500);
             }
+
+            // Desbloquear de listas de eliminación para que el producto agregado o editado nunca quede oculto
+            try {
+                const targetBranchCanonical = resolveCanonicalBranch(targetBranch === "all" ? S.branchName : targetBranch);
+                const bKey = getBranchKeyName(targetBranchCanonical);
+                const pNameNorm = name.trim().toLowerCase();
+                const unblockIdStr = String(savedProdId || "");
+
+                const delKeysToClean = [
+                    branchDelKey,
+                    "explicit_deleted_ids_v69_" + bKey,
+                    "explicit_deleted_ids_" + bKey,
+                    "explicit_deleted_names_v69_" + bKey,
+                    "explicit_deleted_names_" + bKey
+                ];
+                if (isTag2Target) {
+                    delKeysToClean.push(
+                        "explicit_deleted_ids_v69_tagarete_2",
+                        "explicit_deleted_ids_v69_branch-5",
+                        "explicit_deleted_ids_tagarete_2",
+                        "explicit_deleted_ids_branch-5",
+                        "explicit_deleted_ids_v69_tagarete 2",
+                        "explicit_deleted_names_v69_tagarete_2",
+                        "explicit_deleted_names_v69_branch-5",
+                        "explicit_deleted_names_tagarete_2",
+                        "explicit_deleted_names_branch-5",
+                        "explicit_deleted_names_v69_tagarete 2"
+                    );
+                }
+                if (isTag1Target) {
+                    delKeysToClean.push(
+                        "explicit_deleted_ids_v69_tagarete_1",
+                        "explicit_deleted_ids_v69_branch-4",
+                        "explicit_deleted_ids_tagarete_1",
+                        "explicit_deleted_ids_branch-4",
+                        "explicit_deleted_names_v69_tagarete_1",
+                        "explicit_deleted_names_v69_branch-4",
+                        "explicit_deleted_names_tagarete_1",
+                        "explicit_deleted_names_branch-4"
+                    );
+                }
+                if (isRescateTarget) {
+                    delKeysToClean.push(
+                        "explicit_deleted_ids_v69_rescate",
+                        "explicit_deleted_ids_v69_branch-2",
+                        "explicit_deleted_ids_rescate",
+                        "explicit_deleted_ids_branch-2",
+                        "explicit_deleted_names_v69_rescate",
+                        "explicit_deleted_names_v69_branch-2",
+                        "explicit_deleted_names_rescate",
+                        "explicit_deleted_names_branch-2"
+                    );
+                }
+
+                delKeysToClean.forEach(dk => {
+                    const arr = gr(dk, []);
+                    if (Array.isArray(arr) && arr.length) {
+                        const filtered = arr.filter(item => {
+                            const s = String(item).trim().toLowerCase();
+                            return s !== unblockIdStr.toLowerCase() && s !== pNameNorm;
+                        });
+                        if (filtered.length !== arr.length) {
+                            gw(dk, filtered);
+                            lw(dk, filtered);
+                            try { localStorage.setItem("lf_" + dk, JSON.stringify(filtered)); } catch(e) {}
+                        }
+                    }
+                });
+            } catch(e) {}
+
+            // Limpiar formulario y restablecer vista
+            editingProductId = null;
+            const npName = document.getElementById("np-name");
+            if (npName) npName.value = "";
+            const npCode = document.getElementById("np-code");
+            if (npCode) npCode.value = "";
+            const npPrice = document.getElementById("np-price");
+            if (npPrice) npPrice.value = "";
+            const npStock = document.getElementById("np-stock");
+            if (npStock) npStock.value = "50";
+            const npPack = document.getElementById("np-pack-units");
+            if (npPack) npPack.value = "50";
+            if (chkComposite) chkComposite.checked = false;
+            if (builderBox) builderBox.style.display = "none";
+            tempComponents = [];
+            renderTempComponents();
+            const formTitle = document.getElementById("form-product-title");
+            if (formTitle) formTitle.textContent = "➕ Agregar Nuevo Producto / Compuesto / Insumo";
+            const btnAdd = document.getElementById("btn-add-prod");
+            if (btnAdd) btnAdd.textContent = "✓ Guardar Producto / Compuesto en Catálogo";
+            const btnCancel = document.getElementById("btn-cancel-edit");
+            if (btnCancel) btnCancel.style.display = "none";
+            const delEditBtn = document.getElementById("btn-del-editing-prod");
+            if (delEditBtn) delEditBtn.style.display = "none";
 
             await loadProducts();
             await loadProductsAdmin();
