@@ -2310,11 +2310,39 @@
 
     /* ── PRODUCTOS (CARGA Y PROTECCIÓN TOTAL DE CATÁLOGOS DE TODAS LAS SUCURSALES) ── */
     async function loadProducts() {
+        const bKey = getBranchKeyName(S.branchName);
         const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
-        const explicitDelSet = new Set(gr(branchDelKey, []).map(String));
+        const explicitDelSet = new Set([
+            ...gr(branchDelKey, []),
+            ...gr("explicit_deleted_ids_v69_" + bKey, []),
+            ...gr("explicit_deleted_ids_" + bKey, []),
+            ...(bKey === "tagarete_2" ? [
+                ...gr("explicit_deleted_ids_v69_branch-5", []),
+                ...gr("explicit_deleted_ids_branch-5", []),
+                ...gr("explicit_deleted_ids_v69_tagarete 2", [])
+            ] : []),
+            ...(bKey === "tagarete_1" ? [
+                ...gr("explicit_deleted_ids_v69_branch-4", []),
+                ...gr("explicit_deleted_ids_branch-4", [])
+            ] : []),
+            ...(bKey === "rescate" ? [
+                ...gr("explicit_deleted_ids_v69_branch-2", []),
+                ...gr("explicit_deleted_ids_branch-2", [])
+            ] : [])
+        ].map(String));
+
+        const explicitDelNamesSet = new Set([
+            ...gr("explicit_deleted_names_v69_" + bKey, []),
+            ...gr("explicit_deleted_names_" + bKey, []),
+            ...(bKey === "tagarete_2" ? [
+                ...gr("explicit_deleted_names_v69_branch-5", []),
+                ...gr("explicit_deleted_names_branch-5", []),
+                ...gr("explicit_deleted_names_v69_tagarete 2", [])
+            ] : [])
+        ].map(s => String(s).trim().toLowerCase()));
 
         // Cargar catálogo base compartido (respetando solo eliminaciones explícitas de la sucursal activa)
-        let calzadaPermanent = CALZADA_BASE_PRODUCTS.filter(cp => !explicitDelSet.has(String(cp.product_id))).map(sanitizeSharedCatalogProduct);
+        let calzadaPermanent = CALZADA_BASE_PRODUCTS.filter(cp => !explicitDelSet.has(String(cp.product_id)) && !explicitDelNamesSet.has(String(cp.product_name || "").trim().toLowerCase())).map(sanitizeSharedCatalogProduct);
         try {
             const rawCalz = localStorage.getItem("lf_calzada_permanent_products");
             if (rawCalz) {
@@ -2553,9 +2581,8 @@
                 s.items.forEach(it => {
                     if (!it || !it.product_id || !it.product_name) return;
                     const pid = String(it.product_id);
-                    if (explicitDelSet.has(pid) || combinedMap.has(pid)) return;
-                    // Evitar duplicar si en la misma sucursal ya existe exactamente el mismo nombre y precio en el catálogo base
                     const normName = String(it.product_name).trim().toLowerCase();
+                    if (explicitDelSet.has(pid) || explicitDelNamesSet.has(normName) || combinedMap.has(pid)) return;
                     const alreadyHasSameNameInBranch = Array.from(combinedMap.values()).some(existingP => {
                         if (String(existingP.product_name || "").trim().toLowerCase() !== normName) return false;
                         return isProductAllowedInBranch(existingP, saleBranch);
@@ -2960,7 +2987,7 @@
         // 6.2. Reglas exclusivas, deduplicación y saneamiento estricto SOLO para la sucursal Tagarete 2:
         const isCurrentTagarete2 = isTagarete2Active();
         if (isCurrentTagarete2) {
-            // A. Sanear almacenamiento local de Tagarete 2 (remover duplicados y productos no deseados)
+            // A. Sanear almacenamiento local de Tagarete 2 (remover duplicados y productos eliminados)
             try {
                 const t2Keys = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
                 t2Keys.forEach(tk => {
@@ -2973,6 +3000,11 @@
                                 if (!p) return false;
                                 const pNameNorm = String(p.product_name || "").trim().toLowerCase();
                                 const pid = String(p.product_id || p.id || "");
+                                // Si fue eliminado explícitamente por las encargadas
+                                if (explicitDelSet.has(pid) || explicitDelNamesSet.has(pNameNorm)) {
+                                    modified = true;
+                                    return false;
+                                }
                                 // 1. Quitar la que dice solo "Chaparrita"
                                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") {
                                     modified = true;
@@ -2985,6 +3017,38 @@
                                 }
                                 // 3. Quitar duplicados de Trol
                                 if (pNameNorm === "trol" && pid !== "p_trol") {
+                                    modified = true;
+                                    return false;
+                                }
+                                // 4. Quitar duplicados de Paleta de Agua Grande (dejar únicamente p_paleta_agua_gde)
+                                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande" || pNameNorm === "paleta de agua") && pid !== "p_paleta_agua_gde") {
+                                    modified = true;
+                                    return false;
+                                }
+                                if ((pid === "prod_1789511159938_cxxn" || pid === "prod_1789503512135_chg1" || pid === "p_paleta_agua_gd" || pid === "prod_calz_paleta_agua") && pid !== "p_paleta_agua_gde") {
+                                    modified = true;
+                                    return false;
+                                }
+                                // 5. Quitar duplicados de Papas con Cueros (dejar únicamente p_papas_cueros)
+                                if ((pNameNorm === "papas con cueros" || pNameNorm === "papas cueros") && pid !== "p_papas_cueros") {
+                                    modified = true;
+                                    return false;
+                                }
+                                // 6. Quitar duplicados de Tostilocos (dejar únicamente p_tostilocos)
+                                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") {
+                                    modified = true;
+                                    return false;
+                                }
+                                if ((pid === "prod_1789523192471_i682" || pid === "prod_calz_tostiloco_morado") && pid !== "p_tostilocos") {
+                                    modified = true;
+                                    return false;
+                                }
+                                // 7. Quitar duplicados de Tostilocos en vaso (dejar únicamente p_tostiloco_vaso)
+                                if ((pNameNorm === "tostilocos en vaso" || pNameNorm === "tostiloco en vaso" || pNameNorm === "tostiloco vaso" || pNameNorm === "tostitos vaso") && pid !== "p_tostiloco_vaso") {
+                                    modified = true;
+                                    return false;
+                                }
+                                if ((pid === "prod_calz_tostitos_vaso" || pid === "p_tostiloco_vaso_barcel" || pid === "prod_tostiloco_vaso") && pid !== "p_tostiloco_vaso") {
                                     modified = true;
                                     return false;
                                 }
@@ -3002,6 +3066,12 @@
             for (const [pid, prod] of Array.from(combinedMap.entries())) {
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
 
+                // Si fue eliminado explícitamente en Tagarete 2
+                if (explicitDelSet.has(pid) || explicitDelNamesSet.has(pNameNorm)) {
+                    combinedMap.delete(pid);
+                    continue;
+                }
+
                 // 1. Quitar producto que dice sólo "Chaparrita" y conservar "Paleta Chaparrita"
                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") {
                     combinedMap.delete(pid);
@@ -3016,68 +3086,100 @@
                 if (pNameNorm === "trol" && pid !== "p_trol") {
                     combinedMap.delete(pid);
                 }
-            }
 
-            // C. Garantizar que "Paleta Chaparrita", "MINI" y "Trol" existan con los datos oficiales correctos
-            // Paleta Chaparrita ($20, paletas)
-            let chaparritaProd = combinedMap.get("p_paleta_chapurrita") || combinedMap.get("p_paleta_chaparrita");
-            if (chaparritaProd) {
-                chaparritaProd.product_name = "Paleta Chaparrita";
-                chaparritaProd.product_code = "PCH";
-                chaparritaProd.category = "paletas";
-                if (!chaparritaProd.user_edited_price_v69) chaparritaProd.price = 20;
-                combinedMap.set("p_paleta_chapurrita", chaparritaProd);
-                if (combinedMap.has("p_paleta_chaparrita")) combinedMap.delete("p_paleta_chaparrita");
-            } else {
-                const defChapa = DEFAULT_PRODUCTS.find(dp => dp.product_id === "p_paleta_chapurrita");
-                if (defChapa) {
-                    combinedMap.set("p_paleta_chapurrita", {
-                        ...defChapa,
-                        product_name: "Paleta Chaparrita",
-                        product_code: "PCH",
-                        category: "paletas",
-                        price: 20
-                    });
+                // 4. Eliminar duplicados de Paleta de Agua Grande (conservar p_paleta_agua_gde)
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande" || pNameNorm === "paleta de agua") && pid !== "p_paleta_agua_gde") {
+                    combinedMap.delete(pid);
+                }
+                if ((pid === "prod_1789511159938_cxxn" || pid === "prod_1789503512135_chg1" || pid === "p_paleta_agua_gd" || pid === "prod_calz_paleta_agua") && pid !== "p_paleta_agua_gde") {
+                    combinedMap.delete(pid);
+                }
+
+                // 5. Eliminar duplicados de Papas con Cueros (conservar p_papas_cueros)
+                if ((pNameNorm === "papas con cueros" || pNameNorm === "papas cueros") && pid !== "p_papas_cueros") {
+                    combinedMap.delete(pid);
+                }
+
+                // 6. Eliminar duplicados de Tostilocos (conservar p_tostilocos)
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") {
+                    combinedMap.delete(pid);
+                }
+                if ((pid === "prod_1789523192471_i682" || pid === "prod_calz_tostiloco_morado") && pid !== "p_tostilocos") {
+                    combinedMap.delete(pid);
+                }
+
+                // 7. Eliminar duplicados de Tostilocos en vaso (conservar p_tostiloco_vaso)
+                if ((pNameNorm === "tostilocos en vaso" || pNameNorm === "tostiloco en vaso" || pNameNorm === "tostiloco vaso" || pNameNorm === "tostitos vaso") && pid !== "p_tostiloco_vaso") {
+                    combinedMap.delete(pid);
+                }
+                if ((pid === "prod_calz_tostitos_vaso" || pid === "p_tostiloco_vaso_barcel" || pid === "prod_tostiloco_vaso") && pid !== "p_tostiloco_vaso") {
+                    combinedMap.delete(pid);
                 }
             }
 
-            // MINI ($5, paletas) - única, sin "Paleta mini"
-            let miniProd = combinedMap.get("p_mini");
-            if (miniProd) {
-                miniProd.product_name = "MINI";
-                miniProd.product_code = "MINI";
-                miniProd.category = "paletas";
-                if (!miniProd.user_edited_price_v69) miniProd.price = 5;
-            } else {
-                const defMini = DEFAULT_PRODUCTS.find(dp => dp.product_id === "p_mini");
-                if (defMini) {
-                    combinedMap.set("p_mini", {
-                        ...defMini,
-                        product_name: "MINI",
-                        product_code: "MINI",
-                        category: "paletas",
-                        price: 5
-                    });
-                }
-            }
+            // C. Garantizar productos oficiales únicos con nombres y precios correctos para Tagarete 2 (solo si no fueron eliminados)
+            const officialTag2Config = [
+                { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH" },
+                { id: "p_mini", name: "MINI", cat: "paletas", price: 5, code: "MINI" },
+                { id: "p_trol", name: "Trol", cat: "congelados", price: 30, code: "Trol" },
+                { id: "p_paleta_agua_gde", name: "Paleta Agua Grande", cat: "paletas", price: 25, code: "PAG" },
+                { id: "p_papas_cueros", name: "Papas con Cueros", cat: "preparados", price: 50, code: "PCC" },
+                { id: "p_tostilocos", name: "Tostilocos", cat: "preparados", price: 55, code: "TP" },
+                { id: "p_tostiloco_vaso", name: "Tostiloco en Vaso", cat: "preparados", price: 60, code: "TV" }
+            ];
 
-            // Trol ($30, congelados) - único
-            let trolProd = combinedMap.get("p_trol");
-            if (trolProd) {
-                trolProd.product_name = "Trol";
-                trolProd.product_code = "Trol";
-                trolProd.category = "congelados";
-                if (!trolProd.user_edited_price_v69) trolProd.price = 30;
-            } else {
-                const defTrol = DEFAULT_PRODUCTS.find(dp => dp.product_id === "p_trol");
-                if (defTrol) {
-                    combinedMap.set("p_trol", {
-                        ...defTrol,
-                        product_name: "Trol",
-                        product_code: "Trol",
-                        category: "congelados",
-                        price: 30
-                    });
+            officialTag2Config.forEach(cfg => {
+                if (!explicitDelSet.has(cfg.id) && !explicitDelNamesSet.has(cfg.name.toLowerCase())) {
+                    let existing = combinedMap.get(cfg.id);
+                    if (existing) {
+                        existing.product_name = cfg.name;
+                        existing.category = cfg.cat;
+                        if (!existing.user_edited_price_v69) existing.price = cfg.price;
+                        if (cfg.code) existing.product_code = cfg.code;
+                    } else {
+                        const def = DEFAULT_PRODUCTS.find(dp => dp.product_id === cfg.id);
+                        if (def) {
+                            combinedMap.set(cfg.id, {
+                                ...def,
+                                product_name: cfg.name,
+                                category: cfg.cat,
+                                price: cfg.price,
+                                product_code: cfg.code || def.product_code
+                            });
+                        }
+                    }
+                }
+            });
+
+            // D. Deduplicación general y blindaje de productos únicos para Tagarete 2 (incluyendo Litro de Nieve y demás)
+            const seenTag2General = new Map();
+            for (const [pid, prod] of Array.from(combinedMap.entries())) {
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const normKey = String(prod.category || "").toLowerCase() + "__" + pNameNorm;
+
+                // Si contiene "litro de nieve" o "1 litro de nieve", deduplicar contra la clave canónica de helados
+                if (pNameNorm.includes("litro de nieve") || pNameNorm === "litro nieve") {
+                    const lKey = "helados__litro de nieve";
+                    if (seenTag2General.has(lKey)) {
+                        combinedMap.delete(pid);
+                        continue;
+                    } else {
+                        seenTag2General.set(lKey, pid);
+                    }
+                }
+
+                if (!seenTag2General.has(normKey)) {
+                    seenTag2General.set(normKey, pid);
+                } else {
+                    const prevPid = seenTag2General.get(normKey);
+                    const isCurOfficial = officialTag2Config.some(c => c.id === pid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === pid);
+                    const isPrevOfficial = officialTag2Config.some(c => c.id === prevPid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === prevPid);
+                    if (isCurOfficial && !isPrevOfficial) {
+                        combinedMap.delete(prevPid);
+                        seenTag2General.set(normKey, pid);
+                    } else {
+                        combinedMap.delete(pid);
+                    }
                 }
             }
         }
@@ -3293,6 +3395,14 @@
             }
         }
 
+        // Purgar de combinedMap cualquier producto que haya sido eliminado explícitamente en la sucursal activa
+        for (const [pid, prod] of Array.from(combinedMap.entries())) {
+            const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+            if (explicitDelSet.has(pid) || explicitDelNamesSet.has(pNameNorm)) {
+                combinedMap.delete(pid);
+            }
+        }
+
         S.products = Array.from(combinedMap.values()).sort((a,b) => {
             if (a.is_supply !== b.is_supply) return a.is_supply ? 1 : -1;
             return a.product_name.localeCompare(b.product_name);
@@ -3503,14 +3613,34 @@
                 if (!prod) return false;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
                 const pid = String(prod.product_id || "");
+
                 // 1. Quitar la que dice solo "Chaparrita" y dejar "Paleta Chaparrita"
                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") return false;
+
                 // 2. Quitar "Paleta mini" y sus duplicados, dejar sólo "MINI" (p_mini)
                 if (pid === "prod_calz_paleta_mini" || (pNameNorm === "paleta mini" && pid !== "p_mini")) return false;
+
                 // 3. Quitar duplicados de Trol (dejar solo p_trol)
                 if (pNameNorm === "trol" && pid !== "p_trol") return false;
+
+                // 4. Paleta de Agua Grande: dejar únicamente p_paleta_agua_gde
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande" || pNameNorm === "paleta de agua") && pid !== "p_paleta_agua_gde") return false;
+                if ((pid === "prod_1789511159938_cxxn" || pid === "prod_1789503512135_chg1" || pid === "p_paleta_agua_gd" || pid === "prod_calz_paleta_agua") && pid !== "p_paleta_agua_gde") return false;
+
+                // 5. Papas con Cueros: dejar únicamente p_papas_cueros
+                if ((pNameNorm === "papas con cueros" || pNameNorm === "papas cueros") && pid !== "p_papas_cueros") return false;
+
+                // 6. Tostilocos: dejar únicamente p_tostilocos
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") return false;
+                if ((pid === "prod_1789523192471_i682" || pid === "prod_calz_tostiloco_morado") && pid !== "p_tostilocos") return false;
+
+                // 7. Tostilocos en vaso: dejar únicamente p_tostiloco_vaso
+                if ((pNameNorm === "tostilocos en vaso" || pNameNorm === "tostiloco en vaso" || pNameNorm === "tostiloco vaso" || pNameNorm === "tostitos vaso") && pid !== "p_tostiloco_vaso") return false;
+                if ((pid === "prod_calz_tostitos_vaso" || pid === "p_tostiloco_vaso_barcel" || pid === "prod_tostiloco_vaso") && pid !== "p_tostiloco_vaso") return false;
+
                 return true;
             });
+
             p.forEach(prod => {
                 if (prod.product_id === "p_paleta_chapurrita" || prod.product_id === "p_paleta_chaparrita") {
                     prod.product_name = "Paleta Chaparrita";
@@ -3521,15 +3651,38 @@
                 if (prod.product_id === "p_trol") {
                     prod.product_name = "Trol";
                 }
+                if (prod.product_id === "p_paleta_agua_gde") {
+                    prod.product_name = "Paleta Agua Grande";
+                    prod.category = "paletas";
+                    if (!prod.user_edited_price_v69) prod.price = 25;
+                }
+                if (prod.product_id === "p_papas_cueros") {
+                    prod.product_name = "Papas con Cueros";
+                    prod.category = "preparados";
+                    if (!prod.user_edited_price_v69) prod.price = 50;
+                }
+                if (prod.product_id === "p_tostilocos") {
+                    prod.product_name = "Tostilocos";
+                    prod.category = "preparados";
+                    if (!prod.user_edited_price_v69) prod.price = 55;
+                }
+                if (prod.product_id === "p_tostiloco_vaso") {
+                    prod.product_name = "Tostiloco en Vaso";
+                    prod.category = "preparados";
+                    if (!prod.user_edited_price_v69) prod.price = 60;
+                }
             });
-            // Deduplicación estricta por nombre clave en Tagarete 2
+
+            // Deduplicación estricta y blindada por nombre y categoría en Tagarete 2 para jamás repetir ninguna tarjeta en el POS
             const seenTag2Keys = new Set();
             p = p.filter(prod => {
-                const normName = String(prod.product_name || "").trim().toLowerCase();
-                if (normName === "trol" || normName === "mini" || normName === "paleta chaparrita") {
-                    if (seenTag2Keys.has(normName)) return false;
-                    seenTag2Keys.add(normName);
+                const normName = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenTag2Keys.has(key) || (normName.includes("litro de nieve") && seenTag2Keys.has("helados__litro de nieve"))) {
+                    return false;
                 }
+                seenTag2Keys.add(key);
+                if (normName.includes("litro de nieve")) seenTag2Keys.add("helados__litro de nieve");
                 return true;
             });
         }
@@ -4977,23 +5130,53 @@
             return isProductAllowedInBranch(p, targetBranch.name);
         });
 
-        if (isTagarete2Active()) {
+        const isTag2Admin = isTagarete2Active() ||
+                            String(activeAdminFilter) === "branch-5" ||
+                            resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Tagarete 2";
+
+        if (isTag2Admin) {
             displayedProducts = displayedProducts.filter(p => {
                 if (!p) return false;
                 const pNameNorm = String(p.product_name || "").trim().toLowerCase();
                 const pid = String(p.product_id || "");
+
+                // 1. Quitar la que dice solo "Chaparrita" y dejar "Paleta Chaparrita"
                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") return false;
+
+                // 2. Quitar "Paleta mini" y sus duplicados, dejar sólo "MINI" (p_mini)
                 if (pid === "prod_calz_paleta_mini" || (pNameNorm === "paleta mini" && pid !== "p_mini")) return false;
+
+                // 3. Quitar duplicados de Trol
                 if (pNameNorm === "trol" && pid !== "p_trol") return false;
+
+                // 4. Paleta de Agua Grande: dejar únicamente p_paleta_agua_gde
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande" || pNameNorm === "paleta de agua") && pid !== "p_paleta_agua_gde") return false;
+                if ((pid === "prod_1789511159938_cxxn" || pid === "prod_1789503512135_chg1" || pid === "p_paleta_agua_gd" || pid === "prod_calz_paleta_agua") && pid !== "p_paleta_agua_gde") return false;
+
+                // 5. Papas con Cueros: dejar únicamente p_papas_cueros
+                if ((pNameNorm === "papas con cueros" || pNameNorm === "papas cueros") && pid !== "p_papas_cueros") return false;
+
+                // 6. Tostilocos: dejar únicamente p_tostilocos
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") return false;
+                if ((pid === "prod_1789523192471_i682" || pid === "prod_calz_tostiloco_morado") && pid !== "p_tostilocos") return false;
+
+                // 7. Tostilocos en vaso: dejar únicamente p_tostiloco_vaso
+                if ((pNameNorm === "tostilocos en vaso" || pNameNorm === "tostiloco en vaso" || pNameNorm === "tostiloco vaso" || pNameNorm === "tostitos vaso") && pid !== "p_tostiloco_vaso") return false;
+                if ((pid === "prod_calz_tostitos_vaso" || pid === "p_tostiloco_vaso_barcel" || pid === "prod_tostiloco_vaso") && pid !== "p_tostiloco_vaso") return false;
+
                 return true;
             });
+
+            // Deduplicación blindada en el catálogo administrativo de Tagarete 2
             const seenTag2Admin = new Set();
             displayedProducts = displayedProducts.filter(p => {
-                const normName = String(p.product_name || "").trim().toLowerCase();
-                if (normName === "trol" || normName === "mini" || normName === "paleta chaparrita") {
-                    if (seenTag2Admin.has(normName)) return false;
-                    seenTag2Admin.add(normName);
+                const normName = String(p.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(p.category || "").toLowerCase() + "__" + normName;
+                if (seenTag2Admin.has(key) || (normName.includes("litro de nieve") && seenTag2Admin.has("helados__litro de nieve"))) {
+                    return false;
                 }
+                seenTag2Admin.add(key);
+                if (normName.includes("litro de nieve")) seenTag2Admin.add("helados__litro de nieve");
                 return true;
             });
         }
@@ -5181,6 +5364,9 @@
             <button type="button" id="btn-add-prod"
                 style="padding:13px 32px;background:linear-gradient(135deg,var(--wine-800),var(--wine-600));color:#fff;border:none;border-radius:10px;font-weight:900;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(112,23,33,0.3)">
                 ✓ Guardar Producto / Compuesto en Catálogo</button>
+            <button type="button" id="btn-del-editing-prod"
+                style="display:none;padding:13px 22px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:10px;font-weight:900;font-size:13.5px;cursor:pointer;margin-left:8px">
+                🗑 Eliminar este Producto</button>
         </div>
 
         <!-- SECCIÓN: ADMINISTRACIÓN & EDICIÓN RÁPIDA DE INSUMOS Y DESECHABLES -->
@@ -5422,11 +5608,43 @@
             const ok = await toastConfirm("¿Eliminar el insumo '" + supName + "' del catálogo de esta sucursal?");
             if (!ok) return;
 
-            const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
+            const targetBranch = (activeAdminFilter !== "all" && S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) || S.branchName || "Tagarete 2";
+            const bKey = getBranchKeyName(targetBranch);
+            const isTag2 = resolveCanonicalBranch(targetBranch) === "Tagarete 2" || isTagarete2Active() || bKey === "tagarete_2";
+
+            const branchDelKey = getBranchExplicitDeletedKey(targetBranch);
             const deletedIds = gr(branchDelKey, []);
             if (!deletedIds.includes(String(supId))) deletedIds.push(String(supId));
             gw(branchDelKey, deletedIds);
             lw(branchDelKey, deletedIds);
+
+            if (isTag2) {
+                const t2DelKeys = ["explicit_deleted_ids_v69_tagarete_2", "explicit_deleted_ids_v69_branch-5", "explicit_deleted_ids_tagarete_2", "explicit_deleted_ids_branch-5"];
+                t2DelKeys.forEach(dk => {
+                    const arr = gr(dk, []);
+                    if (!arr.includes(String(supId))) arr.push(String(supId));
+                    gw(dk, arr);
+                    lw(dk, arr);
+                });
+                const t2StorageKeys = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
+                t2StorageKeys.forEach(tk => {
+                    try {
+                        const raw = localStorage.getItem(tk);
+                        if (raw) {
+                            let arr = JSON.parse(raw);
+                            if (Array.isArray(arr)) {
+                                arr = arr.filter(p => p && String(p.product_id || p.id) !== String(supId));
+                                localStorage.setItem(tk, JSON.stringify(arr));
+                            }
+                        }
+                    } catch(e) {}
+                });
+            }
+
+            let customList = gr("custom_products", []);
+            customList = customList.filter(p => p && String(p.product_id || p.id) !== String(supId));
+            gw("custom_products", customList);
+            lw("custom_products", customList);
 
             broadcastCatalogChanges("Insumo '" + supName + "' eliminado");
             toast("✓ Insumo '" + supName + "' eliminado.", "info");
@@ -5462,6 +5680,8 @@
             document.getElementById("form-product-title").textContent = "✏️ Modificando Producto: " + p.product_name;
             document.getElementById("btn-add-prod").textContent = "💾 Guardar Cambios en Producto";
             document.getElementById("btn-cancel-edit").style.display = "inline-block";
+            const delEditBtn = document.getElementById("btn-del-editing-prod");
+            if (delEditBtn) delEditBtn.style.display = "inline-block";
 
             document.getElementById("form-product-card")?.scrollIntoView({ behavior: "smooth" });
         }));
@@ -5479,6 +5699,8 @@
             document.getElementById("form-product-title").textContent = "➕ Agregar Nuevo Producto / Compuesto / Insumo";
             document.getElementById("btn-add-prod").textContent = "✓ Guardar Producto / Compuesto en Catálogo";
             document.getElementById("btn-cancel-edit").style.display = "none";
+            const delEditBtn = document.getElementById("btn-del-editing-prod");
+            if (delEditBtn) delEditBtn.style.display = "none";
         });
 
         document.getElementById("admin-branch-filter")?.addEventListener("change", async e => {
@@ -5735,21 +5957,148 @@
             await loadProductsAdmin();
         });
 
+        // Función centralizada y blindada para eliminar productos permanentemente por sucursal
+        async function executeProductDeletion(prodId, prodName, branchContext) {
+            if (!prodId) return;
+            const pIdStr = String(prodId);
+            const pNameStr = String(prodName || "");
+            const pNameNorm = pNameStr.trim().toLowerCase();
+
+            const targetBranch = branchContext || (activeAdminFilter !== "all" && S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) || S.branchName || "Tagarete 2";
+            const bKey = getBranchKeyName(targetBranch);
+            const bCanon = resolveCanonicalBranch(targetBranch);
+            const isTag2 = bCanon === "Tagarete 2" || isTagarete2Active() || bKey === "tagarete_2" || String(activeAdminFilter) === "branch-5";
+
+            // 1. Claves de borrado explícito por ID
+            const delKeysToUpdate = [
+                "explicit_deleted_ids_v69_" + bKey,
+                "explicit_deleted_ids_" + bKey
+            ];
+            if (isTag2) {
+                delKeysToUpdate.push(
+                    "explicit_deleted_ids_v69_tagarete_2",
+                    "explicit_deleted_ids_v69_branch-5",
+                    "explicit_deleted_ids_tagarete_2",
+                    "explicit_deleted_ids_branch-5",
+                    "explicit_deleted_ids_v69_tagarete 2"
+                );
+            }
+            delKeysToUpdate.forEach(dk => {
+                const arr = gr(dk, []);
+                if (!arr.includes(pIdStr)) arr.push(pIdStr);
+                gw(dk, arr);
+                lw(dk, arr);
+                try { localStorage.setItem("lf_" + dk, JSON.stringify(arr)); } catch(e) {}
+            });
+
+            // 2. Claves de borrado explícito por Nombre (para evitar que historicalSalesToScan o ventas pasadas lo revivan)
+            if (pNameNorm) {
+                const delNameKeys = [
+                    "explicit_deleted_names_v69_" + bKey,
+                    "explicit_deleted_names_" + bKey
+                ];
+                if (isTag2) {
+                    delNameKeys.push(
+                        "explicit_deleted_names_v69_tagarete_2",
+                        "explicit_deleted_names_v69_branch-5",
+                        "explicit_deleted_names_tagarete_2",
+                        "explicit_deleted_names_branch-5"
+                    );
+                }
+                delNameKeys.forEach(dnk => {
+                    const arr = gr(dnk, []);
+                    if (!arr.includes(pNameNorm)) arr.push(pNameNorm);
+                    gw(dnk, arr);
+                    lw(dnk, arr);
+                    try { localStorage.setItem("lf_" + dnk, JSON.stringify(arr)); } catch(e) {}
+                });
+            }
+
+            // 3. Eliminar de las listas persistentes de la sucursal
+            if (isTag2) {
+                const t2StorageKeys = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
+                t2StorageKeys.forEach(tk => {
+                    try {
+                        const raw = localStorage.getItem(tk);
+                        if (raw) {
+                            let arr = JSON.parse(raw);
+                            if (Array.isArray(arr)) {
+                                arr = arr.filter(p => p && String(p.product_id || p.id) !== pIdStr && String(p.product_name || "").trim().toLowerCase() !== pNameNorm);
+                                localStorage.setItem(tk, JSON.stringify(arr));
+                            }
+                        }
+                    } catch(e) {}
+                });
+            } else if (bCanon === "Tagarete 1") {
+                const t1StorageKeys = ["lf_tagarete_1_permanent_products", "lf_tagarete_1_custom_products", "lf_branch-4_custom_products"];
+                t1StorageKeys.forEach(tk => {
+                    try {
+                        const raw = localStorage.getItem(tk);
+                        if (raw) {
+                            let arr = JSON.parse(raw);
+                            if (Array.isArray(arr)) {
+                                arr = arr.filter(p => p && String(p.product_id || p.id) !== pIdStr && String(p.product_name || "").trim().toLowerCase() !== pNameNorm);
+                                localStorage.setItem(tk, JSON.stringify(arr));
+                            }
+                        }
+                    } catch(e) {}
+                });
+            } else if (bCanon === "Rescate") {
+                const resStorageKeys = ["lf_rescate_permanent_products", "lf_rescate_custom_products", "lf_branch-2_custom_products"];
+                resStorageKeys.forEach(tk => {
+                    try {
+                        const raw = localStorage.getItem(tk);
+                        if (raw) {
+                            let arr = JSON.parse(raw);
+                            if (Array.isArray(arr)) {
+                                arr = arr.filter(p => p && String(p.product_id || p.id) !== pIdStr && String(p.product_name || "").trim().toLowerCase() !== pNameNorm);
+                                localStorage.setItem(tk, JSON.stringify(arr));
+                            }
+                        }
+                    } catch(e) {}
+                });
+            }
+
+            // 4. Eliminar de custom_products y memoria
+            let customList = gr("custom_products", []);
+            customList = customList.filter(p => p && String(p.product_id || p.id) !== pIdStr && String(p.product_name || "").trim().toLowerCase() !== pNameNorm);
+            gw("custom_products", customList);
+            lw("custom_products", customList);
+            try { localStorage.setItem("lf_custom_products", JSON.stringify(customList)); } catch(e) {}
+
+            S.products = S.products.filter(p => p && String(p.product_id || p.id) !== pIdStr && String(p.product_name || "").trim().toLowerCase() !== pNameNorm);
+
+            // 5. Desactivar en Supabase si está disponible
+            if (db) {
+                try {
+                    await db.from("products").update({ is_active: false }).eq("id", pIdStr);
+                } catch(e) {}
+            }
+
+            // 6. Notificar y sincronizar
+            broadcastCatalogChanges("Producto '" + pNameStr + "' eliminado en " + targetBranch);
+            toast("✓ Producto '" + pNameStr + "' eliminado del catálogo de " + targetBranch + ".", "info", 3500);
+
+            editingProductId = null;
+            await loadProducts();
+            await loadProductsAdmin();
+        }
+
+        // Eliminar producto desde el botón del formulario de edición
+        document.getElementById("btn-del-editing-prod")?.addEventListener("click", async () => {
+            if (!editingProductId) return;
+            const p = S.products.find(x => String(x.product_id) === String(editingProductId));
+            const pName = p ? p.product_name : (document.getElementById("np-name")?.value || "producto");
+            const ok = await toastConfirm("¿Estás seguro de eliminar el producto '" + pName + "' del catálogo de esta sucursal?");
+            if (!ok) return;
+            await executeProductDeletion(editingProductId, pName);
+        });
+
+        // Eliminar producto desde la tarjeta de catálogo
         c.querySelectorAll(".btn-del-prod").forEach(btn => btn.addEventListener("click", async () => {
             const ok = await toastConfirm("¿Estás seguro de eliminar el producto '" + btn.dataset.name + "' del catálogo de esta sucursal?");
             if (!ok) return;
-
-            const prodId = String(btn.dataset.id);
-            const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
-            const explicitDelIds = gr(branchDelKey, []);
-            if (!explicitDelIds.includes(prodId)) explicitDelIds.push(prodId);
-            gw(branchDelKey, explicitDelIds);
-            lw(branchDelKey, explicitDelIds);
-
-            broadcastCatalogChanges("Producto '" + btn.dataset.name + "' eliminado en " + S.branchName);
-            toast("✓ Producto '" + btn.dataset.name + "' eliminado del catálogo de " + S.branchName + ".", "info", 3500);
-            await loadProducts();
-            await loadProductsAdmin();
+            await executeProductDeletion(btn.dataset.id, btn.dataset.name);
         }));
     }
     /* ── INVENTARIO (CONTROL POR PAQUETES/BOLSAS Y PRODUCTOS COMPUESTOS) ── */
