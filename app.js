@@ -1559,6 +1559,17 @@
             "adbc5511-68a8-4525-97a3-ac7972856e89": 48,
             "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 42,
             "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 40,
+            "p_ag_nat_grande": 40,
+            "p_ag_chica": 40,
+            "p_ag_grande": 40,
+            "p_ag_mediana": 40,
+            "p_paleta_chapurrita": 40,
+            "p_mini": 60,
+            "p_trol": 35,
+            "p_paleta_agua_gde": 40,
+            "p_papas_cueros": 35,
+            "p_tostilocos": 35,
+            "p_tostiloco_vaso": 35,
             "sup_vaso_1lt": 60,
             "sup_tapa_1lt": 200,
             "sup_vaso_20": 180,
@@ -3015,6 +3026,75 @@
                 "p_tostiloco_vaso_barcel", "prod_tostiloco_vaso"
             ]);
 
+            // Configuración canónica oficial de Tagarete 2 (con las 4 aguas oficiales al precio exacto solicitado)
+            const officialTag2Config = [
+                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
+                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG" },
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" },
+                { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH" },
+                { id: "p_mini", name: "MINI", cat: "paletas", price: 5, code: "MINI" },
+                { id: "p_trol", name: "Trol", cat: "congelados", price: 30, code: "Trol" },
+                { id: "p_paleta_agua_gde", name: "Paleta Agua Grande", cat: "paletas", price: 25, code: "PAG" },
+                { id: "p_papas_cueros", name: "Papas con Cueros", cat: "preparados", price: 50, code: "PCC" },
+                { id: "p_tostilocos", name: "Tostilocos", cat: "preparados", price: 55, code: "TP" },
+                { id: "p_tostiloco_vaso", name: "Tostiloco en Vaso", cat: "preparados", price: 60, code: "TV" }
+            ];
+
+            const officialTag2Ids = new Set(officialTag2Config.map(c => c.id));
+            const officialTag2Names = new Set(officialTag2Config.map(c => c.name.toLowerCase()));
+
+            // Desbloquear inmediatamente en memoria productos oficiales para que jamás queden ocultos
+            officialTag2Ids.forEach(id => explicitDelSet.delete(id));
+            officialTag2Names.forEach(name => explicitDelNamesSet.delete(name));
+
+            // Saneamiento de listas de eliminados en localStorage para Tagarete 2
+            const tag2DelIdKeys = [
+                "explicit_deleted_ids_v69_tagarete_2", "explicit_deleted_ids_tagarete_2",
+                "explicit_deleted_ids_v69_branch-5", "explicit_deleted_ids_branch-5",
+                "explicit_deleted_ids_v69_tagarete 2"
+            ];
+            tag2DelIdKeys.forEach(k => {
+                [k, "lf_" + k].forEach(storageKey => {
+                    try {
+                        const raw = localStorage.getItem(storageKey);
+                        if (raw) {
+                            let list = JSON.parse(raw);
+                            if (Array.isArray(list)) {
+                                const origLen = list.length;
+                                list = list.filter(id => !officialTag2Ids.has(String(id)));
+                                if (list.length !== origLen) {
+                                    localStorage.setItem(storageKey, JSON.stringify(list));
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                });
+            });
+
+            const tag2DelNameKeys = [
+                "explicit_deleted_names_v69_tagarete_2", "explicit_deleted_names_tagarete_2",
+                "explicit_deleted_names_v69_branch-5", "explicit_deleted_names_branch-5",
+                "explicit_deleted_names_v69_tagarete 2"
+            ];
+            tag2DelNameKeys.forEach(k => {
+                [k, "lf_" + k].forEach(storageKey => {
+                    try {
+                        const raw = localStorage.getItem(storageKey);
+                        if (raw) {
+                            let list = JSON.parse(raw);
+                            if (Array.isArray(list)) {
+                                const origLen = list.length;
+                                list = list.filter(name => !officialTag2Names.has(String(name).trim().toLowerCase()));
+                                if (list.length !== origLen) {
+                                    localStorage.setItem(storageKey, JSON.stringify(list));
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                });
+            });
+
             // A. Sanear almacenamiento local de Tagarete 2 (remover duplicados fantasmas y productos eliminados)
             try {
                 const t2Keys = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
@@ -3028,8 +3108,9 @@
                                 if (!p) return false;
                                 const pNameNorm = String(p.product_name || "").trim().toLowerCase();
                                 const pid = String(p.product_id || p.id || "");
-                                // Si fue eliminado explícitamente por las encargadas
-                                if (explicitDelSet.has(pid) || explicitDelNamesSet.has(pNameNorm)) {
+                                const isCustom = p.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+                                // Si fue eliminado explícitamente por las encargadas (para productos personalizados solo si coincide el ID exacto)
+                                if (explicitDelSet.has(pid) || (!isCustom && explicitDelNamesSet.has(pNameNorm))) {
                                     modified = true;
                                     return false;
                                 }
@@ -3056,9 +3137,10 @@
             // B. Sanear combinedMap exclusivamente para Tagarete 2
             for (const [pid, prod] of Array.from(combinedMap.entries())) {
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const isCustom = prod.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
 
-                // Si fue eliminado explícitamente en Tagarete 2
-                if (explicitDelSet.has(pid) || explicitDelNamesSet.has(pNameNorm)) {
+                // Si fue eliminado explícitamente en Tagarete 2 (los personalizados solo se eliminan por ID exacto)
+                if (explicitDelSet.has(pid) || (!isCustom && explicitDelNamesSet.has(pNameNorm))) {
                     combinedMap.delete(pid);
                     continue;
                 }
@@ -3075,42 +3157,32 @@
                 }
             }
 
-            // C. Garantizar productos oficiales únicos con nombres y precios correctos para Tagarete 2 (solo si no fueron eliminados)
-            const officialTag2Config = [
-                { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH" },
-                { id: "p_mini", name: "MINI", cat: "paletas", price: 5, code: "MINI" },
-                { id: "p_trol", name: "Trol", cat: "congelados", price: 30, code: "Trol" },
-                { id: "p_paleta_agua_gde", name: "Paleta Agua Grande", cat: "paletas", price: 25, code: "PAG" },
-                { id: "p_papas_cueros", name: "Papas con Cueros", cat: "preparados", price: 50, code: "PCC" },
-                { id: "p_tostilocos", name: "Tostilocos", cat: "preparados", price: 55, code: "TP" },
-                { id: "p_tostiloco_vaso", name: "Tostiloco en Vaso", cat: "preparados", price: 60, code: "TV" }
-            ];
-
+            // C. Garantizar productos oficiales únicos con nombres y precios correctos para Tagarete 2
             officialTag2Config.forEach(cfg => {
-                if (!explicitDelSet.has(cfg.id) && !explicitDelNamesSet.has(cfg.name.toLowerCase())) {
-                    let existing = combinedMap.get(cfg.id);
-                    if (existing) {
-                        existing.product_name = cfg.name;
-                        existing.category = cfg.cat;
-                        if (!existing.user_edited_price_v69) existing.price = cfg.price;
-                        if (cfg.code) existing.product_code = cfg.code;
-                    } else {
-                        // Si ya existe un producto personalizado/creado por el usuario con este nombre, respetarlo y no meter duplicado default
-                        const hasCustomMatch = Array.from(combinedMap.values()).some(p =>
-                            String(p.product_name || "").trim().toLowerCase() === cfg.name.toLowerCase() &&
-                            (p.is_custom || String(p.product_id||"").startsWith("prod_") || p.user_edited_price_v69)
-                        );
-                        if (!hasCustomMatch) {
-                            const def = DEFAULT_PRODUCTS.find(dp => dp.product_id === cfg.id);
-                            if (def) {
-                                combinedMap.set(cfg.id, {
-                                    ...def,
-                                    product_name: cfg.name,
-                                    category: cfg.cat,
-                                    price: cfg.price,
-                                    product_code: cfg.code || def.product_code
-                                });
-                            }
+                let existing = combinedMap.get(cfg.id);
+                if (existing) {
+                    existing.product_name = cfg.name;
+                    existing.category = cfg.cat;
+                    existing.allowed_in_tagarete_2 = true;
+                    if (!existing.user_edited_price_v69) existing.price = cfg.price;
+                    if (cfg.code) existing.product_code = cfg.code;
+                } else {
+                    // Si ya existe un producto personalizado/creado por el usuario con este nombre, respetarlo y no meter duplicado default
+                    const hasCustomMatch = Array.from(combinedMap.values()).some(p =>
+                        String(p.product_name || "").trim().toLowerCase() === cfg.name.toLowerCase() &&
+                        (p.is_custom || String(p.product_id||"").startsWith("prod_") || p.user_edited_price_v69)
+                    );
+                    if (!hasCustomMatch) {
+                        const def = DEFAULT_PRODUCTS.find(dp => dp.product_id === cfg.id);
+                        if (def) {
+                            combinedMap.set(cfg.id, {
+                                ...def,
+                                product_name: cfg.name,
+                                category: cfg.cat,
+                                price: cfg.price,
+                                allowed_in_tagarete_2: true,
+                                product_code: cfg.code || def.product_code
+                            });
                         }
                     }
                 }
@@ -3373,7 +3445,9 @@
         // Purgar de combinedMap cualquier producto que haya sido eliminado explícitamente en la sucursal activa
         for (const [pid, prod] of Array.from(combinedMap.entries())) {
             const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
-            if (explicitDelSet.has(pid) || explicitDelNamesSet.has(pNameNorm)) {
+            const isCustom = prod.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+            // Los productos personalizados solo se purgan si su ID exacto fue eliminado explícitamente
+            if (explicitDelSet.has(pid) || (!isCustom && explicitDelNamesSet.has(pNameNorm))) {
                 combinedMap.delete(pid);
             }
         }
@@ -3649,6 +3723,34 @@
                     prod.category = "preparados";
                     if (!prod.user_edited_price_v69) prod.price = 60;
                 }
+                if (prod.product_id === "p_ag_nat_grande") {
+                    prod.product_name = "Agua Natural Grande";
+                    prod.category = "aguas";
+                    if (!prod.user_edited_price_v69) prod.price = 20;
+                }
+                if (prod.product_id === "p_ag_chica") {
+                    prod.product_name = "Agua Chica";
+                    prod.category = "aguas";
+                    if (!prod.user_edited_price_v69) prod.price = 25;
+                }
+                if (prod.product_id === "p_ag_grande") {
+                    prod.product_name = "Agua Grande";
+                    prod.category = "aguas";
+                    if (!prod.user_edited_price_v69) prod.price = 45;
+                }
+                if (prod.product_id === "p_ag_mediana") {
+                    prod.product_name = "Agua Mediana";
+                    prod.category = "aguas";
+                    if (!prod.user_edited_price_v69) prod.price = 30;
+                }
+            });
+
+            // Priorizar productos personalizados y editados por las encargadas para que NUNCA sean eliminados por un duplicado base
+            p.sort((a,b) => {
+                const aCust = (a.is_custom || String(a.product_id||"").startsWith("prod_") || a.user_edited_price_v69) ? 1 : 0;
+                const bCust = (b.is_custom || String(b.product_id||"").startsWith("prod_") || b.user_edited_price_v69) ? 1 : 0;
+                if (aCust !== bCust) return bCust - aCust;
+                return (a.product_name || "").localeCompare(b.product_name || "");
             });
 
             // Deduplicación estricta y blindada por nombre y categoría en Tagarete 2 para jamás repetir ninguna tarjeta en el POS
@@ -6015,6 +6117,23 @@
                 }
 
                 delKeysToClean.forEach(dk => {
+                    [dk, "lf_" + dk].forEach(storageKey => {
+                        try {
+                            const raw = localStorage.getItem(storageKey);
+                            if (raw) {
+                                let arr = JSON.parse(raw);
+                                if (Array.isArray(arr) && arr.length) {
+                                    const filtered = arr.filter(item => {
+                                        const s = String(item).trim().toLowerCase();
+                                        return s !== unblockIdStr.toLowerCase() && s !== pNameNorm;
+                                    });
+                                    if (filtered.length !== arr.length) {
+                                        localStorage.setItem(storageKey, JSON.stringify(filtered));
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    });
                     const arr = gr(dk, []);
                     if (Array.isArray(arr) && arr.length) {
                         const filtered = arr.filter(item => {
@@ -6024,7 +6143,6 @@
                         if (filtered.length !== arr.length) {
                             gw(dk, filtered);
                             lw(dk, filtered);
-                            try { localStorage.setItem("lf_" + dk, JSON.stringify(filtered)); } catch(e) {}
                         }
                     }
                 });
@@ -6243,11 +6361,13 @@
             });
             const seenTag2Inv = new Set();
             branchAllowedProducts = branchAllowedProducts.filter(prod => {
-                const normName = String(prod.product_name || "").trim().toLowerCase();
-                if (normName === "trol" || normName === "mini" || normName === "paleta chaparrita") {
-                    if (seenTag2Inv.has(normName)) return false;
-                    seenTag2Inv.add(normName);
+                const normName = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenTag2Inv.has(key) || (normName.includes("litro de nieve") && seenTag2Inv.has("helados__litro de nieve"))) {
+                    return false;
                 }
+                seenTag2Inv.add(key);
+                if (normName.includes("litro de nieve")) seenTag2Inv.add("helados__litro de nieve");
                 return true;
             });
         }
