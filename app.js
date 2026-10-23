@@ -638,6 +638,27 @@
             }
         }
 
+        // ── REGLA DE DISPONIBILIDAD TOTAL PARA SUCURSAL TAGARETE 2 ──
+        // En Tagarete 2, cualquier producto que haya sido agregado para Tagarete 2,
+        // asignado a Tagarete 2, o creado como producto personalizado,
+        // permanece SIEMPRE permitido, activo y funcionando.
+        const isTag2 = bCanonical === "Tagarete 2" || isTagarete2Active();
+        if (isTag2) {
+            const pBranchCanonical = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
+            const isAssignedTag2 = product.allowed_in_tagarete_2 ||
+                                   product.branch_id === "branch-5" ||
+                                   pBranchCanonical === "Tagarete 2" ||
+                                   resolveCanonicalBranch(product.branch_id) === "Tagarete 2" ||
+                                   isProductInTagarete2Store(product.product_id || product.id);
+            if (isAssignedTag2) {
+                return true;
+            }
+            const isCustomCreated = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+            if (isCustomCreated && (!product.branch_name || product.branch_name === "General" || product.branch_name === "all")) {
+                return true;
+            }
+        }
+
         // 1. Exclusivos de El Rescate (Frappé, Sodas Italianas, Waffles)
         const isRescateExclusive = pid.includes("frappe") || pName.includes("frappé") || pName.includes("frappe") ||
                                    pid.includes("sodas_italianas") || pName.includes("soda italiana") || pName.includes("sodas italianas") ||
@@ -2652,7 +2673,7 @@
         }
 
         // 5.2. Para las encargadas de Tagarete 2: blindar inclusión de productos modificados, recetas y compuestos
-        if (isTagarete2Active()) {
+        if (isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2" || S.branchId === "branch-5" || S.isSU) {
             try {
                 const t2ProductSources = [
                     "lf_tagarete_2_permanent_products",
@@ -2985,9 +3006,16 @@
         }
 
         // 6.2. Reglas exclusivas, deduplicación y saneamiento estricto SOLO para la sucursal Tagarete 2:
-        const isCurrentTagarete2 = isTagarete2Active();
+        const isCurrentTagarete2 = isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2";
         if (isCurrentTagarete2) {
-            // A. Sanear almacenamiento local de Tagarete 2 (remover duplicados y productos eliminados)
+            const ghostTag2Ids = new Set([
+                "prod_1789511159938_cxxn", "prod_1789503512135_chg1", "prod_1789523192471_i682",
+                "p_paleta_agua_gd", "prod_calz_paleta_agua", "prod_calz_paleta_mini",
+                "prod_calz_tostiloco_morado", "prod_calz_tostitos_vaso",
+                "p_tostiloco_vaso_barcel", "prod_tostiloco_vaso"
+            ]);
+
+            // A. Sanear almacenamiento local de Tagarete 2 (remover duplicados fantasmas y productos eliminados)
             try {
                 const t2Keys = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
                 t2Keys.forEach(tk => {
@@ -3005,50 +3033,13 @@
                                     modified = true;
                                     return false;
                                 }
-                                // 1. Quitar la que dice solo "Chaparrita"
+                                // Quitar IDs fantasmas obsoletos
+                                if (ghostTag2Ids.has(pid)) {
+                                    modified = true;
+                                    return false;
+                                }
+                                // Quitar producto que dice sólo "Chaparrita" para conservar "Paleta Chaparrita"
                                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") {
-                                    modified = true;
-                                    return false;
-                                }
-                                // 2. Quitar "Paleta mini" y sus duplicados
-                                if (pid === "prod_calz_paleta_mini" || (pNameNorm === "paleta mini" && pid !== "p_mini")) {
-                                    modified = true;
-                                    return false;
-                                }
-                                // 3. Quitar duplicados de Trol
-                                if (pNameNorm === "trol" && pid !== "p_trol") {
-                                    modified = true;
-                                    return false;
-                                }
-                                // 4. Quitar duplicados de Paleta de Agua Grande (dejar únicamente p_paleta_agua_gde)
-                                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande" || pNameNorm === "paleta de agua") && pid !== "p_paleta_agua_gde") {
-                                    modified = true;
-                                    return false;
-                                }
-                                if ((pid === "prod_1789511159938_cxxn" || pid === "prod_1789503512135_chg1" || pid === "p_paleta_agua_gd" || pid === "prod_calz_paleta_agua") && pid !== "p_paleta_agua_gde") {
-                                    modified = true;
-                                    return false;
-                                }
-                                // 5. Quitar duplicados de Papas con Cueros (dejar únicamente p_papas_cueros)
-                                if ((pNameNorm === "papas con cueros" || pNameNorm === "papas cueros") && pid !== "p_papas_cueros") {
-                                    modified = true;
-                                    return false;
-                                }
-                                // 6. Quitar duplicados de Tostilocos (dejar únicamente p_tostilocos)
-                                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") {
-                                    modified = true;
-                                    return false;
-                                }
-                                if ((pid === "prod_1789523192471_i682" || pid === "prod_calz_tostiloco_morado") && pid !== "p_tostilocos") {
-                                    modified = true;
-                                    return false;
-                                }
-                                // 7. Quitar duplicados de Tostilocos en vaso (dejar únicamente p_tostiloco_vaso)
-                                if ((pNameNorm === "tostilocos en vaso" || pNameNorm === "tostiloco en vaso" || pNameNorm === "tostiloco vaso" || pNameNorm === "tostitos vaso") && pid !== "p_tostiloco_vaso") {
-                                    modified = true;
-                                    return false;
-                                }
-                                if ((pid === "prod_calz_tostitos_vaso" || pid === "p_tostiloco_vaso_barcel" || pid === "prod_tostiloco_vaso") && pid !== "p_tostiloco_vaso") {
                                     modified = true;
                                     return false;
                                 }
@@ -3072,47 +3063,14 @@
                     continue;
                 }
 
+                // Quitar IDs fantasmas obsoletos
+                if (ghostTag2Ids.has(pid)) {
+                    combinedMap.delete(pid);
+                    continue;
+                }
+
                 // 1. Quitar producto que dice sólo "Chaparrita" y conservar "Paleta Chaparrita"
                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") {
-                    combinedMap.delete(pid);
-                }
-
-                // 2. Quitar "Paleta mini" y sus duplicados, dejar sólo "MINI" (p_mini)
-                if (pid === "prod_calz_paleta_mini" || (pNameNorm === "paleta mini" && pid !== "p_mini")) {
-                    combinedMap.delete(pid);
-                }
-
-                // 3. Eliminar duplicado de Trol (conservar únicamente p_trol de DEFAULT_PRODUCTS)
-                if (pNameNorm === "trol" && pid !== "p_trol") {
-                    combinedMap.delete(pid);
-                }
-
-                // 4. Eliminar duplicados de Paleta de Agua Grande (conservar p_paleta_agua_gde)
-                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande" || pNameNorm === "paleta de agua") && pid !== "p_paleta_agua_gde") {
-                    combinedMap.delete(pid);
-                }
-                if ((pid === "prod_1789511159938_cxxn" || pid === "prod_1789503512135_chg1" || pid === "p_paleta_agua_gd" || pid === "prod_calz_paleta_agua") && pid !== "p_paleta_agua_gde") {
-                    combinedMap.delete(pid);
-                }
-
-                // 5. Eliminar duplicados de Papas con Cueros (conservar p_papas_cueros)
-                if ((pNameNorm === "papas con cueros" || pNameNorm === "papas cueros") && pid !== "p_papas_cueros") {
-                    combinedMap.delete(pid);
-                }
-
-                // 6. Eliminar duplicados de Tostilocos (conservar p_tostilocos)
-                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") {
-                    combinedMap.delete(pid);
-                }
-                if ((pid === "prod_1789523192471_i682" || pid === "prod_calz_tostiloco_morado") && pid !== "p_tostilocos") {
-                    combinedMap.delete(pid);
-                }
-
-                // 7. Eliminar duplicados de Tostilocos en vaso (conservar p_tostiloco_vaso)
-                if ((pNameNorm === "tostilocos en vaso" || pNameNorm === "tostiloco en vaso" || pNameNorm === "tostiloco vaso" || pNameNorm === "tostitos vaso") && pid !== "p_tostiloco_vaso") {
-                    combinedMap.delete(pid);
-                }
-                if ((pid === "prod_calz_tostitos_vaso" || pid === "p_tostiloco_vaso_barcel" || pid === "prod_tostiloco_vaso") && pid !== "p_tostiloco_vaso") {
                     combinedMap.delete(pid);
                 }
             }
@@ -3137,15 +3095,22 @@
                         if (!existing.user_edited_price_v69) existing.price = cfg.price;
                         if (cfg.code) existing.product_code = cfg.code;
                     } else {
-                        const def = DEFAULT_PRODUCTS.find(dp => dp.product_id === cfg.id);
-                        if (def) {
-                            combinedMap.set(cfg.id, {
-                                ...def,
-                                product_name: cfg.name,
-                                category: cfg.cat,
-                                price: cfg.price,
-                                product_code: cfg.code || def.product_code
-                            });
+                        // Si ya existe un producto personalizado/creado por el usuario con este nombre, respetarlo y no meter duplicado default
+                        const hasCustomMatch = Array.from(combinedMap.values()).some(p =>
+                            String(p.product_name || "").trim().toLowerCase() === cfg.name.toLowerCase() &&
+                            (p.is_custom || String(p.product_id||"").startsWith("prod_") || p.user_edited_price_v69)
+                        );
+                        if (!hasCustomMatch) {
+                            const def = DEFAULT_PRODUCTS.find(dp => dp.product_id === cfg.id);
+                            if (def) {
+                                combinedMap.set(cfg.id, {
+                                    ...def,
+                                    product_name: cfg.name,
+                                    category: cfg.cat,
+                                    price: cfg.price,
+                                    product_code: cfg.code || def.product_code
+                                });
+                            }
                         }
                     }
                 }
@@ -3155,30 +3120,40 @@
             const seenTag2General = new Map();
             for (const [pid, prod] of Array.from(combinedMap.entries())) {
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
-                const normKey = String(prod.category || "").toLowerCase() + "__" + pNameNorm;
+                let normKey = String(prod.category || "").toLowerCase() + "__" + pNameNorm;
 
                 // Si contiene "litro de nieve" o "1 litro de nieve", deduplicar contra la clave canónica de helados
                 if (pNameNorm.includes("litro de nieve") || pNameNorm === "litro nieve") {
-                    const lKey = "helados__litro de nieve";
-                    if (seenTag2General.has(lKey)) {
-                        combinedMap.delete(pid);
-                        continue;
-                    } else {
-                        seenTag2General.set(lKey, pid);
-                    }
+                    normKey = "helados__litro de nieve";
                 }
 
                 if (!seenTag2General.has(normKey)) {
                     seenTag2General.set(normKey, pid);
                 } else {
                     const prevPid = seenTag2General.get(normKey);
-                    const isCurOfficial = officialTag2Config.some(c => c.id === pid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === pid);
-                    const isPrevOfficial = officialTag2Config.some(c => c.id === prevPid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === prevPid);
-                    if (isCurOfficial && !isPrevOfficial) {
+                    const prevProd = combinedMap.get(prevPid);
+
+                    // Prioridad de deduplicación para que NUNCA se borre un producto que el usuario acaba de agregar o editar:
+                    // 1. Producto personalizado/creado/editado por el usuario (prod_... o is_custom o user_edited_price_v69)
+                    // 2. Producto oficial de Tagarete 2 (officialTag2Config)
+                    // 3. Catálogo base
+                    const isCurCustom = prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69;
+                    const isPrevCustom = prevProd && (prevProd.is_custom || prevPid.startsWith("prod_") || prevProd.user_edited_price_v69);
+
+                    if (isCurCustom && !isPrevCustom) {
                         combinedMap.delete(prevPid);
                         seenTag2General.set(normKey, pid);
-                    } else {
+                    } else if (!isCurCustom && isPrevCustom) {
                         combinedMap.delete(pid);
+                    } else {
+                        const isCurOfficial = officialTag2Config.some(c => c.id === pid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === pid);
+                        const isPrevOfficial = officialTag2Config.some(c => c.id === prevPid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === prevPid);
+                        if (isCurOfficial && !isPrevOfficial) {
+                            combinedMap.delete(prevPid);
+                            seenTag2General.set(normKey, pid);
+                        } else {
+                            combinedMap.delete(pid);
+                        }
                     }
                 }
             }
@@ -3613,6 +3588,9 @@
                 if (!prod) return false;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
                 const pid = String(prod.product_id || "");
+
+                // Productos personalizados o creados por el usuario siempre se permiten
+                if (prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69) return true;
 
                 // 1. Quitar la que dice solo "Chaparrita" y dejar "Paleta Chaparrita"
                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") return false;
@@ -5140,6 +5118,9 @@
                 const pNameNorm = String(p.product_name || "").trim().toLowerCase();
                 const pid = String(p.product_id || "");
 
+                // Productos personalizados o creados por el usuario siempre se muestran
+                if (p.is_custom || pid.startsWith("prod_") || p.user_edited_price_v69) return true;
+
                 // 1. Quitar la que dice solo "Chaparrita" y dejar "Paleta Chaparrita"
                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") return false;
 
@@ -5167,7 +5148,13 @@
                 return true;
             });
 
-            // Deduplicación blindada en el catálogo administrativo de Tagarete 2
+            // Deduplicación blindada en el catálogo administrativo de Tagarete 2 (priorizar custom)
+            displayedProducts.sort((a,b) => {
+                const aCust = (a.is_custom || String(a.product_id||"").startsWith("prod_") || a.user_edited_price_v69) ? 1 : 0;
+                const bCust = (b.is_custom || String(b.product_id||"").startsWith("prod_") || b.user_edited_price_v69) ? 1 : 0;
+                if (aCust !== bCust) return bCust - aCust;
+                return (a.product_name || "").localeCompare(b.product_name || "");
+            });
             const seenTag2Admin = new Set();
             displayedProducts = displayedProducts.filter(p => {
                 const normName = String(p.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -5566,6 +5553,8 @@
             toast("✓ Insumo '" + name.trim() + "' registrado correctamente con " + packUnits + " pz/paq.", "success", 4000);
             await loadProducts();
             await loadProductsAdmin();
+            await loadInventory();
+            renderPOS(filtered());
         }
 
         document.getElementById("btn-quick-new-supply")?.addEventListener("click", createNewSupplyPrompt);
@@ -5599,6 +5588,8 @@
             toast("✓ Insumo actualizado.", "success");
             await loadProducts();
             await loadProductsAdmin();
+            await loadInventory();
+            renderPOS(filtered());
         }));
 
         // Eliminar insumo
@@ -5650,6 +5641,8 @@
             toast("✓ Insumo '" + supName + "' eliminado.", "info");
             await loadProducts();
             await loadProductsAdmin();
+            await loadInventory();
+            renderPOS(filtered());
         }));
 
         // Editar producto existente
@@ -5714,6 +5707,8 @@
         document.getElementById("btn-reload-admin-prods")?.addEventListener("click", async () => {
             await loadProducts();
             await loadProductsAdmin();
+            await loadInventory();
+            renderPOS(filtered());
             toast("Catálogo actualizado al instante.", "info");
         });
 
@@ -5745,7 +5740,8 @@
             const isTag2Target = isTagarete2Active() ||
                                  resolveCanonicalBranch(targetBranch) === "Tagarete 2" ||
                                  resolveCanonicalBranch(S.branchName) === "Tagarete 2" ||
-                                 bId === "branch-5";
+                                 bId === "branch-5" ||
+                                 targetBranch === "all";
 
             const isRescateTarget = resolveCanonicalBranch(targetBranch) === "Rescate" ||
                                     resolveCanonicalBranch(S.branchName) === "Rescate" ||
@@ -5782,6 +5778,9 @@
                 prodToEdit.is_supply = (cat === "desechables" || price === 0);
                 if (isCalzadaTarget) {
                     prodToEdit.allowed_in_calzada = true;
+                }
+                if (isTag2Target) {
+                    prodToEdit.allowed_in_tagarete_2 = true;
                 }
 
                 // Actualizar stock directamente
@@ -5874,6 +5873,7 @@
                     is_active: true,
                     is_custom: true,
                     allowed_in_calzada: isCalzadaTarget ? true : undefined,
+                    allowed_in_tagarete_2: isTag2Target ? true : undefined,
                     is_composite: isComp,
                     components: isComp ? [...tempComponents] : [],
                     is_supply: (cat === "desechables" || price === 0),
@@ -6057,6 +6057,8 @@
 
             await loadProducts();
             await loadProductsAdmin();
+            await loadInventory();
+            renderPOS(filtered());
         });
 
         // Función centralizada y blindada para eliminar productos permanentemente por sucursal
@@ -6184,6 +6186,8 @@
             editingProductId = null;
             await loadProducts();
             await loadProductsAdmin();
+            await loadInventory();
+            renderPOS(filtered());
         }
 
         // Eliminar producto desde el botón del formulario de edición
@@ -6226,10 +6230,16 @@
                 if (!prod) return false;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
                 const pid = String(prod.product_id || "");
+                if (prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69) return true;
                 if (pNameNorm === "chaparrita" && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") return false;
                 if (pid === "prod_calz_paleta_mini" || (pNameNorm === "paleta mini" && pid !== "p_mini")) return false;
                 if (pNameNorm === "trol" && pid !== "p_trol") return false;
                 return true;
+            });
+            branchAllowedProducts.sort((a,b) => {
+                const aCust = (a.is_custom || String(a.product_id||"").startsWith("prod_") || a.user_edited_price_v69) ? 1 : 0;
+                const bCust = (b.is_custom || String(b.product_id||"").startsWith("prod_") || b.user_edited_price_v69) ? 1 : 0;
+                return bCust - aCust;
             });
             const seenTag2Inv = new Set();
             branchAllowedProducts = branchAllowedProducts.filter(prod => {
