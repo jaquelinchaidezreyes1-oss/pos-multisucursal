@@ -359,7 +359,18 @@
             if (window.LaFuentePOS) {
                 window.LaFuentePOS.state.view = target;
                 if (target === "pos") {
-                    if (window.LaFuentePOS.loadProducts) window.LaFuentePOS.loadProducts();
+                    if (window.LaFuentePOS.renderCatTabs) window.LaFuentePOS.renderCatTabs();
+                    if (window.LaFuentePOS.renderPOS && window.LaFuentePOS.filtered) {
+                        window.LaFuentePOS.renderPOS(window.LaFuentePOS.filtered());
+                    }
+                    if (window.LaFuentePOS.loadProducts) {
+                        window.LaFuentePOS.loadProducts().then(function() {
+                            if (window.LaFuentePOS.renderCatTabs) window.LaFuentePOS.renderCatTabs();
+                            if (window.LaFuentePOS.renderPOS && window.LaFuentePOS.filtered) {
+                                window.LaFuentePOS.renderPOS(window.LaFuentePOS.filtered());
+                            }
+                        });
+                    }
                     if (window.LaFuentePOS.updatePosLiveMovement) window.LaFuentePOS.updatePosLiveMovement();
                 }
                 if (target === "private-access" && window.LaFuentePOS.loadPrivateAccessData) window.LaFuentePOS.loadPrivateAccessData();
@@ -550,6 +561,6 @@
             if (btnTopbar) btnTopbar.style.display = 'none';
         });
     </script>
-    <script src="app.js?v=80"></script>
+    <script src="app.js?v=81"></script>
 </body>
 </html>

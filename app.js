@@ -560,6 +560,8 @@
         if (canon === "Tagarete 2") return true;
         const bKey = getBranchKeyName(bName);
         if (bKey === "tagarete_2") return true;
+        const bId = String(S.branchId || "").toLowerCase().trim();
+        if (bId === "branch-5" || bId.includes("tagarete_2") || bId.includes("tagarete 2")) return true;
         const email = String(S.user?.email || "").toLowerCase().trim();
         if (/encargad[oa]9(?!\d)/i.test(email) || /encargad[oa]10(?!\d)/i.test(email) || email.includes("tagarete2") || email.includes("tagarete 2")) return true;
         const role = String(S.role || "").toLowerCase().trim();
@@ -571,6 +573,9 @@
         if (!id) return false;
         try {
             const strId = String(id);
+            if (typeof TAGARETE_2_BASE_PRODUCTS !== "undefined" && Array.isArray(TAGARETE_2_BASE_PRODUCTS)) {
+                if (TAGARETE_2_BASE_PRODUCTS.some(tp => String(tp.product_id || tp.id) === strId)) return true;
+            }
             const pKeys = [
                 "lf_tagarete_2_permanent_products",
                 "lf_tagarete_2_custom_products",
@@ -640,10 +645,13 @@
 
         // ── REGLA DE DISPONIBILIDAD TOTAL PARA SUCURSAL TAGARETE 2 ──
         // En Tagarete 2, cualquier producto que haya sido agregado para Tagarete 2,
-        // asignado a Tagarete 2, o creado como producto personalizado,
+        // asignado a Tagarete 2, base o creado como producto personalizado,
         // permanece SIEMPRE permitido, activo y funcionando.
         const isTag2 = bCanonical === "Tagarete 2" || isTagarete2Active();
         if (isTag2) {
+            if (typeof TAGARETE_2_BASE_PRODUCTS !== "undefined" && Array.isArray(TAGARETE_2_BASE_PRODUCTS)) {
+                if (TAGARETE_2_BASE_PRODUCTS.some(tp => String(tp.product_id || tp.id) === pid)) return true;
+            }
             const pBranchCanonical = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
             const isAssignedTag2 = product.allowed_in_tagarete_2 ||
                                    product.branch_id === "branch-5" ||
@@ -654,8 +662,10 @@
                 return true;
             }
             const isCustomCreated = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
-            if (isCustomCreated && (!product.branch_name || product.branch_name === "General" || product.branch_name === "all")) {
-                return true;
+            if (isCustomCreated) {
+                if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanonical === "Tagarete 2") {
+                    return true;
+                }
             }
         }
 
@@ -2271,6 +2281,21 @@
         { product_id: "prod_calz_paleta_mini", product_code: "PMINI", product_name: "Paleta mini", category: "paletas", price: 5, branch_name: "General", branch_id: "all", initial_stock: 100, allowed_in_calzada: true }
     ];
 
+    // Catálogo base protegido e indestructible para Tagarete 2 (incluyendo las 4 aguas oficiales al precio exacto solicitado)
+    const TAGARETE_2_BASE_PRODUCTS = [
+        { product_id: "p_ag_nat_grande", product_code: "ANG", product_name: "Agua Natural Grande", category: "aguas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true },
+        { product_id: "p_ag_chica", product_code: "ACH", product_name: "Agua Chica", category: "aguas", price: 25, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true },
+        { product_id: "p_ag_grande", product_code: "AG", product_name: "Agua Grande", category: "aguas", price: 45, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true },
+        { product_id: "p_ag_mediana", product_code: "AM", product_name: "Agua Mediana", category: "aguas", price: 30, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true },
+        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chaparrita", category: "paletas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
+        { product_id: "p_mini", product_code: "MINI", product_name: "MINI", category: "paletas", price: 5, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
+        { product_id: "p_trol", product_code: "Trol", product_name: "Trol", category: "congelados", price: 30, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
+        { product_id: "p_paleta_agua_gde", product_code: "PAG", product_name: "Paleta Agua Grande", category: "paletas", price: 25, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
+        { product_id: "p_papas_cueros", product_code: "PCC", product_name: "Papas con Cueros", category: "preparados", price: 50, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
+        { product_id: "p_tostilocos", product_code: "TP", product_name: "Tostilocos", category: "preparados", price: 55, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
+        { product_id: "p_tostiloco_vaso", product_code: "TV", product_name: "Tostiloco en Vaso", category: "preparados", price: 60, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true }
+    ];
+
     function getBranchExplicitDeletedKey(branchRef) {
         const bKey = getBranchKeyName(branchRef || S.branchName || "general");
         return "explicit_deleted_ids_v69_" + bKey;
@@ -2280,9 +2305,10 @@
         if (!p || !p.product_id) return p;
         const pid = String(p.product_id);
         const isDefaultOrShared = DEFAULT_PRODUCTS.some(dp => String(dp.product_id) === pid) ||
-                                  CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === pid);
+                                  CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === pid) ||
+                                  TAGARETE_2_BASE_PRODUCTS.some(tp => String(tp.product_id) === pid);
         if (isDefaultOrShared) {
-            return { ...p, branch_name: "General", branch_id: "all", allowed_in_calzada: true };
+            return { ...p, branch_name: "General", branch_id: "all", allowed_in_calzada: true, allowed_in_tagarete_2: true };
         }
         return p;
     }
@@ -2390,6 +2416,22 @@
             }
         } catch(e) {}
 
+        let tagarete2Permanent = TAGARETE_2_BASE_PRODUCTS.filter(tp => !explicitDelSet.has(String(tp.product_id))).map(sanitizeSharedCatalogProduct);
+        try {
+            const rawTag2 = localStorage.getItem("lf_tagarete_2_permanent_products");
+            if (rawTag2) {
+                const parsed = JSON.parse(rawTag2);
+                if (Array.isArray(parsed)) {
+                    parsed.forEach(rawP => {
+                        const p = sanitizeSharedCatalogProduct(rawP);
+                        if (p && p.product_id && !explicitDelSet.has(String(p.product_id)) && !tagarete2Permanent.some(tp => String(tp.product_id) === String(p.product_id))) {
+                            tagarete2Permanent.push(p);
+                        }
+                    });
+                }
+            }
+        } catch(e) {}
+
         // Cargar registros de personalizaciones y productos de todas las sucursales desde la nube (sin borrar productos de ninguna sucursal)
         if (db) {
             try {
@@ -2404,6 +2446,12 @@
                         }
                     });
                     calzadaPermanent.forEach(rawP => {
+                        const p = sanitizeSharedCatalogProduct(rawP);
+                        if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                            mapCust.set(String(p.product_id), p);
+                        }
+                    });
+                    tagarete2Permanent.forEach(rawP => {
                         const p = sanitizeSharedCatalogProduct(rawP);
                         if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
                             mapCust.set(String(p.product_id), p);
@@ -2473,6 +2521,12 @@
 
         // Asegurar que todos los productos permanentes se incluyan sin sobreescribir la sucursal de otras tiendas
         calzadaPermanent.forEach(rawP => {
+            const p = sanitizeSharedCatalogProduct(rawP);
+            if (p && p.product_id && !explicitDelSet.has(String(p.product_id)) && !customProds.some(x => String(x.product_id) === String(p.product_id))) {
+                customProds.push(p);
+            }
+        });
+        tagarete2Permanent.forEach(rawP => {
             const p = sanitizeSharedCatalogProduct(rawP);
             if (p && p.product_id && !explicitDelSet.has(String(p.product_id)) && !customProds.some(x => String(x.product_id) === String(p.product_id))) {
                 customProds.push(p);
@@ -2648,6 +2702,12 @@
             const cpid = String(cp.product_id);
             if (cp && cpid && !explicitDelSet.has(cpid) && !combinedMap.has(cpid)) {
                 combinedMap.set(cpid, sanitizeSharedCatalogProduct({ ...cp }));
+            }
+        });
+        tagarete2Permanent.forEach(tp => {
+            const tpid = String(tp.product_id);
+            if (tp && tpid && !explicitDelSet.has(tpid) && !combinedMap.has(tpid)) {
+                combinedMap.set(tpid, sanitizeSharedCatalogProduct({ ...tp }));
             }
         });
 
@@ -3446,6 +3506,10 @@
         for (const [pid, prod] of Array.from(combinedMap.entries())) {
             const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
             const isCustom = prod.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+            // Productos base protegidos de Calzada y Tagarete 2 nunca se eliminan por coincidencia de nombre
+            const isBaseProtected = CALZADA_BASE_PRODUCTS.some(cp => cp.product_id === pid) ||
+                                   TAGARETE_2_BASE_PRODUCTS.some(tp => tp.product_id === pid);
+            if (isBaseProtected) continue;
             // Los productos personalizados solo se purgan si su ID exacto fue eliminado explícitamente
             if (explicitDelSet.has(pid) || (!isCustom && explicitDelNamesSet.has(pNameNorm))) {
                 combinedMap.delete(pid);
@@ -3657,7 +3721,61 @@
         }
 
         // Garantizar catálogo limpio sin duplicados si la sucursal activa es Tagarete 2
-        if (isTagarete2Active()) {
+        const isCurrentTag2 = isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2" || S.branchId === "branch-5";
+        if (isCurrentTag2) {
+            // Garantizar que las 4 aguas oficiales de Tagarete 2 siempre estén presentes
+            const officialWatersT2 = [
+                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
+                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG" },
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" }
+            ];
+            officialWatersT2.forEach(ow => {
+                const found = p.find(x => String(x.product_id) === ow.id || String(x.product_name || "").trim().toLowerCase() === ow.name.toLowerCase());
+                if (found) {
+                    found.product_name = ow.name;
+                    found.category = "aguas";
+                    if (!found.user_edited_price_v69) found.price = ow.price;
+                    found.allowed_in_tagarete_2 = true;
+                } else {
+                    p.push({
+                        product_id: ow.id,
+                        product_name: ow.name,
+                        product_code: ow.code,
+                        category: "aguas",
+                        price: ow.price,
+                        branch_name: "General",
+                        branch_id: "all",
+                        initial_stock: 40,
+                        is_active: true,
+                        allowed_in_tagarete_2: true
+                    });
+                }
+                if (!S.inv[ow.id] || Number(S.inv[ow.id]) <= 0) {
+                    S.inv[ow.id] = 40;
+                }
+            });
+
+            // Garantizar que productos personalizados de Tagarete 2 en localStorage nunca se omitan
+            try {
+                const t2CustomKeys = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
+                t2CustomKeys.forEach(tk => {
+                    const raw = localStorage.getItem(tk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                if (!p.some(x => String(x.product_id) === cpid)) {
+                                    p.push({ ...cp, allowed_in_tagarete_2: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+
             p = p.filter(prod => {
                 if (!prod) return false;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
@@ -5215,6 +5333,29 @@
                             resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Tagarete 2";
 
         if (isTag2Admin) {
+            const officialWatersT2 = [
+                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
+                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG" },
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" }
+            ];
+            officialWatersT2.forEach(ow => {
+                if (!displayedProducts.some(x => String(x.product_id) === ow.id || String(x.product_name||"").trim().toLowerCase() === ow.name.toLowerCase())) {
+                    displayedProducts.push({
+                        product_id: ow.id,
+                        product_name: ow.name,
+                        product_code: ow.code,
+                        category: "aguas",
+                        price: ow.price,
+                        branch_name: "General",
+                        branch_id: "all",
+                        initial_stock: 40,
+                        is_active: true,
+                        allowed_in_tagarete_2: true
+                    });
+                }
+            });
+
             displayedProducts = displayedProducts.filter(p => {
                 if (!p) return false;
                 const pNameNorm = String(p.product_name || "").trim().toLowerCase();
@@ -6343,7 +6484,54 @@
             </div>` : '';
 
         let branchAllowedProducts = S.products.filter(p => isProductAllowedInBranch(p, S.branchName));
-        if (isTagarete2Active()) {
+        const isTag2Inv = isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2" || S.branchId === "branch-5";
+        if (isTag2Inv) {
+            const officialWatersT2 = [
+                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
+                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG" },
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" }
+            ];
+            officialWatersT2.forEach(ow => {
+                if (!branchAllowedProducts.some(x => String(x.product_id) === ow.id || String(x.product_name||"").trim().toLowerCase() === ow.name.toLowerCase())) {
+                    branchAllowedProducts.push({
+                        product_id: ow.id,
+                        product_name: ow.name,
+                        product_code: ow.code,
+                        category: "aguas",
+                        price: ow.price,
+                        branch_name: "General",
+                        branch_id: "all",
+                        initial_stock: 40,
+                        is_active: true,
+                        allowed_in_tagarete_2: true
+                    });
+                }
+                if (!S.inv[ow.id] || Number(S.inv[ow.id]) <= 0) {
+                    S.inv[ow.id] = 40;
+                }
+            });
+
+            // Inyectar productos personalizados de Tagarete 2 en localStorage si faltaran en branchAllowedProducts
+            try {
+                const t2CustomKeys = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
+                t2CustomKeys.forEach(tk => {
+                    const raw = localStorage.getItem(tk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                if (!branchAllowedProducts.some(x => String(x.product_id) === cpid)) {
+                                    branchAllowedProducts.push({ ...cp, allowed_in_tagarete_2: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+
             branchAllowedProducts = branchAllowedProducts.filter(prod => {
                 if (!prod) return false;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
@@ -19268,6 +19456,9 @@
         processSale,
         checkInventoryBlock: checkBlock,
         getStock,
+        renderPOS,
+        filtered,
+        renderCatTabs,
         logout
     };
 })();
