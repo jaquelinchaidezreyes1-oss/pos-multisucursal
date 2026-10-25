@@ -669,6 +669,36 @@
             }
         }
 
+        // ── REGLA DE DISPONIBILIDAD TOTAL PARA SUCURSAL RESCATE ──
+        if (isRescate) {
+            if (pid === "p_paleta_agua_chica" || pName === "paleta agua chica" || pName === "paleta de agua chica") {
+                return true;
+            }
+            const pBranchCanonical = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
+            const isAssignedRescate = product.allowed_in_rescate ||
+                                      product.branch_id === "branch-2" ||
+                                      pBranchCanonical === "Rescate" ||
+                                      resolveCanonicalBranch(product.branch_id) === "Rescate";
+            if (isAssignedRescate) {
+                return true;
+            }
+            const isCustomCreated = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+            if (isCustomCreated) {
+                if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanonical === "Rescate") {
+                    return true;
+                }
+            }
+        }
+
+        // ── DISPONIBILIDAD PARA CUALQUIER PRODUCTO CREADO POR ENCARGADAS EN SU SUCURSAL O GENERAL ──
+        const isCustomGeneral = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+        if (isCustomGeneral) {
+            const pBranchCanon = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
+            if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanon === bCanonical) {
+                return true;
+            }
+        }
+
         // 1. Exclusivos de El Rescate (Frappé, Sodas Italianas, Waffles)
         const isRescateExclusive = pid.includes("frappe") || pName.includes("frappé") || pName.includes("frappe") ||
                                    pid.includes("sodas_italianas") || pName.includes("soda italiana") || pName.includes("sodas italianas") ||
@@ -2163,10 +2193,10 @@
         { product_id: "p_cono_cubierto", product_code: "CC", product_name: "Cono Cubierto", category: "helados", price: 45, branch_name: "General", initial_stock: 80 },
         { product_id: "p_canasta_doble", product_code: "CanastaDoble", product_name: "Canasta Doble", category: "helados", price: 40, branch_name: "General", initial_stock: 80 },
         { product_id: "p_canasta_triple", product_code: "CanastaTriple", product_name: "Canasta Triple", category: "helados", price: 50, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Vaso 1 bolita", category: "helados", price: 20, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2 bolitas", category: "helados", price: 35, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3 bolitas", category: "helados", price: 40, branch_name: "General", initial_stock: 80 },
-        { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado Vaso 4", category: "helados", price: 50, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Helado de una bolita", category: "helados", price: 20, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado de dos bolitas", category: "helados", price: 35, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado de tres bolitas", category: "helados", price: 45, branch_name: "General", initial_stock: 80 },
+        { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado de cuatro bolitas", category: "helados", price: 50, branch_name: "General", initial_stock: 80 },
         { product_id: "prod_calz_medio_litro", product_code: "MLN", product_name: "Medio Litro de Nieve", category: "helados", price: 65, branch_name: "General", initial_stock: 50 },
         { product_id: "prod_calz_nieve_vaso_12", product_code: "NV12", product_name: "Nieve Vaso #12", category: "helados", price: 40, branch_name: "General", initial_stock: 60 },
         { product_id: "prod_calz_extra_nuez", product_code: "ENUEZ", product_name: "Extra Nuez", category: "helados", price: 10, branch_name: "General", initial_stock: 100 },
@@ -2281,19 +2311,23 @@
         { product_id: "prod_calz_paleta_mini", product_code: "PMINI", product_name: "Paleta mini", category: "paletas", price: 5, branch_name: "General", branch_id: "all", initial_stock: 100, allowed_in_calzada: true }
     ];
 
-    // Catálogo base protegido e indestructible para Tagarete 2 (incluyendo las 4 aguas oficiales al precio exacto solicitado)
+    // Catálogo base protegido e indestructible para Tagarete (incluyendo las 4 aguas oficiales y los 4 helados oficiales al precio exacto solicitado)
     const TAGARETE_2_BASE_PRODUCTS = [
-        { product_id: "p_ag_nat_grande", product_code: "ANG", product_name: "Agua Natural Grande", category: "aguas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true },
-        { product_id: "p_ag_chica", product_code: "ACH", product_name: "Agua Chica", category: "aguas", price: 25, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true },
-        { product_id: "p_ag_grande", product_code: "AG", product_name: "Agua Grande", category: "aguas", price: 45, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true },
-        { product_id: "p_ag_mediana", product_code: "AM", product_name: "Agua Mediana", category: "aguas", price: 30, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true },
-        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chaparrita", category: "paletas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
-        { product_id: "p_mini", product_code: "MINI", product_name: "MINI", category: "paletas", price: 5, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
-        { product_id: "p_trol", product_code: "Trol", product_name: "Trol", category: "congelados", price: 30, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
-        { product_id: "p_paleta_agua_gde", product_code: "PAG", product_name: "Paleta Agua Grande", category: "paletas", price: 25, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
-        { product_id: "p_papas_cueros", product_code: "PCC", product_name: "Papas con Cueros", category: "preparados", price: 50, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
-        { product_id: "p_tostilocos", product_code: "TP", product_name: "Tostilocos", category: "preparados", price: 55, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true },
-        { product_id: "p_tostiloco_vaso", product_code: "TV", product_name: "Tostiloco en Vaso", category: "preparados", price: 60, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true }
+        { product_id: "p_ag_nat_grande", product_code: "ANG", product_name: "Agua Natural Grande", category: "aguas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_ag_chica", product_code: "ACH", product_name: "Agua Chica", category: "aguas", price: 25, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_ag_grande", product_code: "AG", product_name: "Agua Grande", category: "aguas", price: 45, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_ag_mediana", product_code: "AM", product_name: "Agua Mediana", category: "aguas", price: 30, branch_name: "General", branch_id: "all", initial_stock: 40, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_helado_vaso1", product_code: "HV1", product_name: "Helado de una bolita", category: "helados", price: 20, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado de dos bolitas", category: "helados", price: 35, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado de tres bolitas", category: "helados", price: 45, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado de cuatro bolitas", category: "helados", price: 50, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chaparrita", category: "paletas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_mini", product_code: "MINI", product_name: "MINI", category: "paletas", price: 5, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_trol", product_code: "Trol", product_name: "Trol", category: "congelados", price: 30, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_paleta_agua_gde", product_code: "PAG", product_name: "Paleta Agua Grande", category: "paletas", price: 25, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_papas_cueros", product_code: "PCC", product_name: "Papas con Cueros", category: "preparados", price: 50, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_tostilocos", product_code: "TP", product_name: "Tostilocos", category: "preparados", price: 55, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_tostiloco_vaso", product_code: "TV", product_name: "Tostiloco en Vaso", category: "preparados", price: 60, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true }
     ];
 
     function getBranchExplicitDeletedKey(branchRef) {
@@ -2399,6 +2433,31 @@
             ] : [])
         ].map(s => String(s).trim().toLowerCase()));
 
+        // Desbloquear productos canónicos oficiales para Tagarete y Rescate inmediatamente
+        const protectedTagareteIds = new Set([
+            "p_ag_nat_grande", "p_ag_chica", "p_ag_grande", "p_ag_mediana",
+            "p_helado_vaso1", "p_helado_vaso2", "p_helado_vaso3", "p_helado_vaso4",
+            "p_paleta_chapurrita", "p_mini", "p_trol", "p_paleta_agua_gde",
+            "p_papas_cueros", "p_tostilocos", "p_tostiloco_vaso"
+        ]);
+        const protectedTagareteNames = new Set([
+            "agua natural grande", "agua chica", "agua grande", "agua mediana",
+            "helado de una bolita", "helado de dos bolitas", "helado de tres bolitas", "helado de cuatro bolitas",
+            "vaso 1 bolita", "helado vaso 2 bolitas", "helado vaso 3 bolitas", "helado vaso 4",
+            "paleta chaparrita", "paleta chapurrita", "mini", "trol", "paleta agua grande",
+            "papas con cueros", "tostilocos", "tostiloco en vaso"
+        ]);
+        if (isTagarete2Active() || isTagarete1Active() || bKey === "tagarete_2" || bKey === "tagarete_1" || bKey === "branch-5" || bKey === "branch-4") {
+            protectedTagareteIds.forEach(id => explicitDelSet.delete(id));
+            protectedTagareteNames.forEach(name => explicitDelNamesSet.delete(name));
+        }
+
+        if (bKey === "rescate" || bKey === "branch-2" || resolveCanonicalBranch(S.branchName) === "Rescate") {
+            explicitDelSet.delete("p_paleta_agua_chica");
+            explicitDelNamesSet.delete("paleta agua chica");
+            explicitDelNamesSet.delete("paleta de agua chica");
+        }
+
         // Cargar catálogo base compartido (respetando solo eliminaciones explícitas de la sucursal activa)
         let calzadaPermanent = CALZADA_BASE_PRODUCTS.filter(cp => !explicitDelSet.has(String(cp.product_id)) && !explicitDelNamesSet.has(String(cp.product_name || "").trim().toLowerCase())).map(sanitizeSharedCatalogProduct);
         try {
@@ -2416,7 +2475,7 @@
             }
         } catch(e) {}
 
-        let tagarete2Permanent = TAGARETE_2_BASE_PRODUCTS.filter(tp => !explicitDelSet.has(String(tp.product_id))).map(sanitizeSharedCatalogProduct);
+        let tagarete2Permanent = TAGARETE_2_BASE_PRODUCTS.map(sanitizeSharedCatalogProduct);
         try {
             const rawTag2 = localStorage.getItem("lf_tagarete_2_permanent_products");
             if (rawTag2) {
@@ -3086,12 +3145,16 @@
                 "p_tostiloco_vaso_barcel", "prod_tostiloco_vaso"
             ]);
 
-            // Configuración canónica oficial de Tagarete 2 (con las 4 aguas oficiales al precio exacto solicitado)
+            // Configuración canónica oficial de Tagarete 2 (con las 4 aguas oficiales y 4 helados al precio exacto solicitado)
             const officialTag2Config = [
                 { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
                 { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
                 { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG" },
                 { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" },
+                { id: "p_helado_vaso1", name: "Helado de una bolita", cat: "helados", price: 20, code: "HV1" },
+                { id: "p_helado_vaso2", name: "Helado de dos bolitas", cat: "helados", price: 35, code: "HV2" },
+                { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3" },
+                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4" },
                 { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH" },
                 { id: "p_mini", name: "MINI", cat: "paletas", price: 5, code: "MINI" },
                 { id: "p_trol", name: "Trol", cat: "congelados", price: 30, code: "Trol" },
@@ -3426,15 +3489,18 @@
 
             // C. Garantizar productos oficiales intactos con nombres y precios correctos para Tagarete 1
             const officialTag1Config = [
+                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
+                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
                 { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG-GDE" },
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" },
                 { id: "p_chechis_vaso", name: "Chechis Preparados Vaso", cat: "preparados", price: 25, code: "CHV" },
                 { id: "prod_1789344787923_spve", name: "Esquimal Grande", cat: "paletas", price: 30, code: "EG" },
                 { id: "p_fresa_congelada", name: "Fresa Congelada", cat: "congelados", price: 45, code: "FC" },
                 { id: "p_fresa_natural", name: "Fresa Natural", cat: "congelados", price: 55, code: "FN" },
-                { id: "p_helado_vaso1", name: "Vaso 1 bolita", cat: "helados", price: 20, code: "HV-1" },
-                { id: "p_helado_vaso2", name: "Helado Vaso 2 bolitas", cat: "helados", price: 35, code: "HV-2" },
-                { id: "p_helado_vaso3", name: "Helado Vaso 3 bolitas", cat: "helados", price: 40, code: "HV-3" },
-                { id: "p_helado_vaso4", name: "Helado Vaso 4", cat: "helados", price: 50, code: "HV-4" },
+                { id: "p_helado_vaso1", name: "Helado de una bolita", cat: "helados", price: 20, code: "HV1" },
+                { id: "p_helado_vaso2", name: "Helado de dos bolitas", cat: "helados", price: 35, code: "HV2" },
+                { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3" },
+                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4" },
                 { id: "p_mini", name: "Mini", cat: "paletas", price: 5, code: "MINI" },
                 { id: "p_mordisco", name: "Mordisco", cat: "congelados", price: 25, code: "MOR" },
                 { id: "p_paleta_agua_gde", name: "Paleta Agua Grande", cat: "paletas", price: 25, code: "PAG" },
@@ -3556,6 +3622,49 @@
         // Garantizar en vivo catálogo limpio y precios oficiales si la sucursal activa es Rescate
         const isCurrentRescate = resolveCanonicalBranch(S.branchName) === "Rescate";
         if (isCurrentRescate) {
+            // Garantizar Paleta de Agua Chica oficial a $12 en El Rescate
+            const foundPaletaAguaChica = p.find(x => String(x.product_id) === "p_paleta_agua_chica" || String(x.product_name||"").trim().toLowerCase() === "paleta agua chica" || String(x.product_name||"").trim().toLowerCase() === "paleta de agua chica");
+            if (foundPaletaAguaChica) {
+                foundPaletaAguaChica.product_name = "Paleta Agua Chica";
+                foundPaletaAguaChica.category = "paletas";
+                foundPaletaAguaChica.price = 12;
+                foundPaletaAguaChica.is_active = true;
+            } else {
+                p.push({
+                    product_id: "p_paleta_agua_chica",
+                    product_name: "Paleta Agua Chica",
+                    product_code: "PACH",
+                    category: "paletas",
+                    price: 12,
+                    branch_name: "General",
+                    branch_id: "all",
+                    initial_stock: 50,
+                    is_active: true
+                });
+            }
+            if (!S.inv["p_paleta_agua_chica"] || Number(S.inv["p_paleta_agua_chica"]) <= 0) {
+                S.inv["p_paleta_agua_chica"] = 50;
+            }
+
+            // Garantizar que productos personalizados agregados en El Rescate en localStorage nunca se omitan
+            try {
+                const rescateCustomKeys = ["lf_rescate_permanent_products", "lf_rescate_custom_products", "lf_branch-2_custom_products"];
+                rescateCustomKeys.forEach(rk => {
+                    const raw = localStorage.getItem(rk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                if (!p.some(x => String(x.product_id) === cpid)) {
+                                    p.push({ ...cp, allowed_in_rescate: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
             p.forEach(prod => {
                 if (!prod || prod.user_edited_price_v69) return;
                 const pid = String(prod.product_id || "");
@@ -3620,6 +3729,9 @@
                 if (!prod) return false;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
                 const pid = String(prod.product_id || "");
+
+                // Productos personalizados o creados por las encargadas siempre se permiten
+                if (prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69) return true;
 
                 // Chaparrita / Chapurrita: mantener solo la oficial p_paleta_chapurrita
                 if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") return false;
@@ -3688,6 +3800,7 @@
 
             // Establecer nombres claros oficiales para El Rescate
             p.forEach(prod => {
+                if (prod.product_id === "p_paleta_agua_chica") { prod.product_name = "Paleta Agua Chica"; prod.category = "paletas"; prod.price = 12; }
                 if (prod.product_id === "p_paleta_chapurrita") { prod.product_name = "Paleta Chapurrita"; }
                 if (prod.product_id === "p_mini") { prod.product_name = "Mini"; }
                 if (prod.product_id === "p_trol") { prod.product_name = "Trol"; }
@@ -3697,6 +3810,14 @@
                 if (prod.product_id === "p_waffle") { prod.product_name = "Waffle"; }
                 if (prod.product_id === "p_frappe") { prod.product_name = "Frappé"; }
                 if (prod.product_id === "p_sodas_italianas") { prod.product_name = "Sodas Italianas"; }
+            });
+
+            // Priorizar productos personalizados y editados por las encargadas para que NUNCA sean eliminados por un duplicado base en Rescate
+            p.sort((a,b) => {
+                const aCust = (a.is_custom || String(a.product_id||"").startsWith("prod_") || a.user_edited_price_v69) ? 1 : 0;
+                const bCust = (b.is_custom || String(b.product_id||"").startsWith("prod_") || b.user_edited_price_v69) ? 1 : 0;
+                if (aCust !== bCust) return bCust - aCust;
+                return (a.product_name || "").localeCompare(b.product_name || "");
             });
 
             // 7. Deduplicación blindada por código conocido y por (categoría + nombre normalizado) en Rescate para evitar tarjetas repetidas
@@ -3723,36 +3844,40 @@
         // Garantizar catálogo limpio sin duplicados si la sucursal activa es Tagarete 2
         const isCurrentTag2 = isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2" || S.branchId === "branch-5";
         if (isCurrentTag2) {
-            // Garantizar que las 4 aguas oficiales de Tagarete 2 siempre estén presentes
-            const officialWatersT2 = [
-                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
-                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
-                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG" },
-                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" }
+            // Garantizar que las 4 aguas oficiales y 4 helados oficiales de Tagarete 2 siempre estén presentes
+            const officialTag2Base = [
+                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG", stock: 40 },
+                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG", stock: 40 },
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
+                { id: "p_helado_vaso1", name: "Helado de una bolita", cat: "helados", price: 20, code: "HV1", stock: 80 },
+                { id: "p_helado_vaso2", name: "Helado de dos bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
+                { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
+                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4", stock: 80 }
             ];
-            officialWatersT2.forEach(ow => {
-                const found = p.find(x => String(x.product_id) === ow.id || String(x.product_name || "").trim().toLowerCase() === ow.name.toLowerCase());
+            officialTag2Base.forEach(ob => {
+                const found = p.find(x => String(x.product_id) === ob.id || String(x.product_name || "").trim().toLowerCase() === ob.name.toLowerCase());
                 if (found) {
-                    found.product_name = ow.name;
-                    found.category = "aguas";
-                    if (!found.user_edited_price_v69) found.price = ow.price;
+                    found.product_name = ob.name;
+                    found.category = ob.cat;
+                    if (!found.user_edited_price_v69) found.price = ob.price;
                     found.allowed_in_tagarete_2 = true;
                 } else {
                     p.push({
-                        product_id: ow.id,
-                        product_name: ow.name,
-                        product_code: ow.code,
-                        category: "aguas",
-                        price: ow.price,
+                        product_id: ob.id,
+                        product_name: ob.name,
+                        product_code: ob.code,
+                        category: ob.cat,
+                        price: ob.price,
                         branch_name: "General",
                         branch_id: "all",
-                        initial_stock: 40,
+                        initial_stock: ob.stock,
                         is_active: true,
                         allowed_in_tagarete_2: true
                     });
                 }
-                if (!S.inv[ow.id] || Number(S.inv[ow.id]) <= 0) {
-                    S.inv[ow.id] = 40;
+                if (!S.inv[ob.id] || Number(S.inv[ob.id]) <= 0) {
+                    S.inv[ob.id] = ob.stock;
                 }
             });
 
@@ -3861,6 +3986,26 @@
                     prod.category = "aguas";
                     if (!prod.user_edited_price_v69) prod.price = 30;
                 }
+                if (prod.product_id === "p_helado_vaso1") {
+                    prod.product_name = "Helado de una bolita";
+                    prod.category = "helados";
+                    if (!prod.user_edited_price_v69) prod.price = 20;
+                }
+                if (prod.product_id === "p_helado_vaso2") {
+                    prod.product_name = "Helado de dos bolitas";
+                    prod.category = "helados";
+                    if (!prod.user_edited_price_v69) prod.price = 35;
+                }
+                if (prod.product_id === "p_helado_vaso3") {
+                    prod.product_name = "Helado de tres bolitas";
+                    prod.category = "helados";
+                    if (!prod.user_edited_price_v69) prod.price = 45;
+                }
+                if (prod.product_id === "p_helado_vaso4") {
+                    prod.product_name = "Helado de cuatro bolitas";
+                    prod.category = "helados";
+                    if (!prod.user_edited_price_v69) prod.price = 50;
+                }
             });
 
             // Priorizar productos personalizados y editados por las encargadas para que NUNCA sean eliminados por un duplicado base
@@ -3887,7 +4032,67 @@
 
         // Garantizar catálogo limpio sin duplicados si la sucursal activa es Tagarete 1
         if (isTagarete1Active()) {
+            // Garantizar que las 4 aguas oficiales y 4 helados oficiales de Tagarete 1 siempre estén presentes
+            const officialTag1Base = [
+                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG", stock: 40 },
+                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG-GDE", stock: 40 },
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
+                { id: "p_helado_vaso1", name: "Helado de una bolita", cat: "helados", price: 20, code: "HV1", stock: 80 },
+                { id: "p_helado_vaso2", name: "Helado de dos bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
+                { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
+                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4", stock: 80 }
+            ];
+            officialTag1Base.forEach(ob => {
+                const found = p.find(x => String(x.product_id) === ob.id || String(x.product_name || "").trim().toLowerCase() === ob.name.toLowerCase());
+                if (found) {
+                    found.product_name = ob.name;
+                    found.category = ob.cat;
+                    if (!found.user_edited_price_v69) found.price = ob.price;
+                    found.allowed_in_tagarete_1 = true;
+                } else {
+                    p.push({
+                        product_id: ob.id,
+                        product_name: ob.name,
+                        product_code: ob.code,
+                        category: ob.cat,
+                        price: ob.price,
+                        branch_name: "General",
+                        branch_id: "all",
+                        initial_stock: ob.stock,
+                        is_active: true,
+                        allowed_in_tagarete_1: true
+                    });
+                }
+                if (!S.inv[ob.id] || Number(S.inv[ob.id]) <= 0) {
+                    S.inv[ob.id] = ob.stock;
+                }
+            });
+
+            // Inyectar productos personalizados de Tagarete 1 si faltaran
+            try {
+                const t1CustomKeys = ["lf_tagarete_1_permanent_products", "lf_tagarete_1_custom_products", "lf_branch-4_custom_products"];
+                t1CustomKeys.forEach(tk => {
+                    const raw = localStorage.getItem(tk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                if (!p.some(x => String(x.product_id) === cpid)) {
+                                    p.push({ ...cp, allowed_in_tagarete_1: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+
             p = p.filter(prod => {
+                if (!prod) return false;
+                const pid = String(prod.product_id || "");
+                if (prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69) return true;
                 if (!prod) return false;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
                 const pid = String(prod.product_id || "");
@@ -3944,15 +4149,18 @@
 
             // Establecer nombres y precios oficiales en vivo para Tagarete 1
             p.forEach(prod => {
+                if (prod.product_id === "p_ag_nat_grande") { prod.product_name = "Agua Natural Grande"; prod.category = "aguas"; prod.price = 20; }
+                if (prod.product_id === "p_ag_chica") { prod.product_name = "Agua Chica"; prod.category = "aguas"; prod.price = 25; }
                 if (prod.product_id === "p_ag_grande") { prod.product_name = "Agua Grande"; prod.category = "aguas"; prod.price = 45; }
+                if (prod.product_id === "p_ag_mediana") { prod.product_name = "Agua Mediana"; prod.category = "aguas"; prod.price = 30; }
                 if (prod.product_id === "p_chechis_vaso") { prod.product_name = "Chechis Preparados Vaso"; prod.category = "preparados"; prod.price = 25; }
                 if (prod.product_id === "prod_1789344787923_spve") { prod.product_name = "Esquimal Grande"; prod.category = "paletas"; prod.price = 30; }
                 if (prod.product_id === "p_fresa_congelada") { prod.product_name = "Fresa Congelada"; prod.category = "congelados"; prod.price = 45; }
                 if (prod.product_id === "p_fresa_natural") { prod.product_name = "Fresa Natural"; prod.category = "congelados"; prod.price = 55; }
-                if (prod.product_id === "p_helado_vaso1") { prod.product_name = "Vaso 1 bolita"; prod.category = "helados"; prod.price = 20; }
-                if (prod.product_id === "p_helado_vaso2") { prod.product_name = "Helado Vaso 2 bolitas"; prod.category = "helados"; prod.price = 35; }
-                if (prod.product_id === "p_helado_vaso3") { prod.product_name = "Helado Vaso 3 bolitas"; prod.category = "helados"; prod.price = 40; }
-                if (prod.product_id === "p_helado_vaso4") { prod.product_name = "Helado Vaso 4"; prod.category = "helados"; prod.price = 50; }
+                if (prod.product_id === "p_helado_vaso1") { prod.product_name = "Helado de una bolita"; prod.category = "helados"; prod.price = 20; }
+                if (prod.product_id === "p_helado_vaso2") { prod.product_name = "Helado de dos bolitas"; prod.category = "helados"; prod.price = 35; }
+                if (prod.product_id === "p_helado_vaso3") { prod.product_name = "Helado de tres bolitas"; prod.category = "helados"; prod.price = 45; }
+                if (prod.product_id === "p_helado_vaso4") { prod.product_name = "Helado de cuatro bolitas"; prod.category = "helados"; prod.price = 50; }
                 if (prod.product_id === "p_mini") { prod.product_name = "Mini"; prod.category = "paletas"; prod.price = 5; }
                 if (prod.product_id === "p_mordisco") { prod.product_name = "Mordisco"; prod.category = "congelados"; prod.price = 25; }
                 if (prod.product_id === "p_paleta_agua_gde") { prod.product_name = "Paleta Agua Grande"; prod.category = "paletas"; prod.price = 25; }
@@ -3962,6 +4170,14 @@
                 if (prod.product_id === "p_tostiloco_vaso") { prod.product_name = "Tostiloco en Vaso"; prod.category = "preparados"; prod.price = 60; }
                 if (prod.product_id === "p_trol") { prod.product_name = "Trol"; prod.category = "congelados"; prod.price = 30; }
                 if (prod.product_id === "p_tostilocos") { prod.product_name = "Tostilocos"; prod.category = "preparados"; prod.price = 55; }
+            });
+
+            // Priorizar productos personalizados en Tagarete 1
+            p.sort((a,b) => {
+                const aCust = (a.is_custom || String(a.product_id||"").startsWith("prod_") || a.user_edited_price_v69) ? 1 : 0;
+                const bCust = (b.is_custom || String(b.product_id||"").startsWith("prod_") || b.user_edited_price_v69) ? 1 : 0;
+                if (aCust !== bCust) return bCust - aCust;
+                return (a.product_name || "").localeCompare(b.product_name || "");
             });
 
             // Deduplicación blindada por nombre y clave en Tagarete 1 para no repetir ninguna tarjeta jamás en POS
@@ -5332,29 +5548,80 @@
                             String(activeAdminFilter) === "branch-5" ||
                             resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Tagarete 2";
 
-        if (isTag2Admin) {
-            const officialWatersT2 = [
+        const isTag1Admin = isTagarete1Active() ||
+                            String(activeAdminFilter) === "branch-4" ||
+                            resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Tagarete 1";
+
+        const isRescateAdmin = resolveCanonicalBranch(S.branchName) === "Rescate" ||
+                               String(activeAdminFilter) === "branch-2" ||
+                               resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Rescate";
+
+        if (isTag2Admin || isTag1Admin) {
+            const officialTagBase = [
                 { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
                 { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
                 { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG" },
-                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" }
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" },
+                { id: "p_helado_vaso1", name: "Helado de una bolita", cat: "helados", price: 20, code: "HV1" },
+                { id: "p_helado_vaso2", name: "Helado de dos bolitas", cat: "helados", price: 35, code: "HV2" },
+                { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3" },
+                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4" }
             ];
-            officialWatersT2.forEach(ow => {
-                if (!displayedProducts.some(x => String(x.product_id) === ow.id || String(x.product_name||"").trim().toLowerCase() === ow.name.toLowerCase())) {
+            officialTagBase.forEach(ob => {
+                if (!displayedProducts.some(x => String(x.product_id) === ob.id || String(x.product_name||"").trim().toLowerCase() === ob.name.toLowerCase())) {
                     displayedProducts.push({
-                        product_id: ow.id,
-                        product_name: ow.name,
-                        product_code: ow.code,
-                        category: "aguas",
-                        price: ow.price,
+                        product_id: ob.id,
+                        product_name: ob.name,
+                        product_code: ob.code,
+                        category: ob.cat,
+                        price: ob.price,
                         branch_name: "General",
                         branch_id: "all",
                         initial_stock: 40,
                         is_active: true,
-                        allowed_in_tagarete_2: true
+                        allowed_in_tagarete_2: true,
+                        allowed_in_tagarete_1: true
                     });
                 }
             });
+        }
+
+        if (isRescateAdmin) {
+            if (!displayedProducts.some(x => String(x.product_id) === "p_paleta_agua_chica" || String(x.product_name||"").trim().toLowerCase() === "paleta agua chica")) {
+                displayedProducts.push({
+                    product_id: "p_paleta_agua_chica",
+                    product_name: "Paleta Agua Chica",
+                    product_code: "PACH",
+                    category: "paletas",
+                    price: 12,
+                    branch_name: "General",
+                    branch_id: "all",
+                    initial_stock: 50,
+                    is_active: true,
+                    allowed_in_rescate: true
+                });
+            }
+            try {
+                const rescateCustomKeys = ["lf_rescate_permanent_products", "lf_rescate_custom_products", "lf_branch-2_custom_products"];
+                rescateCustomKeys.forEach(rk => {
+                    const raw = localStorage.getItem(rk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                if (!displayedProducts.some(x => String(x.product_id) === cpid)) {
+                                    displayedProducts.push({ ...cp, allowed_in_rescate: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+        }
+
+        if (isTag2Admin) {
 
             displayedProducts = displayedProducts.filter(p => {
                 if (!p) return false;
@@ -6022,8 +6289,14 @@
                 if (isCalzadaTarget) {
                     prodToEdit.allowed_in_calzada = true;
                 }
+                if (isTag1Target) {
+                    prodToEdit.allowed_in_tagarete_1 = true;
+                }
                 if (isTag2Target) {
                     prodToEdit.allowed_in_tagarete_2 = true;
+                }
+                if (isRescateTarget) {
+                    prodToEdit.allowed_in_rescate = true;
                 }
 
                 // Actualizar stock directamente
@@ -6116,7 +6389,9 @@
                     is_active: true,
                     is_custom: true,
                     allowed_in_calzada: isCalzadaTarget ? true : undefined,
+                    allowed_in_tagarete_1: isTag1Target ? true : undefined,
                     allowed_in_tagarete_2: isTag2Target ? true : undefined,
+                    allowed_in_rescate: isRescateTarget ? true : undefined,
                     is_composite: isComp,
                     components: isComp ? [...tempComponents] : [],
                     is_supply: (cat === "desechables" || price === 0),
@@ -6485,32 +6760,81 @@
 
         let branchAllowedProducts = S.products.filter(p => isProductAllowedInBranch(p, S.branchName));
         const isTag2Inv = isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2" || S.branchId === "branch-5";
-        if (isTag2Inv) {
-            const officialWatersT2 = [
-                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG" },
-                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH" },
-                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG" },
-                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM" }
+        const isTag1Inv = isTagarete1Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 1" || S.branchId === "branch-4";
+        const isRescateInv = resolveCanonicalBranch(S.branchName) === "Rescate" || S.branchId === "branch-2";
+
+        if (isTag2Inv || isTag1Inv) {
+            const officialTagBase = [
+                { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG", stock: 40 },
+                { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG", stock: 40 },
+                { id: "p_ag_mediana", name: "Agua Mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
+                { id: "p_helado_vaso1", name: "Helado de una bolita", cat: "helados", price: 20, code: "HV1", stock: 80 },
+                { id: "p_helado_vaso2", name: "Helado de dos bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
+                { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
+                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4", stock: 80 }
             ];
-            officialWatersT2.forEach(ow => {
-                if (!branchAllowedProducts.some(x => String(x.product_id) === ow.id || String(x.product_name||"").trim().toLowerCase() === ow.name.toLowerCase())) {
+            officialTagBase.forEach(ob => {
+                if (!branchAllowedProducts.some(x => String(x.product_id) === ob.id || String(x.product_name||"").trim().toLowerCase() === ob.name.toLowerCase())) {
                     branchAllowedProducts.push({
-                        product_id: ow.id,
-                        product_name: ow.name,
-                        product_code: ow.code,
-                        category: "aguas",
-                        price: ow.price,
+                        product_id: ob.id,
+                        product_name: ob.name,
+                        product_code: ob.code,
+                        category: ob.cat,
+                        price: ob.price,
                         branch_name: "General",
                         branch_id: "all",
-                        initial_stock: 40,
+                        initial_stock: ob.stock,
                         is_active: true,
-                        allowed_in_tagarete_2: true
+                        allowed_in_tagarete_2: true,
+                        allowed_in_tagarete_1: true
                     });
                 }
-                if (!S.inv[ow.id] || Number(S.inv[ow.id]) <= 0) {
-                    S.inv[ow.id] = 40;
+                if (!S.inv[ob.id] || Number(S.inv[ob.id]) <= 0) {
+                    S.inv[ob.id] = ob.stock;
                 }
             });
+        }
+
+        if (isRescateInv) {
+            if (!branchAllowedProducts.some(x => String(x.product_id) === "p_paleta_agua_chica" || String(x.product_name||"").trim().toLowerCase() === "paleta agua chica")) {
+                branchAllowedProducts.push({
+                    product_id: "p_paleta_agua_chica",
+                    product_name: "Paleta Agua Chica",
+                    product_code: "PACH",
+                    category: "paletas",
+                    price: 12,
+                    branch_name: "General",
+                    branch_id: "all",
+                    initial_stock: 50,
+                    is_active: true,
+                    allowed_in_rescate: true
+                });
+            }
+            if (!S.inv["p_paleta_agua_chica"] || Number(S.inv["p_paleta_agua_chica"]) <= 0) {
+                S.inv["p_paleta_agua_chica"] = 50;
+            }
+            try {
+                const rescateCustomKeys = ["lf_rescate_permanent_products", "lf_rescate_custom_products", "lf_branch-2_custom_products"];
+                rescateCustomKeys.forEach(rk => {
+                    const raw = localStorage.getItem(rk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                if (!branchAllowedProducts.some(x => String(x.product_id) === cpid)) {
+                                    branchAllowedProducts.push({ ...cp, allowed_in_rescate: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+        }
+
+        if (isTag2Inv) {
 
             // Inyectar productos personalizados de Tagarete 2 en localStorage si faltaran en branchAllowedProducts
             try {
