@@ -4093,9 +4093,7 @@
                 if (!prod) return false;
                 const pid = String(prod.product_id || "");
                 if (prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69) return true;
-                if (!prod) return false;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
-                const pid = String(prod.product_id || "");
 
                 // 1. Quitar duplicados de Agua Grande
                 if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") return false;
@@ -5678,10 +5676,6 @@
             });
         }
 
-        const isTag1Admin = isTagarete1Active() ||
-                            String(activeAdminFilter) === "branch-4" ||
-                            resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Tagarete 1";
-
         if (isTag1Admin) {
             displayedProducts = displayedProducts.filter(p => {
                 if (!p) return false;
@@ -5718,10 +5712,6 @@
                 return true;
             });
         }
-
-        const isRescateAdmin = resolveCanonicalBranch(S.branchName) === "Rescate" ||
-                               String(activeAdminFilter) === "branch-2" ||
-                               resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Rescate";
 
         if (isRescateAdmin) {
             displayedProducts = displayedProducts.filter(p => {
