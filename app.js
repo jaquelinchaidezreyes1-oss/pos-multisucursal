@@ -617,9 +617,29 @@
         const bCanonical = resolveCanonicalBranch(bName || S.branchName || "calzada");
         const isRescate = bCanonical === "Rescate";
         const isCalzada = bCanonical === "La Fuente Calzada";
+        const isTag1 = bCanonical === "Tagarete 1" || isTagarete1Active();
+        const isTag2 = bCanonical === "Tagarete 2" || isTagarete2Active();
 
         const pid = String(product.product_id || product.id || "").toLowerCase();
         const pName = String(product.product_name || product.name || "").toLowerCase();
+
+        // ── DISPONIBILIDAD TOTAL PARA CUALQUIER PRODUCTO AGREGADO O PERSONALIZADO ──
+        const isCustomProduct = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_") || product.user_edited_price_v69;
+        if (isCustomProduct) {
+            const pBranchCanon = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
+            if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanon === bCanonical || !pBranchCanon) {
+                return true;
+            }
+            if (isCalzada && product.allowed_in_calzada) return true;
+            if (isRescate && product.allowed_in_rescate) return true;
+            if (isTag1 && product.allowed_in_tagarete_1) return true;
+            if (isTag2 && product.allowed_in_tagarete_2) return true;
+        }
+
+        // Paleta Chaparrita oficial universalmente permitida en todas las sucursales
+        if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pName === "paleta chaparrita" || pName === "paleta chapurrita") {
+            return true;
+        }
 
         // ── REGLA DE DISPONIBILIDAD TOTAL PARA SUCURSAL LA FUENTE CALZADA ──
         // En La Fuente Calzada, cualquier producto que haya sido agregado para Calzada,
@@ -647,7 +667,7 @@
         // En Tagarete 2, cualquier producto que haya sido agregado para Tagarete 2,
         // asignado a Tagarete 2, base o creado como producto personalizado,
         // permanece SIEMPRE permitido, activo y funcionando.
-        const isTag2 = bCanonical === "Tagarete 2" || isTagarete2Active();
+// isTag2 already declared above
         if (isTag2) {
             if (typeof TAGARETE_2_BASE_PRODUCTS !== "undefined" && Array.isArray(TAGARETE_2_BASE_PRODUCTS)) {
                 if (TAGARETE_2_BASE_PRODUCTS.some(tp => String(tp.product_id || tp.id) === pid)) return true;
@@ -685,6 +705,24 @@
             const isCustomCreated = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
             if (isCustomCreated) {
                 if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanonical === "Rescate") {
+                    return true;
+                }
+            }
+        }
+
+        // ── REGLA DE DISPONIBILIDAD TOTAL PARA SUCURSAL TAGARETE 1 ──
+        if (isTag1) {
+            const pBranchCanonical = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
+            const isAssignedTag1 = product.allowed_in_tagarete_1 ||
+                                   product.branch_id === "branch-4" ||
+                                   pBranchCanonical === "Tagarete 1" ||
+                                   resolveCanonicalBranch(product.branch_id) === "Tagarete 1";
+            if (isAssignedTag1) {
+                return true;
+            }
+            const isCustomCreated = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+            if (isCustomCreated) {
+                if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanonical === "Tagarete 1") {
                     return true;
                 }
             }
@@ -1532,6 +1570,8 @@
     /* ── INVENTARIO CON SOPORTE INDEPENDIENTE POR SUCURSAL EN TIEMPO REAL ── */
     const BRANCH_BASE_INVENTORY = {
         "calzada": {
+            "p_paleta_chapurrita": 50,
+            "p_paleta_chaparrita": 50,
             "adbc5511-68a8-4525-97a3-ac7972856e89": 140,
             "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 130,
             "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 125,
@@ -1548,6 +1588,8 @@
             "sup_cheetos": 45
         },
         "rescate": {
+            "p_paleta_chapurrita": 50,
+            "p_paleta_chaparrita": 50,
             "adbc5511-68a8-4525-97a3-ac7972856e89": 99,
             "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 95,
             "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 100,
@@ -2211,7 +2253,7 @@
         { product_id: "p_paleta_crema_gde", product_code: "PCG", product_name: "Paleta Crema Grande", category: "paletas", price: 30, branch_name: "General", initial_stock: 100 },
         { product_id: "p_paleta_agua_gde", product_code: "PAG", product_name: "Paleta Agua Grande", category: "paletas", price: 25, branch_name: "General", initial_stock: 100 },
         { product_id: "p_paleta_agua_chica", product_code: "PACH", product_name: "Paleta Agua Chica", category: "paletas", price: 12, branch_name: "General", initial_stock: 100 },
-        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chapurrita", category: "paletas", price: 20, branch_name: "General", initial_stock: 100 },
+        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chaparrita", category: "paletas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_calzada: true, allowed_in_rescate: true, allowed_in_tagarete_1: true, allowed_in_tagarete_2: true },
         { product_id: "p_paleta_payaso", product_code: "PP", product_name: "Paleta Payaso", category: "paletas", price: 30, branch_name: "General", initial_stock: 100 },
         { product_id: "p_paleta_michelada", product_code: "PM", product_name: "Paleta Michelada", category: "paletas", price: 40, branch_name: "General", initial_stock: 100 },
         { product_id: "p_paleta_nuez_esp", product_code: "NE", product_name: "Nuez Especial", category: "paletas", price: 40, branch_name: "General", initial_stock: 100 },
@@ -2288,6 +2330,7 @@
 
     // Catálogo base protegido e indestructible (compartido como General para no quitar productos de Tagarete 2 ni de ninguna otra sucursal)
     const CALZADA_BASE_PRODUCTS = [
+        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chaparrita", category: "paletas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_calzada: true, allowed_in_rescate: true, allowed_in_tagarete_1: true, allowed_in_tagarete_2: true },
         { product_id: "prod_1789344787923_spve", product_code: "EG", product_name: "Esquimal Grande", category: "paletas", price: 30, branch_name: "General", branch_id: "all", initial_stock: 100, allowed_in_calzada: true },
         { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado Vaso 3 bolitas", category: "helados", price: 40, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_calzada: true },
         { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado Vaso 2 bolitas", category: "helados", price: 35, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_calzada: true },
@@ -2321,7 +2364,7 @@
         { product_id: "p_helado_vaso2", product_code: "HV2", product_name: "Helado de dos bolitas", category: "helados", price: 35, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
         { product_id: "p_helado_vaso3", product_code: "HV3", product_name: "Helado de tres bolitas", category: "helados", price: 45, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
         { product_id: "p_helado_vaso4", product_code: "HV4", product_name: "Helado de cuatro bolitas", category: "helados", price: 50, branch_name: "General", branch_id: "all", initial_stock: 80, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
-        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chaparrita", category: "paletas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
+        { product_id: "p_paleta_chapurrita", product_code: "PCH", product_name: "Paleta Chaparrita", category: "paletas", price: 20, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true, allowed_in_calzada: true, allowed_in_rescate: true },
         { product_id: "p_mini", product_code: "MINI", product_name: "MINI", category: "paletas", price: 5, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
         { product_id: "p_trol", product_code: "Trol", product_name: "Trol", category: "congelados", price: 30, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
         { product_id: "p_paleta_agua_gde", product_code: "PAG", product_name: "Paleta Agua Grande", category: "paletas", price: 25, branch_name: "General", branch_id: "all", initial_stock: 50, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true },
@@ -2342,7 +2385,7 @@
                                   CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === pid) ||
                                   TAGARETE_2_BASE_PRODUCTS.some(tp => String(tp.product_id) === pid);
         if (isDefaultOrShared) {
-            return { ...p, branch_name: "General", branch_id: "all", allowed_in_calzada: true, allowed_in_tagarete_2: true };
+            return { ...p, branch_name: "General", branch_id: "all", allowed_in_calzada: true, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true, allowed_in_rescate: true };
         }
         return p;
     }
@@ -2433,30 +2476,24 @@
             ] : [])
         ].map(s => String(s).trim().toLowerCase()));
 
-        // Desbloquear productos canónicos oficiales para Tagarete y Rescate inmediatamente
-        const protectedTagareteIds = new Set([
+        // Desbloquear productos canónicos oficiales para todas las sucursales inmediatamente
+        const protectedUniversalIds = new Set([
+            "p_paleta_chapurrita", "p_paleta_chaparrita", "p_paleta_agua_chica",
             "p_ag_nat_grande", "p_ag_chica", "p_ag_grande", "p_ag_mediana",
             "p_helado_vaso1", "p_helado_vaso2", "p_helado_vaso3", "p_helado_vaso4",
-            "p_paleta_chapurrita", "p_mini", "p_trol", "p_paleta_agua_gde",
+            "p_mini", "p_trol", "p_paleta_agua_gde",
             "p_papas_cueros", "p_tostilocos", "p_tostiloco_vaso"
         ]);
-        const protectedTagareteNames = new Set([
+        const protectedUniversalNames = new Set([
+            "paleta chaparrita", "paleta chapurrita", "chaparrita", "paleta agua chica", "paleta de agua chica",
             "agua natural grande", "agua chica", "agua grande", "agua mediana",
             "helado de una bolita", "helado de dos bolitas", "helado de tres bolitas", "helado de cuatro bolitas",
             "vaso 1 bolita", "helado vaso 2 bolitas", "helado vaso 3 bolitas", "helado vaso 4",
-            "paleta chaparrita", "paleta chapurrita", "mini", "trol", "paleta agua grande",
+            "mini", "trol", "paleta agua grande",
             "papas con cueros", "tostilocos", "tostiloco en vaso"
         ]);
-        if (isTagarete2Active() || isTagarete1Active() || bKey === "tagarete_2" || bKey === "tagarete_1" || bKey === "branch-5" || bKey === "branch-4") {
-            protectedTagareteIds.forEach(id => explicitDelSet.delete(id));
-            protectedTagareteNames.forEach(name => explicitDelNamesSet.delete(name));
-        }
-
-        if (bKey === "rescate" || bKey === "branch-2" || resolveCanonicalBranch(S.branchName) === "Rescate") {
-            explicitDelSet.delete("p_paleta_agua_chica");
-            explicitDelNamesSet.delete("paleta agua chica");
-            explicitDelNamesSet.delete("paleta de agua chica");
-        }
+        protectedUniversalIds.forEach(id => explicitDelSet.delete(id));
+        protectedUniversalNames.forEach(name => explicitDelNamesSet.delete(name));
 
         // Cargar catálogo base compartido (respetando solo eliminaciones explícitas de la sucursal activa)
         let calzadaPermanent = CALZADA_BASE_PRODUCTS.filter(cp => !explicitDelSet.has(String(cp.product_id)) && !explicitDelNamesSet.has(String(cp.product_name || "").trim().toLowerCase())).map(sanitizeSharedCatalogProduct);
@@ -3045,7 +3082,7 @@
                 else if (pid === "p_paleta_crema_gde" || pNameNorm === "paleta crema grande") { prod.price = 30; prod.product_name = "Paleta Crema Grande"; }
                 else if (pid === "p_paleta_agua_gde" || pNameNorm === "paleta agua grande") { prod.price = 25; prod.product_name = "Paleta Agua Grande"; }
                 else if (pid === "p_paleta_agua_chica" || pNameNorm === "paleta agua chica") { prod.price = 12; prod.product_name = "Paleta Agua Chica"; }
-                else if (pid === "p_paleta_chapurrita" || pNameNorm === "paleta chapurrita") { prod.price = 20; prod.product_name = "Paleta Chapurrita"; }
+                else if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita" || pNameNorm === "chaparrita") { prod.price = 20; prod.product_name = "Paleta Chaparrita"; prod.category = "paletas"; }
                 else if (pid === "p_paleta_payaso" || pNameNorm === "paleta payaso") { prod.price = 30; prod.product_name = "Paleta Payaso"; }
                 else if (pid === "p_paleta_michelada" || pNameNorm === "paleta michelada") { prod.price = 40; prod.product_name = "Paleta Michelada"; }
                 else if (pid === "p_paleta_nuez_esp" || pNameNorm === "nuez especial") { prod.price = 40; prod.product_name = "Nuez Especial"; }
@@ -3502,6 +3539,7 @@
                 { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3" },
                 { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4" },
                 { id: "p_mini", name: "Mini", cat: "paletas", price: 5, code: "MINI" },
+                { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH" },
                 { id: "p_mordisco", name: "Mordisco", cat: "congelados", price: 25, code: "MOR" },
                 { id: "p_paleta_agua_gde", name: "Paleta Agua Grande", cat: "paletas", price: 25, code: "PAG" },
                 { id: "p_paleta_crema_gde", name: "Paleta Crema Grande", cat: "paletas", price: 30, code: "PCG" },
@@ -3605,9 +3643,33 @@
         // Aplicar reglas estrictas de disponibilidad por sucursal
         p = p.filter(x => isProductAllowedInBranch(x, S.branchName));
 
-        // Garantizar en vivo precios exclusivos si la sucursal activa es La Fuente Calzada
+        // Garantizar en vivo precios exclusivos y Paleta Chaparrita si la sucursal activa es La Fuente Calzada
         const isCurrentCalzada = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
         if (isCurrentCalzada) {
+            // Garantizar Paleta Chaparrita oficial a $20 en La Fuente Calzada
+            const foundPaletaChaparritaCalz = p.find(x => String(x.product_id) === "p_paleta_chapurrita" || String(x.product_id) === "p_paleta_chaparrita" || String(x.product_name||"").trim().toLowerCase() === "paleta chaparrita" || String(x.product_name||"").trim().toLowerCase() === "paleta chapurrita");
+            if (foundPaletaChaparritaCalz) {
+                foundPaletaChaparritaCalz.product_name = "Paleta Chaparrita";
+                foundPaletaChaparritaCalz.category = "paletas";
+                if (!foundPaletaChaparritaCalz.user_edited_price_v69) foundPaletaChaparritaCalz.price = 20;
+                foundPaletaChaparritaCalz.allowed_in_calzada = true;
+            } else {
+                p.push({
+                    product_id: "p_paleta_chapurrita",
+                    product_name: "Paleta Chaparrita",
+                    product_code: "PCH",
+                    category: "paletas",
+                    price: 20,
+                    branch_name: "General",
+                    branch_id: "all",
+                    initial_stock: 50,
+                    is_active: true,
+                    allowed_in_calzada: true
+                });
+            }
+            if (!S.inv["p_paleta_chapurrita"] || Number(S.inv["p_paleta_chapurrita"]) <= 0) S.inv["p_paleta_chapurrita"] = 50;
+            if (!S.inv["p_paleta_chaparrita"] || Number(S.inv["p_paleta_chaparrita"]) <= 0) S.inv["p_paleta_chaparrita"] = 50;
+
             p.forEach(prod => {
                 if (prod && !prod.user_edited_price_v69) {
                     const pid = String(prod.product_id || "");
@@ -3615,7 +3677,29 @@
                     if (pid === "prod_1789344787923_spve" || pNameNorm === "esquimal grande") prod.price = 45;
                     else if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve") prod.price = 60;
                     else if (pid === "prod_calz_chetos_queso" || pNameNorm === "chetos queso") prod.price = 45;
+                    else if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pNameNorm === "paleta chaparrita" || pNameNorm === "paleta chapurrita") {
+                        prod.product_name = "Paleta Chaparrita";
+                        prod.category = "paletas";
+                        prod.price = 20;
+                    }
                 }
+            });
+
+            // Priorizar productos personalizados y deduplicar en Calzada
+            p.sort((a,b) => {
+                const aCust = (a.is_custom || String(a.product_id||"").startsWith("prod_") || a.user_edited_price_v69) ? 1 : 0;
+                const bCust = (b.is_custom || String(b.product_id||"").startsWith("prod_") || b.user_edited_price_v69) ? 1 : 0;
+                if (aCust !== bCust) return bCust - aCust;
+                return (a.product_name || "").localeCompare(b.product_name || "");
+            });
+            const seenCalzKeys = new Set();
+            p = p.filter(prod => {
+                const normName = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenCalzKeys.has(key) || seenCalzKeys.has(normName)) return false;
+                seenCalzKeys.add(key);
+                seenCalzKeys.add(normName);
+                return true;
             });
         }
 
@@ -3645,6 +3729,30 @@
             if (!S.inv["p_paleta_agua_chica"] || Number(S.inv["p_paleta_agua_chica"]) <= 0) {
                 S.inv["p_paleta_agua_chica"] = 50;
             }
+
+            // Garantizar Paleta Chaparrita oficial a $20 en El Rescate
+            const foundPaletaChaparritaResc = p.find(x => String(x.product_id) === "p_paleta_chapurrita" || String(x.product_id) === "p_paleta_chaparrita" || String(x.product_name||"").trim().toLowerCase() === "paleta chaparrita" || String(x.product_name||"").trim().toLowerCase() === "paleta chapurrita");
+            if (foundPaletaChaparritaResc) {
+                foundPaletaChaparritaResc.product_name = "Paleta Chaparrita";
+                foundPaletaChaparritaResc.category = "paletas";
+                if (!foundPaletaChaparritaResc.user_edited_price_v69) foundPaletaChaparritaResc.price = 20;
+                foundPaletaChaparritaResc.allowed_in_rescate = true;
+            } else {
+                p.push({
+                    product_id: "p_paleta_chapurrita",
+                    product_name: "Paleta Chaparrita",
+                    product_code: "PCH",
+                    category: "paletas",
+                    price: 20,
+                    branch_name: "General",
+                    branch_id: "all",
+                    initial_stock: 50,
+                    is_active: true,
+                    allowed_in_rescate: true
+                });
+            }
+            if (!S.inv["p_paleta_chapurrita"] || Number(S.inv["p_paleta_chapurrita"]) <= 0) S.inv["p_paleta_chapurrita"] = 50;
+            if (!S.inv["p_paleta_chaparrita"] || Number(S.inv["p_paleta_chaparrita"]) <= 0) S.inv["p_paleta_chaparrita"] = 50;
 
             // Garantizar que productos personalizados agregados en El Rescate en localStorage nunca se omitan
             try {
@@ -3734,7 +3842,7 @@
                 if (prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69) return true;
 
                 // Chaparrita / Chapurrita: mantener solo la oficial p_paleta_chapurrita
-                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") return false;
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") return false;
 
                 // Mini / Paleta mini: mantener solo p_mini
                 if (pid === "prod_calz_paleta_mini" || ((pNameNorm === "paleta mini" || pNameNorm === "mini") && pid !== "p_mini")) return false;
@@ -3801,7 +3909,7 @@
             // Establecer nombres claros oficiales para El Rescate
             p.forEach(prod => {
                 if (prod.product_id === "p_paleta_agua_chica") { prod.product_name = "Paleta Agua Chica"; prod.category = "paletas"; prod.price = 12; }
-                if (prod.product_id === "p_paleta_chapurrita") { prod.product_name = "Paleta Chapurrita"; }
+                if (prod.product_id === "p_paleta_chapurrita" || prod.product_id === "p_paleta_chaparrita") { prod.product_name = "Paleta Chaparrita"; prod.category = "paletas"; prod.price = 20; }
                 if (prod.product_id === "p_mini") { prod.product_name = "Mini"; }
                 if (prod.product_id === "p_trol") { prod.product_name = "Trol"; }
                 if (prod.product_id === "prod_1789344787923_spve") { prod.product_name = "Esquimal Grande"; }
@@ -3844,7 +3952,7 @@
         // Garantizar catálogo limpio sin duplicados si la sucursal activa es Tagarete 2
         const isCurrentTag2 = isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2" || S.branchId === "branch-5";
         if (isCurrentTag2) {
-            // Garantizar que las 4 aguas oficiales y 4 helados oficiales de Tagarete 2 siempre estén presentes
+            // Garantizar que las 4 aguas oficiales, 4 helados oficiales y productos canónicos de Tagarete 2 siempre estén presentes y sincronizados
             const officialTag2Base = [
                 { id: "p_ag_nat_grande", name: "Agua Natural Grande", cat: "aguas", price: 20, code: "ANG", stock: 40 },
                 { id: "p_ag_chica", name: "Agua Chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
@@ -3853,17 +3961,28 @@
                 { id: "p_helado_vaso1", name: "Helado de una bolita", cat: "helados", price: 20, code: "HV1", stock: 80 },
                 { id: "p_helado_vaso2", name: "Helado de dos bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
                 { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
-                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4", stock: 80 }
+                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4", stock: 80 },
+                { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH", stock: 50 },
+                { id: "p_mini", name: "MINI", cat: "paletas", price: 5, code: "MINI", stock: 50 },
+                { id: "p_trol", name: "Trol", cat: "congelados", price: 30, code: "Trol", stock: 50 },
+                { id: "p_paleta_agua_gde", name: "Paleta Agua Grande", cat: "paletas", price: 25, code: "PAG", stock: 50 },
+                { id: "p_papas_cueros", name: "Papas con Cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
+                { id: "p_tostilocos", name: "Tostilocos", cat: "preparados", price: 55, code: "TP", stock: 50 },
+                { id: "p_tostiloco_vaso", name: "Tostiloco en Vaso", cat: "preparados", price: 60, code: "TV", stock: 50 }
             ];
             officialTag2Base.forEach(ob => {
-                const found = p.find(x => String(x.product_id) === ob.id || String(x.product_name || "").trim().toLowerCase() === ob.name.toLowerCase());
+                const found = p.find(x => String(x.product_id || x.id) === ob.id || String(x.product_name || x.name || "").trim().toLowerCase() === ob.name.toLowerCase());
                 if (found) {
                     found.product_name = ob.name;
                     found.category = ob.cat;
                     if (!found.user_edited_price_v69) found.price = ob.price;
                     found.allowed_in_tagarete_2 = true;
+                    // Sincronizar en S.products para que siempre esté disponible al seleccionar para cobrar
+                    if (!S.products.some(x => String(x.product_id || x.id) === String(found.product_id || found.id))) {
+                        S.products.push(found);
+                    }
                 } else {
-                    p.push({
+                    const newBaseProd = {
                         product_id: ob.id,
                         product_name: ob.name,
                         product_code: ob.code,
@@ -3874,14 +3993,18 @@
                         initial_stock: ob.stock,
                         is_active: true,
                         allowed_in_tagarete_2: true
-                    });
+                    };
+                    p.push(newBaseProd);
+                    if (!S.products.some(x => String(x.product_id || x.id) === ob.id)) {
+                        S.products.push(newBaseProd);
+                    }
                 }
                 if (!S.inv[ob.id] || Number(S.inv[ob.id]) <= 0) {
                     S.inv[ob.id] = ob.stock;
                 }
             });
 
-            // Garantizar que productos personalizados de Tagarete 2 en localStorage nunca se omitan
+            // Garantizar que productos personalizados de Tagarete 2 en localStorage nunca se omitan y se sincronicen a S.products
             try {
                 const t2CustomKeys = ["lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products"];
                 t2CustomKeys.forEach(tk => {
@@ -3890,10 +4013,15 @@
                         const parsed = JSON.parse(raw);
                         if (Array.isArray(parsed)) {
                             parsed.forEach(cp => {
-                                if (!cp || !cp.product_id) return;
-                                const cpid = String(cp.product_id);
-                                if (!p.some(x => String(x.product_id) === cpid)) {
-                                    p.push({ ...cp, allowed_in_tagarete_2: true });
+                                if (!cp) return;
+                                const cpid = String(cp.product_id || cp.id || "");
+                                if (!cpid) return;
+                                const customP = { ...cp, product_id: cpid, allowed_in_tagarete_2: true };
+                                if (!p.some(x => String(x.product_id || x.id) === cpid)) {
+                                    p.push(customP);
+                                }
+                                if (!S.products.some(x => String(x.product_id || x.id) === cpid)) {
+                                    S.products.push(customP);
                                 }
                             });
                         }
@@ -4041,7 +4169,8 @@
                 { id: "p_helado_vaso1", name: "Helado de una bolita", cat: "helados", price: 20, code: "HV1", stock: 80 },
                 { id: "p_helado_vaso2", name: "Helado de dos bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
                 { id: "p_helado_vaso3", name: "Helado de tres bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
-                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4", stock: 80 }
+                { id: "p_helado_vaso4", name: "Helado de cuatro bolitas", cat: "helados", price: 50, code: "HV4", stock: 80 },
+                { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH", stock: 50 }
             ];
             officialTag1Base.forEach(ob => {
                 const found = p.find(x => String(x.product_id) === ob.id || String(x.product_name || "").trim().toLowerCase() === ob.name.toLowerCase());
@@ -4159,6 +4288,7 @@
                 if (prod.product_id === "p_helado_vaso2") { prod.product_name = "Helado de dos bolitas"; prod.category = "helados"; prod.price = 35; }
                 if (prod.product_id === "p_helado_vaso3") { prod.product_name = "Helado de tres bolitas"; prod.category = "helados"; prod.price = 45; }
                 if (prod.product_id === "p_helado_vaso4") { prod.product_name = "Helado de cuatro bolitas"; prod.category = "helados"; prod.price = 50; }
+                if (prod.product_id === "p_paleta_chapurrita" || prod.product_id === "p_paleta_chaparrita") { prod.product_name = "Paleta Chaparrita"; prod.category = "paletas"; prod.price = 20; }
                 if (prod.product_id === "p_mini") { prod.product_name = "Mini"; prod.category = "paletas"; prod.price = 5; }
                 if (prod.product_id === "p_mordisco") { prod.product_name = "Mordisco"; prod.category = "congelados"; prod.price = 25; }
                 if (prod.product_id === "p_paleta_agua_gde") { prod.product_name = "Paleta Agua Grande"; prod.category = "paletas"; prod.price = 25; }
@@ -4272,49 +4402,185 @@
             return;
         }
         c.innerHTML = products.map(p => {
-            const stock = getStock(p.product_id);
+            const pid = p.product_id || p.id || "";
+            const pname = p.product_name || p.name || "";
+            const pprice = Number(p.price || 0);
+            const pcode = p.product_code || p.code || "";
+            const pcat = p.category || "General";
+            const stock = getStock(pid);
             const isOut = stock === 0;
             const isLow = stock > 0 && stock <= STOCK_LOW;
             return `<button type="button" class="product-card${isOut ? " product-out-of-stock" : ""}"
-                data-pid="${esc(p.product_id)}">
-                <div class="product-image">${p.image_url
-                    ? `<img src="${esc(p.image_url)}" alt="${esc(p.product_name)}">`
-                    : '<div class="product-placeholder">🍦</div>'}</div>
-                <div class="product-info">
-                    <small>${esc(p.product_code || "")} • ${esc(p.category || "General")}</small>
-                    <strong>${esc(p.product_name)}</strong>
-                    <span>${money(p.price)}</span>
-                    ${isOut ? '<span style="font-size:10px;color:#d97706;font-weight:900;display:block;margin-top:3px">⚠️ Stock 0 (Reponer)</span>' : ""}
-                    ${isLow ? `<span style="font-size:10px;color:#b45309;font-weight:900;display:block;margin-top:3px">⚠ Quedan ${stock} uds.</span>` : ""}
+                data-pid="${esc(pid)}"
+                data-name="${esc(pname)}"
+                data-price="${pprice}"
+                data-cat="${esc(pcat)}"
+                data-composite="${p.is_composite ? '1' : '0'}"
+                style="cursor:pointer;-webkit-tap-highlight-color:transparent">
+                <div class="product-image" style="pointer-events:none">${p.image_url
+                    ? `<img src="${esc(p.image_url)}" alt="${esc(pname)}" style="pointer-events:none">`
+                    : '<div class="product-placeholder" style="pointer-events:none">🍦</div>'}</div>
+                <div class="product-info" style="pointer-events:none">
+                    <small style="pointer-events:none">${esc(pcode)} • ${esc(pcat)}</small>
+                    <strong style="pointer-events:none">${esc(pname)}</strong>
+                    <span style="pointer-events:none">${money(pprice)}</span>
+                    ${isOut ? '<span style="font-size:10px;color:#d97706;font-weight:900;display:block;margin-top:3px;pointer-events:none">⚠️ Stock 0 (Reponer)</span>' : ""}
+                    ${isLow ? `<span style="font-size:10px;color:#b45309;font-weight:900;display:block;margin-top:3px;pointer-events:none">⚠️ Quedan ${stock} uds.</span>` : ""}
                 </div></button>`;
         }).join("");
-        c.querySelectorAll(".product-card").forEach(btn =>
-            btn.addEventListener("click", () => addToCart(btn.dataset.pid))
-        );
+
+        // Manejador de clic directo e infalible en cada tarjeta de producto
+        c.querySelectorAll(".product-card").forEach(btn => {
+            btn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const card = e.currentTarget || this;
+                const pid = card.getAttribute("data-pid") || card.dataset.pid;
+                addToCart(pid, card);
+            };
+        });
+
+        // Event delegation en el contenedor para garantizar captura en cualquier pantalla o toque táctil
+        c.onclick = function(e) {
+            const card = e.target.closest(".product-card");
+            if (card) {
+                const pid = card.getAttribute("data-pid") || card.dataset.pid;
+                addToCart(pid, card);
+            }
+        };
+
         updatePosLiveMovement();
     }
 
-    /* ── CARRITO & COBRO DE ÓRDENES ── */
+    /* ── CARRITO & COBRO DE ÓRDENES (BLINDADO MULTI-SUCURSAL) ── */
     let _lastAddTapTime = 0;
     let _lastAddPid = null;
-    function addToCart(pid) {
+    function addToCart(pid, cardEl) {
+        if (!pid && !cardEl) return;
         const nowMs = Date.now();
-        // Cooldown para evitar toques fantasmas / rebote táctil en pantallas touch (<180ms para el mismo producto)
-        if (_lastAddPid === String(pid) && (nowMs - _lastAddTapTime) < 180) {
+        // Cooldown ultra-rápido para evitar rebote táctil en pantallas touch (<70ms para el mismo producto)
+        if (pid && _lastAddPid === String(pid) && (nowMs - _lastAddTapTime) < 70) {
             return;
         }
         _lastAddTapTime = nowMs;
-        _lastAddPid = String(pid);
+        if (pid) _lastAddPid = String(pid);
 
-        const p = S.products.find(x => String(x.product_id) === String(pid));
-        if (!p) return;
-        const ex = S.cart.find(i => String(i.product_id) === String(pid));
-        if (ex) ex.quantity++;
-        else {
+        const pidStr = String(pid || "").trim().toLowerCase();
+
+        // 1. Buscar en S.products (por product_id o id, case-insensitive)
+        let p = S.products.find(x => {
+            const xid = String(x.product_id || x.id || "").trim().toLowerCase();
+            return xid && xid === pidStr;
+        });
+
+        // 2. Si no está en S.products, buscar en filtered() actualmente visible en pantalla
+        if (!p && typeof filtered === "function") {
+            const currentFiltered = filtered();
+            p = currentFiltered.find(x => {
+                const xid = String(x.product_id || x.id || "").trim().toLowerCase();
+                return xid && xid === pidStr;
+            });
+            if (!p && cardEl) {
+                const cardName = (cardEl.getAttribute("data-name") || cardEl.querySelector("strong")?.textContent || "").trim().toLowerCase();
+                if (cardName) {
+                    p = currentFiltered.find(x => String(x.product_name || x.name || "").trim().toLowerCase() === cardName);
+                }
+            }
+        }
+
+        // 3. Buscar en catálogos base protegidos
+        if (!p) {
+            const allCatalogs = [
+                ...(typeof TAGARETE_2_BASE_PRODUCTS !== "undefined" && Array.isArray(TAGARETE_2_BASE_PRODUCTS) ? TAGARETE_2_BASE_PRODUCTS : []),
+                ...(typeof CALZADA_BASE_PRODUCTS !== "undefined" && Array.isArray(CALZADA_BASE_PRODUCTS) ? CALZADA_BASE_PRODUCTS : []),
+                ...(typeof DEFAULT_PRODUCTS !== "undefined" && Array.isArray(DEFAULT_PRODUCTS) ? DEFAULT_PRODUCTS : [])
+            ];
+            p = allCatalogs.find(x => {
+                const xid = String(x.product_id || x.id || "").trim().toLowerCase();
+                return xid && xid === pidStr;
+            });
+            if (!p && cardEl) {
+                const cardName = (cardEl.getAttribute("data-name") || cardEl.querySelector("strong")?.textContent || "").trim().toLowerCase();
+                if (cardName) {
+                    p = allCatalogs.find(x => String(x.product_name || x.name || "").trim().toLowerCase() === cardName);
+                }
+            }
+        }
+
+        // 4. Buscar en localStorage de productos personalizados
+        if (!p) {
+            const sKeys = [
+                "lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products",
+                "lf_calzada_permanent_products", "lf_calzada_custom_products",
+                "lf_rescate_permanent_products", "lf_rescate_custom_products",
+                "lf_tagarete_1_permanent_products", "lf_tagarete_1_custom_products",
+                "custom_products", "lf_custom_products"
+            ];
+            for (const sk of sKeys) {
+                try {
+                    const raw = localStorage.getItem(sk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            p = parsed.find(x => {
+                                const xid = String(x.product_id || x.id || "").trim().toLowerCase();
+                                return xid && xid === pidStr;
+                            });
+                            if (p) break;
+                        }
+                    }
+                } catch(e) {}
+            }
+        }
+
+        // 5. Respaldo directo desde la tarjeta DOM
+        if (!p && cardEl) {
+            const cPid = cardEl.getAttribute("data-pid") || pid || ("prod_manual_" + Date.now());
+            const cName = cardEl.getAttribute("data-name") || cardEl.querySelector("strong")?.textContent?.trim() || "Producto";
+            let cPrice = parseFloat(cardEl.getAttribute("data-price"));
+            if (isNaN(cPrice) || cPrice <= 0) {
+                const priceTxt = cardEl.querySelector("span")?.textContent?.replace(/[^0-9.]/g, "") || "0";
+                cPrice = parseFloat(priceTxt) || 20;
+            }
+            p = {
+                product_id: cPid,
+                product_name: cName,
+                price: cPrice,
+                category: cardEl.getAttribute("data-cat") || "General",
+                is_composite: cardEl.getAttribute("data-composite") === "1"
+            };
+        }
+
+        if (!p) {
+            console.error("addToCart: no se pudo resolver el producto", pid);
+            return;
+        }
+
+        const resolvedPid = String(p.product_id || p.id || pid);
+        const resolvedName = p.product_name || p.name || "Producto";
+        const resolvedPrice = Number(p.price || 0);
+
+        // Sincronizar en S.products para que nunca falte
+        if (!S.products.some(x => String(x.product_id || x.id || "").toLowerCase() === resolvedPid.toLowerCase())) {
+            S.products.push({
+                product_id: resolvedPid,
+                product_name: resolvedName,
+                price: resolvedPrice,
+                category: p.category || "General",
+                is_composite: !!p.is_composite,
+                components: Array.isArray(p.components) ? p.components : []
+            });
+        }
+
+        // Añadir o incrementar en el carrito S.cart
+        const ex = S.cart.find(i => String(i.product_id || i.id || "").toLowerCase() === resolvedPid.toLowerCase());
+        if (ex) {
+            ex.quantity++;
+        } else {
             S.cart.push({
-                product_id: p.product_id,
-                product_name: p.product_name,
-                price: Number(p.price || 0),
+                product_id: resolvedPid,
+                product_name: resolvedName,
+                price: resolvedPrice,
                 quantity: 1,
                 is_composite: !!p.is_composite,
                 components: Array.isArray(p.components) ? JSON.parse(JSON.stringify(p.components)) : []
@@ -4340,6 +4606,34 @@
                 const normName = String(item.product_name || "").toLowerCase().trim();
                 if ((normName.includes("zanahoria") || item.product_id === "p_paleta_zanahoria") && Number(item.price) === 440) {
                     item.price = 40;
+                }
+            });
+        }
+
+        // Sanear precios oficiales en carrito en vivo si la sucursal activa es Tagarete 2
+        if (resolveCanonicalBranch(S.branchName) === "Tagarete 2") {
+            S.cart.forEach(item => {
+                const pid = String(item.product_id || "").toLowerCase();
+                const pName = String(item.product_name || "").toLowerCase().trim();
+                if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pName.includes("chaparrita")) {
+                    item.price = 20;
+                    item.product_name = "Paleta Chaparrita";
+                } else if (pid === "p_helado_vaso1" || pName.includes("una bolita")) {
+                    item.price = 20;
+                } else if (pid === "p_helado_vaso2" || pName.includes("dos bolita")) {
+                    item.price = 35;
+                } else if (pid === "p_helado_vaso3" || pName.includes("tres bolita")) {
+                    item.price = 45;
+                } else if (pid === "p_helado_vaso4" || pName.includes("cuatro bolita")) {
+                    item.price = 50;
+                } else if (pid === "p_ag_nat_grande" || pName.includes("agua natural grande")) {
+                    item.price = 20;
+                } else if (pid === "p_ag_chica" || pName === "agua chica") {
+                    item.price = 25;
+                } else if (pid === "p_ag_grande" || pName === "agua grande") {
+                    item.price = 45;
+                } else if (pid === "p_ag_mediana" || pName === "agua mediana") {
+                    item.price = 30;
                 }
             });
         }
@@ -5599,6 +5893,20 @@
                     allowed_in_rescate: true
                 });
             }
+            if (!displayedProducts.some(x => String(x.product_id) === "p_paleta_chapurrita" || String(x.product_id) === "p_paleta_chaparrita" || String(x.product_name||"").trim().toLowerCase() === "paleta chaparrita")) {
+                displayedProducts.push({
+                    product_id: "p_paleta_chapurrita",
+                    product_name: "Paleta Chaparrita",
+                    product_code: "PCH",
+                    category: "paletas",
+                    price: 20,
+                    branch_name: "General",
+                    branch_id: "all",
+                    initial_stock: 50,
+                    is_active: true,
+                    allowed_in_rescate: true
+                });
+            }
             try {
                 const rescateCustomKeys = ["lf_rescate_permanent_products", "lf_rescate_custom_products", "lf_branch-2_custom_products"];
                 rescateCustomKeys.forEach(rk => {
@@ -5681,6 +5989,7 @@
                 if (!p) return false;
                 const pNameNorm = String(p.product_name || "").trim().toLowerCase();
                 const pid = String(p.product_id || "");
+                if (p.is_custom || pid.startsWith("prod_") || p.user_edited_price_v69) return true;
                 if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") return false;
                 if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") return false;
                 if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande") && pid !== "prod_1789344787923_spve") return false;
@@ -5718,9 +6027,10 @@
                 if (!p) return false;
                 const pNameNorm = String(p.product_name || "").trim().toLowerCase();
                 const pid = String(p.product_id || "");
+                if (p.is_custom || pid.startsWith("prod_") || p.user_edited_price_v69) return true;
 
                 // 1. Quitar duplicados específicos en Rescate
-                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") return false;
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") return false;
                 if (pid === "prod_calz_paleta_mini" || ((pNameNorm === "paleta mini" || pNameNorm === "mini") && pid !== "p_mini")) return false;
                 if (pNameNorm === "trol" && pid !== "p_trol") return false;
                 if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande" || pNameNorm === "paleta esquimal grande") && pid !== "prod_1789344787923_spve") return false;
@@ -6235,7 +6545,8 @@
             const isTag1Target = isTagarete1Active() ||
                                  resolveCanonicalBranch(targetBranch) === "Tagarete 1" ||
                                  resolveCanonicalBranch(S.branchName) === "Tagarete 1" ||
-                                 bId === "branch-4";
+                                 bId === "branch-4" ||
+                                 targetBranch === "all";
 
             const isTag2Target = isTagarete2Active() ||
                                  resolveCanonicalBranch(targetBranch) === "Tagarete 2" ||
@@ -6245,7 +6556,8 @@
 
             const isRescateTarget = resolveCanonicalBranch(targetBranch) === "Rescate" ||
                                     resolveCanonicalBranch(S.branchName) === "Rescate" ||
-                                    bId === "branch-2";
+                                    bId === "branch-2" ||
+                                    targetBranch === "all";
 
             const branchDelKey = getBranchExplicitDeletedKey(targetBranch === "all" ? S.branchName : targetBranch);
             let savedProdId = null;
@@ -6579,9 +6891,12 @@
             const delEditBtn = document.getElementById("btn-del-editing-prod");
             if (delEditBtn) delEditBtn.style.display = "none";
 
+            S.cat = cat || "all";
+            S.q = "";
             await loadProducts();
             await loadProductsAdmin();
             await loadInventory();
+            renderCatTabs();
             renderPOS(filtered());
         });
 
