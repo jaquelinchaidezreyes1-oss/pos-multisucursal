@@ -569,6 +569,22 @@
         return false;
     }
 
+    /* ── DETECCIÓN ESTRICTA Y BLINDADA EXCLUSIVAMENTE PARA USUARIOS DE MOLLOTES ── */
+    function isMollotesActive() {
+        const bName = S.branchName || "";
+        const canon = resolveCanonicalBranch(bName);
+        if (canon === "Mollotes") return true;
+        const bKey = getBranchKeyName(bName);
+        if (bKey === "mollotes") return true;
+        const bId = String(S.branchId || "").toLowerCase().trim();
+        if (bId === "branch-3" || bId.includes("mollotes") || bId.includes("molotes")) return true;
+        const email = String(S.user?.email || "").toLowerCase().trim();
+        if (/encargad[oa]5(?!\d)/i.test(email) || /encargad[oa]6(?!\d)/i.test(email) || email.includes("mollotes") || email.includes("molotes")) return true;
+        const role = String(S.role || "").toLowerCase().trim();
+        if (role.includes("mollotes") || role.includes("molotes")) return true;
+        return false;
+    }
+
     function isProductInTagarete2Store(id) {
         if (!id) return false;
         try {
@@ -619,6 +635,7 @@
         const isCalzada = bCanonical === "La Fuente Calzada";
         const isTag1 = bCanonical === "Tagarete 1" || isTagarete1Active();
         const isTag2 = bCanonical === "Tagarete 2" || isTagarete2Active();
+        const isMollotes = bCanonical === "Mollotes" || isMollotesActive();
 
         const pid = String(product.product_id || product.id || "").toLowerCase();
         const pName = String(product.product_name || product.name || "").toLowerCase();
@@ -634,6 +651,7 @@
             if (isRescate && product.allowed_in_rescate) return true;
             if (isTag1 && product.allowed_in_tagarete_1) return true;
             if (isTag2 && product.allowed_in_tagarete_2) return true;
+            if (isMollotes && product.allowed_in_mollotes) return true;
         }
 
         // Paleta Chaparrita oficial universalmente permitida en todas las sucursales
@@ -1606,6 +1624,10 @@
             "sup_cheetos": 35
         },
         "mollotes": {
+            "p_paleta_chapurrita": 16,
+            "p_paleta_chaparrita": 16,
+            "p_mini": 36,
+            "prod_calz_paleta_mini": 36,
             "adbc5511-68a8-4525-97a3-ac7972856e89": 75,
             "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 80,
             "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 70,
@@ -1734,6 +1756,16 @@
                 lw("inv_rescate", invToSave);
             } catch(e) {}
         }
+
+        // Persistencia permanente específica y blindada para las encargadas de Mollotes
+        if (isMollotesActive()) {
+            try {
+                localStorage.setItem("lf_mollotes_inv_permanent", JSON.stringify(invToSave));
+                localStorage.setItem("lf_inv_mollotes", JSON.stringify(invToSave));
+                gw("inv_mollotes", invToSave);
+                lw("inv_mollotes", invToSave);
+            } catch(e) {}
+        }
         
         // Difundir en tiempo real a todas las pantallas activas
         if (realtimeChannel) {
@@ -1756,6 +1788,7 @@
         const isTag1 = isTagarete1Active();
         const isTag2 = isTagarete2Active();
         const isRescate = resolveCanonicalBranch(S.branchName) === "Rescate";
+        const isMollotes = isMollotesActive();
         const branchKey = getBranchKeyName(S.branchName);
         const branchDefaults = BRANCH_BASE_INVENTORY[branchKey] || {};
 
@@ -1851,6 +1884,53 @@
                 if (addedAny) saveBranchInv();
                 return; // Rescate queda protegido
             }
+        } else if (isMollotes) {
+            try {
+                const rawM = localStorage.getItem("lf_mollotes_inv_permanent") || localStorage.getItem("lf_inv_mollotes");
+                if (rawM) stored = JSON.parse(rawM);
+            } catch(e) {}
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = gr("inv_mollotes", null);
+            }
+            if (!stored || typeof stored !== "object" || !Object.keys(stored).length) {
+                stored = lr("inv_mollotes", null);
+            }
+
+            // Para las encargadas de Mollotes: garantizar stock 16 en Chaparrita y 36 en Paleta Mini
+            if (stored && typeof stored === "object" && Object.keys(stored).length > 0) {
+                S.inv = { ...stored };
+                if (S.inv["p_paleta_chapurrita"] === undefined || S.inv["p_paleta_chapurrita"] === null || S.inv["p_paleta_chapurrita"] === 50 || S.inv["p_paleta_chapurrita"] === 40 || S.inv["p_paleta_chapurrita"] === 100 || !localStorage.getItem("lf_mollotes_stock_healed_v86")) {
+                    S.inv["p_paleta_chapurrita"] = 16;
+                    S.inv["p_paleta_chaparrita"] = 16;
+                }
+                if (S.inv["p_mini"] === undefined || S.inv["p_mini"] === null || S.inv["p_mini"] === 50 || S.inv["p_mini"] === 60 || S.inv["p_mini"] === 100 || !localStorage.getItem("lf_mollotes_stock_healed_v86")) {
+                    S.inv["p_mini"] = 36;
+                    S.inv["prod_calz_paleta_mini"] = 36;
+                }
+                try { localStorage.setItem("lf_mollotes_stock_healed_v86", "1"); } catch(e) {}
+
+                let addedAny = false;
+                S.products.forEach(p => {
+                    if (S.inv[p.product_id] === undefined || S.inv[p.product_id] === null || isNaN(S.inv[p.product_id])) {
+                        S.inv[p.product_id] = computeHealthyDefault(p);
+                        addedAny = true;
+                    }
+                });
+                if (addedAny) saveBranchInv();
+                return;
+            } else {
+                S.inv = {};
+                S.products.forEach(p => {
+                    S.inv[p.product_id] = computeHealthyDefault(p);
+                });
+                S.inv["p_paleta_chapurrita"] = 16;
+                S.inv["p_paleta_chaparrita"] = 16;
+                S.inv["p_mini"] = 36;
+                S.inv["prod_calz_paleta_mini"] = 36;
+                try { localStorage.setItem("lf_mollotes_stock_healed_v86", "1"); } catch(e) {}
+                saveBranchInv();
+                return;
+            }
         } else {
             try {
                 const raw = localStorage.getItem("lf_inv_" + branchKey);
@@ -1942,6 +2022,19 @@
                 S.inv["prod_1789523132831_1n2c"] = S.inv[id];
                 S.inv["prod_1789697863281_0x5g"] = S.inv[id];
                 S.inv["prod_1789516901690_gyei"] = S.inv[id];
+            }
+        }
+
+        // 1.1b Sincronizar identificadores y aliases exclusivos para Mollotes
+        if (isMollotesActive()) {
+            if (id === "p_mini" || id === "prod_calz_paleta_mini") {
+                S.inv["p_mini"] = S.inv[id];
+                S.inv["prod_calz_paleta_mini"] = S.inv[id];
+            }
+            if (id === "p_paleta_chapurrita" || id === "p_paleta_chaparrita" || id === "prod_1789434885052_e855") {
+                S.inv["p_paleta_chapurrita"] = S.inv[id];
+                S.inv["p_paleta_chaparrita"] = S.inv[id];
+                S.inv["prod_1789434885052_e855"] = S.inv[id];
             }
         }
 
@@ -3606,6 +3699,123 @@
             }
         }
 
+        // 6.4. Reglas exclusivas, deduplicación y saneamiento estricto SOLO para la sucursal Mollotes:
+        const isCurrentMollotes = isMollotesActive();
+        if (isCurrentMollotes) {
+            // A. Sanear almacenamiento local de Mollotes si hay duplicados guardados
+            try {
+                const mKeys = ["lf_mollotes_custom_products", "lf_branch-3_custom_products", "custom_products"];
+                mKeys.forEach(mk => {
+                    const raw = localStorage.getItem(mk);
+                    if (raw) {
+                        let arr = JSON.parse(raw);
+                        if (Array.isArray(arr)) {
+                            let modified = false;
+                            arr = arr.filter(p => {
+                                if (!p) return false;
+                                const pNameNorm = String(p.product_name || "").trim().toLowerCase();
+                                const pid = String(p.product_id || "");
+                                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") {
+                                    modified = true;
+                                    return false;
+                                }
+                                if ((pNameNorm === "mini" || pNameNorm === "paleta mini" || pid === "prod_calz_paleta_mini") && pid !== "p_mini") {
+                                    modified = true;
+                                    return false;
+                                }
+                                return true;
+                            });
+                            if (modified) {
+                                localStorage.setItem(mk, JSON.stringify(arr));
+                                if (mk === "custom_products") {
+                                    gw("custom_products", arr);
+                                    lw("custom_products", arr);
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch(e) {}
+
+            // B. Sanear combinedMap exclusivamente para Mollotes
+            for (const [pid, prod] of Array.from(combinedMap.entries())) {
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                // 1. Quitar cualquier duplicado de Chaparrita
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") {
+                    combinedMap.delete(pid);
+                }
+                // 2. Quitar cualquier duplicado de Mini
+                if ((pNameNorm === "mini" || pNameNorm === "paleta mini" || pid === "prod_calz_paleta_mini") && pid !== "p_mini") {
+                    combinedMap.delete(pid);
+                }
+            }
+
+            // C. Garantizar Paleta Chaparrita oficial única ($20, stock base 16)
+            let existingChaparrita = combinedMap.get("p_paleta_chapurrita");
+            if (existingChaparrita) {
+                existingChaparrita.product_name = "Paleta Chaparrita";
+                existingChaparrita.category = "paletas";
+                existingChaparrita.allowed_in_mollotes = true;
+                if (!existingChaparrita.user_edited_price_v69) existingChaparrita.price = 20;
+                existingChaparrita.initial_stock = 16;
+            } else {
+                const defChaparrita = DEFAULT_PRODUCTS.find(dp => dp.product_id === "p_paleta_chapurrita");
+                if (defChaparrita) {
+                    combinedMap.set("p_paleta_chapurrita", {
+                        ...defChaparrita,
+                        product_name: "Paleta Chaparrita",
+                        category: "paletas",
+                        price: 20,
+                        allowed_in_mollotes: true,
+                        initial_stock: 16
+                    });
+                }
+            }
+
+            // D. Garantizar Paleta mini oficial única ($5, stock base 36)
+            let existingMini = combinedMap.get("p_mini");
+            if (existingMini) {
+                existingMini.product_name = "Paleta mini";
+                existingMini.category = "paletas";
+                existingMini.allowed_in_mollotes = true;
+                if (!existingMini.user_edited_price_v69) existingMini.price = 5;
+                existingMini.initial_stock = 36;
+            } else {
+                const defMini = DEFAULT_PRODUCTS.find(dp => dp.product_id === "p_mini");
+                if (defMini) {
+                    combinedMap.set("p_mini", {
+                        ...defMini,
+                        product_name: "Paleta mini",
+                        category: "paletas",
+                        price: 5,
+                        allowed_in_mollotes: true,
+                        initial_stock: 36
+                    });
+                }
+            }
+
+            // E. Deduplicación general y blindaje de productos únicos para Mollotes
+            const seenMollotesGeneral = new Map();
+            for (const [pid, prod] of Array.from(combinedMap.entries())) {
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                let normKey = String(prod.category || "").toLowerCase() + "__" + pNameNorm;
+
+                if (!seenMollotesGeneral.has(normKey)) {
+                    seenMollotesGeneral.set(normKey, pid);
+                } else {
+                    const prevPid = seenMollotesGeneral.get(normKey);
+                    const isCurOfficial = (pid === "p_paleta_chapurrita" || pid === "p_mini");
+                    const isPrevOfficial = (prevPid === "p_paleta_chapurrita" || prevPid === "p_mini");
+                    if (isCurOfficial && !isPrevOfficial) {
+                        combinedMap.delete(prevPid);
+                        seenMollotesGeneral.set(normKey, pid);
+                    } else {
+                        combinedMap.delete(pid);
+                    }
+                }
+            }
+        }
+
         // Purgar de combinedMap cualquier producto que haya sido eliminado explícitamente en la sucursal activa
         for (const [pid, prod] of Array.from(combinedMap.entries())) {
             const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
@@ -4316,6 +4526,86 @@
                 if (seenTag1Keys.has(key) || seenTag1Keys.has(normName)) return false;
                 seenTag1Keys.add(key);
                 seenTag1Keys.add(normName);
+                return true;
+            });
+        }
+
+        // Garantizar catálogo limpio sin duplicados si la sucursal activa es Mollotes
+        if (isMollotesActive()) {
+            p = p.filter(prod => {
+                if (!prod) return false;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+
+                // Quitar cualquier producto que diga "chaparrita" excepto la oficial p_paleta_chapurrita
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") {
+                    return false;
+                }
+
+                // Quitar duplicados de mini excepto p_mini
+                if ((pNameNorm === "mini" || pNameNorm === "paleta mini" || pid === "prod_calz_paleta_mini") && pid !== "p_mini") {
+                    return false;
+                }
+
+                return true;
+            });
+
+            // Garantizar Paleta Chaparrita oficial a $20 en Mollotes
+            const foundChaparrita = p.find(x => String(x.product_id) === "p_paleta_chapurrita");
+            if (foundChaparrita) {
+                foundChaparrita.product_name = "Paleta Chaparrita";
+                foundChaparrita.category = "paletas";
+                if (!foundChaparrita.user_edited_price_v69) foundChaparrita.price = 20;
+                foundChaparrita.allowed_in_mollotes = true;
+            } else {
+                p.push({
+                    product_id: "p_paleta_chapurrita",
+                    product_code: "PCH",
+                    product_name: "Paleta Chaparrita",
+                    category: "paletas",
+                    price: 20,
+                    initial_stock: 16,
+                    allowed_in_mollotes: true
+                });
+            }
+
+            // Garantizar Paleta mini oficial a $5 en Mollotes
+            const foundMini = p.find(x => String(x.product_id) === "p_mini");
+            if (foundMini) {
+                foundMini.product_name = "Paleta mini";
+                foundMini.category = "paletas";
+                if (!foundMini.user_edited_price_v69) foundMini.price = 5;
+                foundMini.allowed_in_mollotes = true;
+            } else {
+                p.push({
+                    product_id: "p_mini",
+                    product_code: "MINI",
+                    product_name: "Paleta mini",
+                    category: "paletas",
+                    price: 5,
+                    initial_stock: 36,
+                    allowed_in_mollotes: true
+                });
+            }
+
+            // Sincronizar en S.inv los valores solicitados para Mollotes
+            if (S.inv["p_paleta_chapurrita"] === undefined || S.inv["p_paleta_chapurrita"] === null || S.inv["p_paleta_chapurrita"] === 50 || S.inv["p_paleta_chapurrita"] === 40 || S.inv["p_paleta_chapurrita"] === 100 || !localStorage.getItem("lf_mollotes_stock_healed_v86")) {
+                S.inv["p_paleta_chapurrita"] = 16;
+                S.inv["p_paleta_chaparrita"] = 16;
+            }
+            if (S.inv["p_mini"] === undefined || S.inv["p_mini"] === null || S.inv["p_mini"] === 50 || S.inv["p_mini"] === 60 || S.inv["p_mini"] === 100 || !localStorage.getItem("lf_mollotes_stock_healed_v86")) {
+                S.inv["p_mini"] = 36;
+                S.inv["prod_calz_paleta_mini"] = 36;
+            }
+
+            // Deduplicación blindada por nombre y clave en Mollotes para no repetir ninguna tarjeta jamás en POS
+            const seenMollotesKeys = new Set();
+            p = p.filter(prod => {
+                const normName = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenMollotesKeys.has(key) || seenMollotesKeys.has(normName)) return false;
+                seenMollotesKeys.add(key);
+                seenMollotesKeys.add(normName);
                 return true;
             });
         }
@@ -6073,6 +6363,33 @@
                 if (seenRescateAdmin.has(key) || seenRescateAdmin.has(normName)) return false;
                 seenRescateAdmin.add(key);
                 seenRescateAdmin.add(normName);
+                return true;
+            });
+        }
+
+        const isMollotesAdmin = isMollotesActive() ||
+                                String(activeAdminFilter) === "branch-3" ||
+                                resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Mollotes";
+
+        if (isMollotesAdmin) {
+            displayedProducts = displayedProducts.filter(p => {
+                if (!p) return false;
+                const pNameNorm = String(p.product_name || "").trim().toLowerCase();
+                const pid = String(p.product_id || "");
+                if (p.is_custom || pid.startsWith("prod_") || p.user_edited_price_v69) return true;
+
+                // 1. Quitar duplicados específicos en Mollotes
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") return false;
+                if (pid === "prod_calz_paleta_mini" || ((pNameNorm === "paleta mini" || pNameNorm === "mini") && pid !== "p_mini")) return false;
+                return true;
+            });
+            const seenMollotesAdmin = new Set();
+            displayedProducts = displayedProducts.filter(p => {
+                const normName = String(p.product_name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(p.category || "").toLowerCase() + "__" + normName;
+                if (seenMollotesAdmin.has(key) || seenMollotesAdmin.has(normName)) return false;
+                seenMollotesAdmin.add(key);
+                seenMollotesAdmin.add(normName);
                 return true;
             });
         }
