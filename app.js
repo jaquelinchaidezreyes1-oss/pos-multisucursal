@@ -585,6 +585,54 @@
         return false;
     }
 
+    /* ── DETECCIÓN ESTRICTA Y BLINDADA EXCLUSIVAMENTE PARA USUARIOS DE RESCATE ── */
+    function isRescateActive() {
+        const bName = S.branchName || "";
+        const canon = resolveCanonicalBranch(bName);
+        if (canon === "Rescate") return true;
+        const bKey = getBranchKeyName(bName);
+        if (bKey === "rescate") return true;
+        const bId = String(S.branchId || "").toLowerCase().trim();
+        if (bId === "branch-2" || bId.includes("rescate")) return true;
+        const email = String(S.user?.email || "").toLowerCase().trim();
+        if (/encargad[oa]3(?!\d)/i.test(email) || /encargad[oa]4(?!\d)/i.test(email) || email.includes("rescate")) return true;
+        const role = String(S.role || "").toLowerCase().trim();
+        if (role.includes("rescate")) return true;
+        return false;
+    }
+
+    /* ── DETECCIÓN ESTRICTA Y BLINDADA EXCLUSIVAMENTE PARA USUARIOS DE CNOP ── */
+    function isCnopActive() {
+        const bName = S.branchName || "";
+        const canon = resolveCanonicalBranch(bName);
+        if (canon === "CNOP") return true;
+        const bKey = getBranchKeyName(bName);
+        if (bKey === "cnop") return true;
+        const bId = String(S.branchId || "").toLowerCase().trim();
+        if (bId === "branch-6" || bId.includes("cnop")) return true;
+        const email = String(S.user?.email || "").toLowerCase().trim();
+        if (/encargad[oa]11(?!\d)/i.test(email) || /encargad[oa]12(?!\d)/i.test(email) || email.includes("cnop")) return true;
+        const role = String(S.role || "").toLowerCase().trim();
+        if (role.includes("cnop")) return true;
+        return false;
+    }
+
+    /* ── DETECCIÓN ESTRICTA Y BLINDADA EXCLUSIVAMENTE PARA USUARIOS DE CALZADA ── */
+    function isCalzadaActive() {
+        const bName = S.branchName || "";
+        const canon = resolveCanonicalBranch(bName);
+        if (canon === "La Fuente Calzada") return true;
+        const bKey = getBranchKeyName(bName);
+        if (bKey === "calzada" || bKey === "la_fuente_calzada") return true;
+        const bId = String(S.branchId || "").toLowerCase().trim();
+        if (bId === "branch-1" || bId === "c188dd82-7faf-41b8-948b-af8e789facba" || bId.includes("calzada")) return true;
+        const email = String(S.user?.email || "").toLowerCase().trim();
+        if (/encargad[oa]1(?!\d)/i.test(email) || /encargad[oa]2(?!\d)/i.test(email) || email.includes("calzada")) return true;
+        const role = String(S.role || "").toLowerCase().trim();
+        if (role.includes("calzada")) return true;
+        return false;
+    }
+
     function isProductInTagarete2Store(id) {
         if (!id) return false;
         try {
@@ -631,11 +679,12 @@
     function isProductAllowedInBranch(product, bName) {
         if (!product) return false;
         const bCanonical = resolveCanonicalBranch(bName || S.branchName || "calzada");
-        const isRescate = bCanonical === "Rescate";
-        const isCalzada = bCanonical === "La Fuente Calzada";
+        const isRescate = bCanonical === "Rescate" || isRescateActive();
+        const isCalzada = bCanonical === "La Fuente Calzada" || isCalzadaActive();
         const isTag1 = bCanonical === "Tagarete 1" || isTagarete1Active();
         const isTag2 = bCanonical === "Tagarete 2" || isTagarete2Active();
         const isMollotes = bCanonical === "Mollotes" || isMollotesActive();
+        const isCnop = bCanonical === "CNOP" || isCnopActive();
 
         const pid = String(product.product_id || product.id || "").toLowerCase();
         const pName = String(product.product_name || product.name || "").toLowerCase();
@@ -652,6 +701,7 @@
             if (isTag1 && product.allowed_in_tagarete_1) return true;
             if (isTag2 && product.allowed_in_tagarete_2) return true;
             if (isMollotes && product.allowed_in_mollotes) return true;
+            if (isCnop && product.allowed_in_cnop) return true;
         }
 
         // Paleta Chaparrita oficial universalmente permitida en todas las sucursales
@@ -741,6 +791,42 @@
             const isCustomCreated = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
             if (isCustomCreated) {
                 if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanonical === "Tagarete 1") {
+                    return true;
+                }
+            }
+        }
+
+        // ── REGLA DE DISPONIBILIDAD TOTAL PARA SUCURSAL MOLLOTES ──
+        if (isMollotes) {
+            const pBranchCanonical = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
+            const isAssignedMollotes = product.allowed_in_mollotes ||
+                                       product.branch_id === "branch-3" ||
+                                       pBranchCanonical === "Mollotes" ||
+                                       resolveCanonicalBranch(product.branch_id) === "Mollotes";
+            if (isAssignedMollotes) {
+                return true;
+            }
+            const isCustomCreated = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+            if (isCustomCreated) {
+                if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanonical === "Mollotes") {
+                    return true;
+                }
+            }
+        }
+
+        // ── REGLA DE DISPONIBILIDAD TOTAL PARA SUCURSAL CNOP ──
+        if (isCnop) {
+            const pBranchCanonical = product.branch_name ? resolveCanonicalBranch(product.branch_name) : "";
+            const isAssignedCnop = product.allowed_in_cnop ||
+                                   product.branch_id === "branch-6" ||
+                                   pBranchCanonical === "CNOP" ||
+                                   resolveCanonicalBranch(product.branch_id) === "CNOP";
+            if (isAssignedCnop) {
+                return true;
+            }
+            const isCustomCreated = product.is_custom || pid.startsWith("prod_") || pid.startsWith("sup_");
+            if (isCustomCreated) {
+                if (!product.branch_name || product.branch_name === "General" || product.branch_name === "all" || pBranchCanonical === "CNOP") {
                     return true;
                 }
             }
@@ -1053,6 +1139,10 @@
                 }
 
                 const { data, error } = await db.from("sales").insert(insertPayload).select();
+                if (error && (error.code === "402" || String(error.message||"").includes("exceed_egress_quota") || String(error.message||"").includes("restricted"))) {
+                    window._supabaseRestricted = true;
+                    break;
+                }
                 if (!error && data && data.length) {
                     syncedIds.add(String(s.id));
                     if (data[0].id) syncedIds.add(String(data[0].id));
@@ -1204,8 +1294,22 @@
     /* ── SUCURSALES ── */
     function safeQuery(promise, fallback = null, timeoutMs = 1200) {
         if (!promise || typeof promise.then !== "function") return Promise.resolve({ data: fallback, error: null });
+        if (window._supabaseRestricted) {
+            return Promise.resolve({ data: fallback, error: new Error("Supabase Restricted (Quota Exceeded)") });
+        }
         return Promise.race([
-            promise,
+            promise.then(res => {
+                if (res && res.error && (res.error.code === "402" || String(res.error.message||"").includes("exceed_egress_quota") || String(res.error.message||"").includes("restricted"))) {
+                    window._supabaseRestricted = true;
+                    return { data: fallback, error: res.error, isQuotaExceeded: true };
+                }
+                return res;
+            }).catch(err => {
+                if (String(err?.message||"").includes("402") || String(err?.message||"").includes("exceed_egress_quota")) {
+                    window._supabaseRestricted = true;
+                }
+                return { data: fallback, error: err };
+            }),
             new Promise(resolve => setTimeout(() => resolve({ data: fallback, error: new Error("DB Timeout") }), timeoutMs))
         ]);
     }
@@ -2478,7 +2582,17 @@
                                   CALZADA_BASE_PRODUCTS.some(cp => String(cp.product_id) === pid) ||
                                   TAGARETE_2_BASE_PRODUCTS.some(tp => String(tp.product_id) === pid);
         if (isDefaultOrShared) {
-            return { ...p, branch_name: "General", branch_id: "all", allowed_in_calzada: true, allowed_in_tagarete_2: true, allowed_in_tagarete_1: true, allowed_in_rescate: true };
+            return {
+                ...p,
+                branch_name: "General",
+                branch_id: "all",
+                allowed_in_calzada: true,
+                allowed_in_tagarete_2: true,
+                allowed_in_tagarete_1: true,
+                allowed_in_rescate: true,
+                allowed_in_mollotes: true,
+                allowed_in_cnop: true
+            };
         }
         return p;
     }
@@ -2722,45 +2836,36 @@
             }
         });
 
-        // Asegurar productos permanentes y modificados exclusivamente por las encargadas de Tagarete 1
-        if (isTagarete1Active()) {
-            try {
-                const rawTag1 = localStorage.getItem("lf_tagarete_1_permanent_products");
-                if (rawTag1) {
-                    const parsed = JSON.parse(rawTag1);
-                    if (Array.isArray(parsed)) {
-                        parsed.forEach(rawP => {
-                            const p = sanitizeSharedCatalogProduct(rawP);
-                            if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
-                                const idx = customProds.findIndex(x => String(x.product_id) === String(p.product_id));
-                                if (idx >= 0) customProds[idx] = sanitizeSharedCatalogProduct({ ...customProds[idx], ...p });
-                                else customProds.push(p);
-                            }
-                        });
-                    }
-                }
-            } catch(e) {}
-        }
+        // Asegurar productos permanentes y modificados de todas las 6 sucursales
+        const allBranchPermSources = [
+            { key: "lf_calzada_permanent_products", check: isCalzadaActive() },
+            { key: "lf_rescate_permanent_products", check: isRescateActive() },
+            { key: "lf_mollotes_permanent_products", check: isMollotesActive() },
+            { key: "lf_tagarete_1_permanent_products", check: isTagarete1Active() },
+            { key: "lf_tagarete_2_permanent_products", check: isTagarete2Active() },
+            { key: "lf_cnop_permanent_products", check: isCnopActive() }
+        ];
 
-        // Asegurar productos permanentes y modificados exclusivamente por las encargadas de Tagarete 2
-        if (isTagarete2Active()) {
-            try {
-                const rawTag2 = localStorage.getItem("lf_tagarete_2_permanent_products");
-                if (rawTag2) {
-                    const parsed = JSON.parse(rawTag2);
-                    if (Array.isArray(parsed)) {
-                        parsed.forEach(rawP => {
-                            const p = sanitizeSharedCatalogProduct(rawP);
-                            if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
-                                const idx = customProds.findIndex(x => String(x.product_id) === String(p.product_id));
-                                if (idx >= 0) customProds[idx] = sanitizeSharedCatalogProduct({ ...customProds[idx], ...p });
-                                else customProds.push(p);
-                            }
-                        });
+        allBranchPermSources.forEach(bp => {
+            if (bp.check || S.isSU) {
+                try {
+                    const raw = localStorage.getItem(bp.key);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(rawP => {
+                                const p = sanitizeSharedCatalogProduct(rawP);
+                                if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                                    const idx = customProds.findIndex(x => String(x.product_id) === String(p.product_id));
+                                    if (idx >= 0) customProds[idx] = sanitizeSharedCatalogProduct({ ...customProds[idx], ...p });
+                                    else customProds.push(p);
+                                }
+                            });
+                        }
                     }
-                }
-            } catch(e) {}
-        }
+                } catch(e) {}
+            }
+        });
 
         gw("custom_products", customProds);
         lw("custom_products", customProds);
@@ -2965,7 +3070,7 @@
         }
 
         // 5.3. Para las encargadas de Rescate: blindar inclusión de productos modificados, recetas y compuestos
-        if (resolveCanonicalBranch(S.branchName) === "Rescate") {
+        if (resolveCanonicalBranch(S.branchName) === "Rescate" || isRescateActive() || S.branchId === "branch-2" || S.isSU) {
             try {
                 const rescateProductSources = [
                     "lf_rescate_permanent_products",
@@ -2985,6 +3090,106 @@
                                         ...existing,
                                         ...p,
                                         product_id: pid,
+                                        allowed_in_rescate: true,
+                                        is_composite: p.is_composite !== undefined ? !!p.is_composite : !!existing.is_composite,
+                                        components: Array.isArray(p.components) ? p.components : (existing.components || [])
+                                    }));
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+        }
+
+        // 5.4. Para las encargadas de Mollotes: blindar inclusión de productos modificados, recetas y compuestos
+        if (resolveCanonicalBranch(S.branchName) === "Mollotes" || isMollotesActive() || S.branchId === "branch-3" || S.isSU) {
+            try {
+                const mollotesProductSources = [
+                    "lf_mollotes_permanent_products",
+                    "lf_mollotes_custom_products",
+                    "lf_branch-3_custom_products"
+                ];
+                mollotesProductSources.forEach(sourceKey => {
+                    const rawMoll = localStorage.getItem(sourceKey);
+                    if (rawMoll) {
+                        const parsed = JSON.parse(rawMoll);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(p => {
+                                const pid = String(p.product_id || p.id || "");
+                                if (p && pid && !explicitDelSet.has(pid)) {
+                                    let existing = combinedMap.get(pid) || {};
+                                    combinedMap.set(pid, sanitizeSharedCatalogProduct({
+                                        ...existing,
+                                        ...p,
+                                        product_id: pid,
+                                        allowed_in_mollotes: true,
+                                        is_composite: p.is_composite !== undefined ? !!p.is_composite : !!existing.is_composite,
+                                        components: Array.isArray(p.components) ? p.components : (existing.components || [])
+                                    }));
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+        }
+
+        // 5.5. Para las encargadas de CNOP: blindar inclusión de productos modificados, recetas y compuestos
+        if (resolveCanonicalBranch(S.branchName) === "CNOP" || isCnopActive() || S.branchId === "branch-6" || S.isSU) {
+            try {
+                const cnopProductSources = [
+                    "lf_cnop_permanent_products",
+                    "lf_cnop_custom_products",
+                    "lf_branch-6_custom_products"
+                ];
+                cnopProductSources.forEach(sourceKey => {
+                    const rawCnop = localStorage.getItem(sourceKey);
+                    if (rawCnop) {
+                        const parsed = JSON.parse(rawCnop);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(p => {
+                                const pid = String(p.product_id || p.id || "");
+                                if (p && pid && !explicitDelSet.has(pid)) {
+                                    let existing = combinedMap.get(pid) || {};
+                                    combinedMap.set(pid, sanitizeSharedCatalogProduct({
+                                        ...existing,
+                                        ...p,
+                                        product_id: pid,
+                                        allowed_in_cnop: true,
+                                        is_composite: p.is_composite !== undefined ? !!p.is_composite : !!existing.is_composite,
+                                        components: Array.isArray(p.components) ? p.components : (existing.components || [])
+                                    }));
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+        }
+
+        // 5.6. Para las encargadas de La Fuente Calzada: blindar inclusión de productos modificados, recetas y compuestos
+        if (resolveCanonicalBranch(S.branchName) === "La Fuente Calzada" || isCalzadaActive() || S.branchId === "branch-1" || S.isSU) {
+            try {
+                const calzProductSources = [
+                    "lf_calzada_permanent_products",
+                    "lf_calzada_custom_products",
+                    "lf_branch-1_custom_products"
+                ];
+                calzProductSources.forEach(sourceKey => {
+                    const rawCalz = localStorage.getItem(sourceKey);
+                    if (rawCalz) {
+                        const parsed = JSON.parse(rawCalz);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(p => {
+                                const pid = String(p.product_id || p.id || "");
+                                if (p && pid && !explicitDelSet.has(pid)) {
+                                    let existing = combinedMap.get(pid) || {};
+                                    combinedMap.set(pid, sanitizeSharedCatalogProduct({
+                                        ...existing,
+                                        ...p,
+                                        product_id: pid,
+                                        allowed_in_calzada: true,
                                         is_composite: p.is_composite !== undefined ? !!p.is_composite : !!existing.is_composite,
                                         components: Array.isArray(p.components) ? p.components : (existing.components || [])
                                     }));
@@ -6854,10 +7059,23 @@
 
             const bId = (targetBranch === "all") ? "all" : (S.branches.find(b => b.name.toLowerCase().includes(targetBranch.toLowerCase()))?.id || S.branchId);
 
-            const isCalzadaTarget = resolveCanonicalBranch(targetBranch) === "La Fuente Calzada" ||
+            const isCalzadaTarget = isCalzadaActive() ||
+                                    resolveCanonicalBranch(targetBranch) === "La Fuente Calzada" ||
                                     resolveCanonicalBranch(S.branchName) === "La Fuente Calzada" ||
                                     bId === "branch-1" ||
                                     targetBranch === "all";
+
+            const isRescateTarget = isRescateActive() ||
+                                    resolveCanonicalBranch(targetBranch) === "Rescate" ||
+                                    resolveCanonicalBranch(S.branchName) === "Rescate" ||
+                                    bId === "branch-2" ||
+                                    targetBranch === "all";
+
+            const isMollotesTarget = isMollotesActive() ||
+                                     resolveCanonicalBranch(targetBranch) === "Mollotes" ||
+                                     resolveCanonicalBranch(S.branchName) === "Mollotes" ||
+                                     bId === "branch-3" ||
+                                     targetBranch === "all";
 
             const isTag1Target = isTagarete1Active() ||
                                  resolveCanonicalBranch(targetBranch) === "Tagarete 1" ||
@@ -6871,10 +7089,11 @@
                                  bId === "branch-5" ||
                                  targetBranch === "all";
 
-            const isRescateTarget = resolveCanonicalBranch(targetBranch) === "Rescate" ||
-                                    resolveCanonicalBranch(S.branchName) === "Rescate" ||
-                                    bId === "branch-2" ||
-                                    targetBranch === "all";
+            const isCnopTarget = isCnopActive() ||
+                                 resolveCanonicalBranch(targetBranch) === "CNOP" ||
+                                 resolveCanonicalBranch(S.branchName) === "CNOP" ||
+                                 bId === "branch-6" ||
+                                 targetBranch === "all";
 
             const branchDelKey = getBranchExplicitDeletedKey(targetBranch === "all" ? S.branchName : targetBranch);
             let savedProdId = null;
@@ -6908,14 +7127,20 @@
                 if (isCalzadaTarget) {
                     prodToEdit.allowed_in_calzada = true;
                 }
+                if (isRescateTarget) {
+                    prodToEdit.allowed_in_rescate = true;
+                }
+                if (isMollotesTarget) {
+                    prodToEdit.allowed_in_mollotes = true;
+                }
                 if (isTag1Target) {
                     prodToEdit.allowed_in_tagarete_1 = true;
                 }
                 if (isTag2Target) {
                     prodToEdit.allowed_in_tagarete_2 = true;
                 }
-                if (isRescateTarget) {
-                    prodToEdit.allowed_in_rescate = true;
+                if (isCnopTarget) {
+                    prodToEdit.allowed_in_cnop = true;
                 }
 
                 // Actualizar stock directamente
@@ -6977,6 +7202,34 @@
                     } catch(e) {}
                 }
 
+                if (isMollotesTarget) {
+                    try {
+                        const rawMoll = localStorage.getItem("lf_mollotes_permanent_products") || "[]";
+                        let mollList = JSON.parse(rawMoll);
+                        if (!Array.isArray(mollList)) mollList = [];
+                        const mIdx = mollList.findIndex(p => String(p.product_id) === String(editingProductId));
+                        if (mIdx >= 0) mollList[mIdx] = { ...prodToEdit };
+                        else mollList.push({ ...prodToEdit });
+                        localStorage.setItem("lf_mollotes_permanent_products", JSON.stringify(mollList));
+                        localStorage.setItem("lf_mollotes_custom_products", JSON.stringify(mollList));
+                        localStorage.setItem("lf_branch-3_custom_products", JSON.stringify(mollList));
+                    } catch(e) {}
+                }
+
+                if (isCnopTarget) {
+                    try {
+                        const rawCnop = localStorage.getItem("lf_cnop_permanent_products") || "[]";
+                        let cnopList = JSON.parse(rawCnop);
+                        if (!Array.isArray(cnopList)) cnopList = [];
+                        const cIdx = cnopList.findIndex(p => String(p.product_id) === String(editingProductId));
+                        if (cIdx >= 0) cnopList[cIdx] = { ...prodToEdit };
+                        else cnopList.push({ ...prodToEdit });
+                        localStorage.setItem("lf_cnop_permanent_products", JSON.stringify(cnopList));
+                        localStorage.setItem("lf_cnop_custom_products", JSON.stringify(cnopList));
+                        localStorage.setItem("lf_branch-6_custom_products", JSON.stringify(cnopList));
+                    } catch(e) {}
+                }
+
                 // Persistencia blindada específica por sucursal
                 const branchCleanName = normalizeBranchName(targetBranch === "all" ? S.branchName : targetBranch).replace(/\s+/g, "_");
                 try {
@@ -7008,9 +7261,11 @@
                     is_active: true,
                     is_custom: true,
                     allowed_in_calzada: isCalzadaTarget ? true : undefined,
+                    allowed_in_rescate: isRescateTarget ? true : undefined,
+                    allowed_in_mollotes: isMollotesTarget ? true : undefined,
                     allowed_in_tagarete_1: isTag1Target ? true : undefined,
                     allowed_in_tagarete_2: isTag2Target ? true : undefined,
-                    allowed_in_rescate: isRescateTarget ? true : undefined,
+                    allowed_in_cnop: isCnopTarget ? true : undefined,
                     is_composite: isComp,
                     components: isComp ? [...tempComponents] : [],
                     is_supply: (cat === "desechables" || price === 0),
@@ -7068,6 +7323,30 @@
                         localStorage.setItem("lf_rescate_permanent_products", JSON.stringify(rescateList));
                         localStorage.setItem("lf_rescate_custom_products", JSON.stringify(rescateList));
                         localStorage.setItem("lf_branch-2_custom_products", JSON.stringify(rescateList));
+                    } catch(e) {}
+                }
+
+                if (isMollotesTarget) {
+                    try {
+                        const rawMoll = localStorage.getItem("lf_mollotes_permanent_products") || "[]";
+                        let mollList = JSON.parse(rawMoll);
+                        if (!Array.isArray(mollList)) mollList = [];
+                        mollList.push(newProd);
+                        localStorage.setItem("lf_mollotes_permanent_products", JSON.stringify(mollList));
+                        localStorage.setItem("lf_mollotes_custom_products", JSON.stringify(mollList));
+                        localStorage.setItem("lf_branch-3_custom_products", JSON.stringify(mollList));
+                    } catch(e) {}
+                }
+
+                if (isCnopTarget) {
+                    try {
+                        const rawCnop = localStorage.getItem("lf_cnop_permanent_products") || "[]";
+                        let cnopList = JSON.parse(rawCnop);
+                        if (!Array.isArray(cnopList)) cnopList = [];
+                        cnopList.push(newProd);
+                        localStorage.setItem("lf_cnop_permanent_products", JSON.stringify(cnopList));
+                        localStorage.setItem("lf_cnop_custom_products", JSON.stringify(cnopList));
+                        localStorage.setItem("lf_branch-6_custom_products", JSON.stringify(cnopList));
                     } catch(e) {}
                 }
 
@@ -7148,6 +7427,30 @@
                         "explicit_deleted_names_v69_branch-2",
                         "explicit_deleted_names_rescate",
                         "explicit_deleted_names_branch-2"
+                    );
+                }
+                if (isMollotesTarget) {
+                    delKeysToClean.push(
+                        "explicit_deleted_ids_v69_mollotes",
+                        "explicit_deleted_ids_v69_branch-3",
+                        "explicit_deleted_ids_mollotes",
+                        "explicit_deleted_ids_branch-3",
+                        "explicit_deleted_names_v69_mollotes",
+                        "explicit_deleted_names_v69_branch-3",
+                        "explicit_deleted_names_mollotes",
+                        "explicit_deleted_names_branch-3"
+                    );
+                }
+                if (isCnopTarget) {
+                    delKeysToClean.push(
+                        "explicit_deleted_ids_v69_cnop",
+                        "explicit_deleted_ids_v69_branch-6",
+                        "explicit_deleted_ids_cnop",
+                        "explicit_deleted_ids_branch-6",
+                        "explicit_deleted_names_v69_cnop",
+                        "explicit_deleted_names_v69_branch-6",
+                        "explicit_deleted_names_cnop",
+                        "explicit_deleted_names_branch-6"
                     );
                 }
 
@@ -7306,6 +7609,48 @@
             } else if (bCanon === "Rescate") {
                 const resStorageKeys = ["lf_rescate_permanent_products", "lf_rescate_custom_products", "lf_branch-2_custom_products"];
                 resStorageKeys.forEach(tk => {
+                    try {
+                        const raw = localStorage.getItem(tk);
+                        if (raw) {
+                            let arr = JSON.parse(raw);
+                            if (Array.isArray(arr)) {
+                                arr = arr.filter(p => p && String(p.product_id || p.id) !== pIdStr && String(p.product_name || "").trim().toLowerCase() !== pNameNorm);
+                                localStorage.setItem(tk, JSON.stringify(arr));
+                            }
+                        }
+                    } catch(e) {}
+                });
+            } else if (bCanon === "Mollotes") {
+                const mollStorageKeys = ["lf_mollotes_permanent_products", "lf_mollotes_custom_products", "lf_branch-3_custom_products"];
+                mollStorageKeys.forEach(tk => {
+                    try {
+                        const raw = localStorage.getItem(tk);
+                        if (raw) {
+                            let arr = JSON.parse(raw);
+                            if (Array.isArray(arr)) {
+                                arr = arr.filter(p => p && String(p.product_id || p.id) !== pIdStr && String(p.product_name || "").trim().toLowerCase() !== pNameNorm);
+                                localStorage.setItem(tk, JSON.stringify(arr));
+                            }
+                        }
+                    } catch(e) {}
+                });
+            } else if (bCanon === "CNOP") {
+                const cnopStorageKeys = ["lf_cnop_permanent_products", "lf_cnop_custom_products", "lf_branch-6_custom_products"];
+                cnopStorageKeys.forEach(tk => {
+                    try {
+                        const raw = localStorage.getItem(tk);
+                        if (raw) {
+                            let arr = JSON.parse(raw);
+                            if (Array.isArray(arr)) {
+                                arr = arr.filter(p => p && String(p.product_id || p.id) !== pIdStr && String(p.product_name || "").trim().toLowerCase() !== pNameNorm);
+                                localStorage.setItem(tk, JSON.stringify(arr));
+                            }
+                        }
+                    } catch(e) {}
+                });
+            } else if (bCanon === "La Fuente Calzada") {
+                const calzStorageKeys = ["lf_calzada_permanent_products", "lf_calzada_custom_products", "lf_branch-1_custom_products"];
+                calzStorageKeys.forEach(tk => {
                     try {
                         const raw = localStorage.getItem(tk);
                         if (raw) {
@@ -19846,6 +20191,7 @@
 
     async function triggerLiveNetworkSync() {
         if (!S.user) return;
+        if (window._supabaseRestricted) return;
         try {
             await syncPendingSalesToSupabase();
             const consolidated = await getConsolidatedSalesForChain();
@@ -20302,9 +20648,37 @@
         });
     }
 
-    /* ── INICIALIZACIÓN ── */
+    /* ── API PÚBLICA (EXPUESTA PREVIAMENTE PARA DISPONIBILIDAD TOTAL) ── */
+    window.LaFuentePOS = {
+        state: S,
+        changeBranch,
+        loadBranches,
+        loadSalesCount: loadSalesCount,
+        loadPrivateAccessData: loadPrivateAccess,
+        loadProducts,
+        loadProductsAdmin,
+        loadInventory,
+        loadSales,
+        loadCurrentShift,
+        loadCuts,
+        loadProfile,
+        loadShiftView,
+        loadDamageReports,
+        updatePosLiveMovement,
+        loadAccounting,
+        renderCart,
+        processSale,
+        checkInventoryBlock: checkBlock,
+        getStock,
+        renderPOS,
+        filtered,
+        renderCatTabs,
+        logout
+    };
+
+    /* ── INICIALIZACIÓN ROBUSTA (AUTÓNOMA, LOCAL-FIRST Y SIN BLOQUEOS) ── */
     async function init() {
-        if (!initDB()) return;
+        initDB();
         const loginEl = document.getElementById("login-screen");
         const shellEl = document.getElementById("app-shell");
 
@@ -20314,9 +20688,13 @@
             if (raw) activeUser = JSON.parse(raw);
         } catch(e) {}
 
-        const {data} = await safeQuery(db.auth.getSession(), null, 1000);
-        if (data?.session?.user) {
-            activeUser = data.session.user;
+        if (db?.auth) {
+            try {
+                const {data} = await safeQuery(db.auth.getSession(), null, 1000);
+                if (data?.session?.user) {
+                    activeUser = data.session.user;
+                }
+            } catch(e) {}
         }
 
         if (activeUser) {
@@ -20346,65 +20724,43 @@
             autoReconnectPrinters();
         }
 
-        db.auth.onAuthStateChange(async (event, session) => {
-            if (event === "SIGNED_IN" && session) {
-                S.user = session.user;
-                if (loginEl) loginEl.style.display = "none";
-                if (shellEl) shellEl.style.display = "flex";
-                document.body.classList.remove("login-active");
+        if (db?.auth?.onAuthStateChange) {
+            try {
+                db.auth.onAuthStateChange(async (event, session) => {
+                    if (event === "SIGNED_IN" && session) {
+                        S.user = session.user;
+                        if (loginEl) loginEl.style.display = "none";
+                        if (shellEl) shellEl.style.display = "flex";
+                        document.body.classList.remove("login-active");
 
-                await loadBranches();
-                await loadProfile();
-                await loadProducts();
-                await loadCurrentShift();
-                initSearch();
-                setupRealtime();
-                if (S.isSU && window.changeView) window.changeView("private-access");
-                else if (window.changeView) window.changeView("pos");
-            }
-            if (event === "SIGNED_OUT") {
-                S.user = null; S.profile = null;
-                S.cart = []; S.products = [];
-                if (loginEl) loginEl.style.display = "flex";
-                if (shellEl) shellEl.style.display = "none";
-                document.body.classList.add("login-active");
+                        await loadBranches();
+                        await loadProfile();
+                        await loadProducts();
+                        await loadCurrentShift();
+                        initSearch();
+                        setupRealtime();
+                        if (S.isSU && window.changeView) window.changeView("private-access");
+                        else if (window.changeView) window.changeView("pos");
+                    }
+                    if (event === "SIGNED_OUT") {
+                        S.user = null; S.profile = null;
+                        S.cart = []; S.products = [];
+                        if (loginEl) loginEl.style.display = "flex";
+                        if (shellEl) shellEl.style.display = "none";
+                        document.body.classList.add("login-active");
 
-                if (realtimeChannel) {
-                    try { db.removeChannel(realtimeChannel); } catch(e) {}
-                }
-                if (window._syncTimer) clearInterval(window._syncTimer);
-            }
-        });
+                        if (realtimeChannel && db?.removeChannel) {
+                            try { db.removeChannel(realtimeChannel); } catch(e) {}
+                        }
+                        if (window._syncTimer) clearInterval(window._syncTimer);
+                    }
+                });
+            } catch(e) {}
+        }
     }
 
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
     else init();
 
-    /* ── API PÚBLICA ── */
-    window.LaFuentePOS = {
-        state: S,
-        changeBranch,
-        loadBranches,
-        loadSalesCount: loadSalesCount,
-            loadPrivateAccessData: loadPrivateAccess,
-        loadProducts,
-        loadProductsAdmin,
-        loadInventory,
-        loadSales,
-        loadCurrentShift,
-        loadCuts,
-        loadProfile,
-        loadShiftView,
-        loadDamageReports,
-        updatePosLiveMovement,
-        loadAccounting,
-        renderCart,
-        processSale,
-        checkInventoryBlock: checkBlock,
-        getStock,
-        renderPOS,
-        filtered,
-        renderCatTabs,
-        logout
-    };
+    /* (API Pública declarada arriba para alta disponibilidad) */
 })();
