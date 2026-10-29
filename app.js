@@ -3892,13 +3892,24 @@
                     seenTag1General.set(normKey, pid);
                 } else {
                     const prevPid = seenTag1General.get(normKey);
-                    const isCurOfficial = officialTag1Config.some(c => c.id === pid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === pid);
-                    const isPrevOfficial = officialTag1Config.some(c => c.id === prevPid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === prevPid);
-                    if (isCurOfficial && !isPrevOfficial) {
+                    const prevProd = combinedMap.get(prevPid);
+                    const isCurCustom = prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69;
+                    const isPrevCustom = prevProd && (prevProd.is_custom || prevPid.startsWith("prod_") || prevProd.user_edited_price_v69);
+
+                    if (isCurCustom && !isPrevCustom) {
                         combinedMap.delete(prevPid);
                         seenTag1General.set(normKey, pid);
-                    } else {
+                    } else if (!isCurCustom && isPrevCustom) {
                         combinedMap.delete(pid);
+                    } else {
+                        const isCurOfficial = officialTag1Config.some(c => c.id === pid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === pid);
+                        const isPrevOfficial = officialTag1Config.some(c => c.id === prevPid) || DEFAULT_PRODUCTS.some(dp => dp.product_id === prevPid);
+                        if (isCurOfficial && !isPrevOfficial) {
+                            combinedMap.delete(prevPid);
+                            seenTag1General.set(normKey, pid);
+                        } else {
+                            combinedMap.delete(pid);
+                        }
                     }
                 }
             }
@@ -4009,11 +4020,107 @@
                     seenMollotesGeneral.set(normKey, pid);
                 } else {
                     const prevPid = seenMollotesGeneral.get(normKey);
-                    const isCurOfficial = (pid === "p_paleta_chapurrita" || pid === "p_mini");
-                    const isPrevOfficial = (prevPid === "p_paleta_chapurrita" || prevPid === "p_mini");
-                    if (isCurOfficial && !isPrevOfficial) {
+                    const prevProd = combinedMap.get(prevPid);
+                    const isCurCustom = prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69;
+                    const isPrevCustom = prevProd && (prevProd.is_custom || prevPid.startsWith("prod_") || prevProd.user_edited_price_v69);
+
+                    if (isCurCustom && !isPrevCustom) {
                         combinedMap.delete(prevPid);
                         seenMollotesGeneral.set(normKey, pid);
+                    } else if (!isCurCustom && isPrevCustom) {
+                        combinedMap.delete(pid);
+                    } else {
+                        const isCurOfficial = (pid === "p_paleta_chapurrita" || pid === "p_mini");
+                        const isPrevOfficial = (prevPid === "p_paleta_chapurrita" || prevPid === "p_mini");
+                        if (isCurOfficial && !isPrevOfficial) {
+                            combinedMap.delete(prevPid);
+                            seenMollotesGeneral.set(normKey, pid);
+                        } else {
+                            combinedMap.delete(pid);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6.5. Reglas exclusivas, deduplicación y saneamiento estricto SOLO para la sucursal CNOP:
+        const isCurrentCnop = isCnopActive();
+        if (isCurrentCnop) {
+            // A. Sanear almacenamiento local de CNOP
+            try {
+                const cnopKeys = ["lf_cnop_custom_products", "lf_branch-6_custom_products", "custom_products"];
+                cnopKeys.forEach(ck => {
+                    const raw = localStorage.getItem(ck);
+                    if (raw) {
+                        let arr = JSON.parse(raw);
+                        if (Array.isArray(arr)) {
+                            let modified = false;
+                            arr = arr.filter(p => {
+                                if (!p) return false;
+                                const pNameNorm = String(p.product_name || "").trim().toLowerCase();
+                                const pid = String(p.product_id || "");
+                                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") {
+                                    modified = true;
+                                    return false;
+                                }
+                                if ((pNameNorm === "mini" || pNameNorm === "paleta mini" || pid === "prod_calz_paleta_mini") && pid !== "p_mini") {
+                                    modified = true;
+                                    return false;
+                                }
+                                return true;
+                            });
+                            if (modified) {
+                                localStorage.setItem(ck, JSON.stringify(arr));
+                                if (ck === "custom_products") {
+                                    gw("custom_products", arr);
+                                    lw("custom_products", arr);
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch(e) {}
+
+            // B. Garantizar Paleta Chaparrita oficial única ($20, stock base 50)
+            let existingChaparritaCnop = combinedMap.get("p_paleta_chapurrita");
+            if (existingChaparritaCnop) {
+                existingChaparritaCnop.product_name = "Paleta Chaparrita";
+                existingChaparritaCnop.category = "paletas";
+                existingChaparritaCnop.allowed_in_cnop = true;
+                if (!existingChaparritaCnop.user_edited_price_v69) existingChaparritaCnop.price = 20;
+            } else {
+                const defChaparrita = DEFAULT_PRODUCTS.find(dp => dp.product_id === "p_paleta_chapurrita");
+                if (defChaparrita) {
+                    combinedMap.set("p_paleta_chapurrita", {
+                        ...defChaparrita,
+                        product_name: "Paleta Chaparrita",
+                        category: "paletas",
+                        price: 20,
+                        allowed_in_cnop: true,
+                        initial_stock: 50
+                    });
+                }
+            }
+
+            // C. Deduplicación general y blindaje de productos únicos para CNOP
+            const seenCnopGeneral = new Map();
+            for (const [pid, prod] of Array.from(combinedMap.entries())) {
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                let normKey = String(prod.category || "").toLowerCase() + "__" + pNameNorm;
+
+                if (!seenCnopGeneral.has(normKey)) {
+                    seenCnopGeneral.set(normKey, pid);
+                } else {
+                    const prevPid = seenCnopGeneral.get(normKey);
+                    const prevProd = combinedMap.get(prevPid);
+                    const isCurCustom = prod.is_custom || pid.startsWith("prod_") || prod.user_edited_price_v69;
+                    const isPrevCustom = prevProd && (prevProd.is_custom || prevPid.startsWith("prod_") || prevProd.user_edited_price_v69);
+
+                    if (isCurCustom && !isPrevCustom) {
+                        combinedMap.delete(prevPid);
+                        seenCnopGeneral.set(normKey, pid);
+                    } else if (!isCurCustom && isPrevCustom) {
+                        combinedMap.delete(pid);
                     } else {
                         combinedMap.delete(pid);
                     }
@@ -4069,7 +4176,7 @@
                 if (!foundPaletaChaparritaCalz.user_edited_price_v69) foundPaletaChaparritaCalz.price = 20;
                 foundPaletaChaparritaCalz.allowed_in_calzada = true;
             } else {
-                p.push({
+                const calzChaparritaProd = {
                     product_id: "p_paleta_chapurrita",
                     product_name: "Paleta Chaparrita",
                     product_code: "PCH",
@@ -4080,7 +4187,11 @@
                     initial_stock: 50,
                     is_active: true,
                     allowed_in_calzada: true
-                });
+                };
+                p.push(calzChaparritaProd);
+                if (!S.products.some(x => String(x.product_id || x.id) === "p_paleta_chapurrita")) {
+                    S.products.push(calzChaparritaProd);
+                }
             }
             if (!S.inv["p_paleta_chapurrita"] || Number(S.inv["p_paleta_chapurrita"]) <= 0) S.inv["p_paleta_chapurrita"] = 50;
             if (!S.inv["p_paleta_chaparrita"] || Number(S.inv["p_paleta_chaparrita"]) <= 0) S.inv["p_paleta_chaparrita"] = 50;
@@ -4182,6 +4293,9 @@
                                 const cpid = String(cp.product_id);
                                 if (!p.some(x => String(x.product_id) === cpid)) {
                                     p.push({ ...cp, allowed_in_rescate: true });
+                                }
+                                if (!S.products.some(x => String(x.product_id || x.id) === cpid)) {
+                                    S.products.push({ ...cp, allowed_in_rescate: true });
                                 }
                             });
                         }
@@ -4595,7 +4709,7 @@
                     if (!found.user_edited_price_v69) found.price = ob.price;
                     found.allowed_in_tagarete_1 = true;
                 } else {
-                    p.push({
+                    const newT1Prod = {
                         product_id: ob.id,
                         product_name: ob.name,
                         product_code: ob.code,
@@ -4606,7 +4720,11 @@
                         initial_stock: ob.stock,
                         is_active: true,
                         allowed_in_tagarete_1: true
-                    });
+                    };
+                    p.push(newT1Prod);
+                    if (!S.products.some(x => String(x.product_id || x.id) === ob.id)) {
+                        S.products.push(newT1Prod);
+                    }
                 }
                 if (!S.inv[ob.id] || Number(S.inv[ob.id]) <= 0) {
                     S.inv[ob.id] = ob.stock;
@@ -4626,6 +4744,9 @@
                                 const cpid = String(cp.product_id);
                                 if (!p.some(x => String(x.product_id) === cpid)) {
                                     p.push({ ...cp, allowed_in_tagarete_1: true });
+                                }
+                                if (!S.products.some(x => String(x.product_id || x.id) === cpid)) {
+                                    S.products.push({ ...cp, allowed_in_tagarete_1: true });
                                 }
                             });
                         }
@@ -4803,6 +4924,29 @@
                 S.inv["prod_calz_paleta_mini"] = 36;
             }
 
+            // Inyectar productos personalizados de Mollotes si faltaran
+            try {
+                const mollCustomKeys = ["lf_mollotes_permanent_products", "lf_mollotes_custom_products", "lf_branch-3_custom_products"];
+                mollCustomKeys.forEach(mk => {
+                    const raw = localStorage.getItem(mk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                if (!p.some(x => String(x.product_id || x.id) === cpid)) {
+                                    p.push({ ...cp, allowed_in_mollotes: true });
+                                }
+                                if (!S.products.some(x => String(x.product_id || x.id) === cpid)) {
+                                    S.products.push({ ...cp, allowed_in_mollotes: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+
             // Deduplicación blindada por nombre y clave en Mollotes para no repetir ninguna tarjeta jamás en POS
             const seenMollotesKeys = new Set();
             p = p.filter(prod => {
@@ -4814,6 +4958,95 @@
                 return true;
             });
         }
+
+        // Garantizar catálogo limpio sin duplicados si la sucursal activa es CNOP
+        if (isCnopActive()) {
+            p = p.filter(prod => {
+                if (!prod) return false;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+
+                // Quitar cualquier producto que diga "chaparrita" excepto la oficial p_paleta_chapurrita
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita") {
+                    return false;
+                }
+                // Quitar duplicados de mini excepto p_mini
+                if ((pNameNorm === "mini" || pNameNorm === "paleta mini" || pid === "prod_calz_paleta_mini") && pid !== "p_mini") {
+                    return false;
+                }
+                return true;
+            });
+
+            // Garantizar Paleta Chaparrita oficial a $20 en CNOP
+            const foundChaparritaCnop = p.find(x => String(x.product_id) === "p_paleta_chapurrita");
+            if (foundChaparritaCnop) {
+                foundChaparritaCnop.product_name = "Paleta Chaparrita";
+                foundChaparritaCnop.category = "paletas";
+                if (!foundChaparritaCnop.user_edited_price_v69) foundChaparritaCnop.price = 20;
+                foundChaparritaCnop.allowed_in_cnop = true;
+            } else {
+                const defChaparritaCnop = {
+                    product_id: "p_paleta_chapurrita",
+                    product_code: "PCH",
+                    product_name: "Paleta Chaparrita",
+                    category: "paletas",
+                    price: 20,
+                    initial_stock: 50,
+                    allowed_in_cnop: true
+                };
+                p.push(defChaparritaCnop);
+                if (!S.products.some(x => String(x.product_id || x.id) === "p_paleta_chapurrita")) {
+                    S.products.push(defChaparritaCnop);
+                }
+            }
+
+            // Inyectar productos personalizados de CNOP si faltaran
+            try {
+                const cnopCustomKeys = ["lf_cnop_permanent_products", "lf_cnop_custom_products", "lf_branch-6_custom_products"];
+                cnopCustomKeys.forEach(ck => {
+                    const raw = localStorage.getItem(ck);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                if (!p.some(x => String(x.product_id || x.id) === cpid)) {
+                                    p.push({ ...cp, allowed_in_cnop: true });
+                                }
+                                if (!S.products.some(x => String(x.product_id || x.id) === cpid)) {
+                                    S.products.push({ ...cp, allowed_in_cnop: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+
+            // Deduplicación blindada por nombre y clave en CNOP para no repetir ninguna tarjeta jamás en POS
+            const seenCnopKeys = new Set();
+            p = p.filter(prod => {
+                const normName = String(prod.product_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenCnopKeys.has(key) || seenCnopKeys.has(normName)) return false;
+                seenCnopKeys.add(key);
+                seenCnopKeys.add(normName);
+                return true;
+            });
+        }
+
+        // Sincronización universal e infalible: todo producto visible en p debe residir en S.products
+        p.forEach(prod => {
+            if (!prod) return;
+            const pid = String(prod.product_id || prod.id || "");
+            if (!pid) return;
+            const existingIdx = S.products.findIndex(x => String(x.product_id || x.id || "").toLowerCase() === pid.toLowerCase());
+            if (existingIdx >= 0) {
+                S.products[existingIdx] = prod;
+            } else {
+                S.products.push(prod);
+            }
+        });
 
         if (S.cat !== "all") {
             p = p.filter(x => String(x.category || "").toLowerCase() === S.cat);
@@ -5002,13 +5235,15 @@
             }
         }
 
-        // 4. Buscar en localStorage de productos personalizados
+        // 4. Buscar en localStorage de productos personalizados de todas las sucursales
         if (!p) {
             const sKeys = [
                 "lf_tagarete_2_permanent_products", "lf_tagarete_2_custom_products", "lf_branch-5_custom_products",
-                "lf_calzada_permanent_products", "lf_calzada_custom_products",
-                "lf_rescate_permanent_products", "lf_rescate_custom_products",
-                "lf_tagarete_1_permanent_products", "lf_tagarete_1_custom_products",
+                "lf_tagarete_1_permanent_products", "lf_tagarete_1_custom_products", "lf_branch-4_custom_products",
+                "lf_mollotes_permanent_products", "lf_mollotes_custom_products", "lf_branch-3_custom_products",
+                "lf_cnop_permanent_products", "lf_cnop_custom_products", "lf_branch-6_custom_products",
+                "lf_rescate_permanent_products", "lf_rescate_custom_products", "lf_branch-2_custom_products",
+                "lf_calzada_permanent_products", "lf_calzada_custom_products", "lf_la_fuente_calzada_custom_products", "lf_branch-1_custom_products",
                 "custom_products", "lf_custom_products"
             ];
             for (const sk of sKeys) {
@@ -5028,22 +5263,28 @@
             }
         }
 
-        // 5. Respaldo directo desde la tarjeta DOM
-        if (!p && cardEl) {
-            const cPid = cardEl.getAttribute("data-pid") || pid || ("prod_manual_" + Date.now());
-            const cName = cardEl.getAttribute("data-name") || cardEl.querySelector("strong")?.textContent?.trim() || "Producto";
-            let cPrice = parseFloat(cardEl.getAttribute("data-price"));
-            if (isNaN(cPrice) || cPrice <= 0) {
-                const priceTxt = cardEl.querySelector("span")?.textContent?.replace(/[^0-9.]/g, "") || "0";
-                cPrice = parseFloat(priceTxt) || 20;
+        // 5. Respaldo directo desde la tarjeta DOM (infalible en pantallas táctiles y clics directos)
+        if (!p) {
+            if (!cardEl && pid) {
+                cardEl = document.querySelector(`.product-card[data-pid="${pid}"]`) ||
+                         document.querySelector(`.product-card[data-pid="${pidStr}"]`);
             }
-            p = {
-                product_id: cPid,
-                product_name: cName,
-                price: cPrice,
-                category: cardEl.getAttribute("data-cat") || "General",
-                is_composite: cardEl.getAttribute("data-composite") === "1"
-            };
+            if (cardEl) {
+                const cPid = cardEl.getAttribute("data-pid") || pid || ("prod_manual_" + Date.now());
+                const cName = cardEl.getAttribute("data-name") || cardEl.querySelector("strong")?.textContent?.trim() || "Producto";
+                let cPrice = parseFloat(cardEl.getAttribute("data-price"));
+                if (isNaN(cPrice) || cPrice <= 0) {
+                    const priceTxt = cardEl.querySelector("span")?.textContent?.replace(/[^0-9.]/g, "") || "0";
+                    cPrice = parseFloat(priceTxt) || 20;
+                }
+                p = {
+                    product_id: cPid,
+                    product_name: cName,
+                    price: cPrice,
+                    category: cardEl.getAttribute("data-cat") || "General",
+                    is_composite: cardEl.getAttribute("data-composite") === "1"
+                };
+            }
         }
 
         if (!p) {
@@ -5095,18 +5336,21 @@
             return;
         }
 
-        // Sanear precios en carrito en vivo si la sucursal activa es Rescate
-        if (resolveCanonicalBranch(S.branchName) === "Rescate") {
+        const bCanonCart = resolveCanonicalBranch(S.branchName);
+
+        // Sanear precios en carrito en vivo para cada sucursal
+        if (bCanonCart === "Rescate") {
             S.cart.forEach(item => {
+                const pid = String(item.product_id || "").toLowerCase();
                 const normName = String(item.product_name || "").toLowerCase().trim();
-                if ((normName.includes("zanahoria") || item.product_id === "p_paleta_zanahoria") && Number(item.price) === 440) {
+                if ((normName.includes("zanahoria") || pid === "p_paleta_zanahoria") && Number(item.price) === 440) {
                     item.price = 40;
+                } else if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || normName.includes("chaparrita")) {
+                    item.price = 20;
+                    item.product_name = "Paleta Chaparrita";
                 }
             });
-        }
-
-        // Sanear precios oficiales en carrito en vivo si la sucursal activa es Tagarete 2
-        if (resolveCanonicalBranch(S.branchName) === "Tagarete 2") {
+        } else if (bCanonCart === "Tagarete 2") {
             S.cart.forEach(item => {
                 const pid = String(item.product_id || "").toLowerCase();
                 const pName = String(item.product_name || "").toLowerCase().trim();
@@ -5129,6 +5373,69 @@
                     item.price = 45;
                 } else if (pid === "p_ag_mediana" || pName === "agua mediana") {
                     item.price = 30;
+                }
+            });
+        } else if (bCanonCart === "Tagarete 1") {
+            S.cart.forEach(item => {
+                const pid = String(item.product_id || "").toLowerCase();
+                const pName = String(item.product_name || "").toLowerCase().trim();
+                if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pName.includes("chaparrita")) {
+                    item.price = 20;
+                    item.product_name = "Paleta Chaparrita";
+                } else if (pid === "p_helado_vaso1" || pName.includes("una bolita")) {
+                    item.price = 20;
+                } else if (pid === "p_helado_vaso2" || pName.includes("dos bolita")) {
+                    item.price = 35;
+                } else if (pid === "p_helado_vaso3" || pName.includes("tres bolita")) {
+                    item.price = 45;
+                } else if (pid === "p_helado_vaso4" || pName.includes("cuatro bolita")) {
+                    item.price = 50;
+                } else if (pid === "p_ag_nat_grande" || pName.includes("agua natural grande")) {
+                    item.price = 20;
+                } else if (pid === "p_ag_chica" || pName === "agua chica") {
+                    item.price = 25;
+                } else if (pid === "p_ag_grande" || pName === "agua grande") {
+                    item.price = 45;
+                } else if (pid === "p_ag_mediana" || pName === "agua mediana") {
+                    item.price = 30;
+                }
+            });
+        } else if (bCanonCart === "Mollotes") {
+            S.cart.forEach(item => {
+                const pid = String(item.product_id || "").toLowerCase();
+                const pName = String(item.product_name || "").toLowerCase().trim();
+                if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pName.includes("chaparrita")) {
+                    item.price = 20;
+                    item.product_name = "Paleta Chaparrita";
+                } else if (pid === "p_mini" || pName === "mini" || pName === "paleta mini") {
+                    item.price = 5;
+                    item.product_name = "Paleta mini";
+                }
+            });
+        } else if (bCanonCart === "CNOP") {
+            S.cart.forEach(item => {
+                const pid = String(item.product_id || "").toLowerCase();
+                const pName = String(item.product_name || "").toLowerCase().trim();
+                if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pName.includes("chaparrita")) {
+                    item.price = 20;
+                    item.product_name = "Paleta Chaparrita";
+                } else if (pid === "p_mini" || pName === "mini" || pName === "paleta mini") {
+                    item.price = 5;
+                }
+            });
+        } else if (bCanonCart === "La Fuente Calzada") {
+            S.cart.forEach(item => {
+                const pid = String(item.product_id || "").toLowerCase();
+                const pName = String(item.product_name || "").toLowerCase().trim();
+                if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pName.includes("chaparrita")) {
+                    item.price = 20;
+                    item.product_name = "Paleta Chaparrita";
+                } else if (pid === "prod_1789344787923_spve" || pName === "esquimal grande") {
+                    item.price = 45;
+                } else if (pid === "prod_calz_medio_litro" || pName === "medio litro de nieve") {
+                    item.price = 60;
+                } else if (pid === "prod_calz_chetos_queso" || pName === "chetos queso") {
+                    item.price = 45;
                 }
             });
         }
