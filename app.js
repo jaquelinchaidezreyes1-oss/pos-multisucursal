@@ -1350,11 +1350,19 @@
         if (S.isSU) {
             S.role = "Director General";
             S.shift = "Turno Completo";
-            if (!S.branchId && S.branches.length) {
-                const c = S.branches.find(b => b.name.toLowerCase().includes("calzada"));
-                S.branchId = c ? c.id : S.branches[0].id;
-                S.branchName = c ? c.name : S.branches[0].name;
+            // Para Superusuario, la vista por defecto en toda la red debe ser "all" (Todas las Sucursales)
+            // a menos que hayan seleccionado explícitamente una sucursal específica en la sesión.
+            if (!S.branchId || S.branchId === "branch-1" || (!S.userSelectedBranch && S.branchName && S.branchName.toLowerCase().includes("calzada"))) {
+                S.branchId = "all";
+                S.branchName = "Todas las Sucursales";
             }
+            if (!S.cutsFilterBranchId) S.cutsFilterBranchId = "all";
+            if (!S.salesFilterBranchId) S.salesFilterBranchId = "all";
+            if (!S.shiftFilterBranchId) S.shiftFilterBranchId = "all";
+            if (!S.damageBranchFilter) S.damageBranchFilter = "all";
+            if (!S.salesCountBranch) S.salesCountBranch = "all";
+            if (!S.accBranchFilter) S.accBranchFilter = "all";
+            if (!S.prodSummaryBranch) S.prodSummaryBranch = "all";
             return;
         }
 
@@ -1506,6 +1514,7 @@
     async function changeBranch(id) {
         if (!S.isSU) return;
         if (id === "all") {
+            S.userSelectedBranch = false;
             S.branchId = "all";
             S.branchName = "Todas las Sucursales";
             S.cutsFilterBranchId = "all";
@@ -1544,6 +1553,7 @@
         }
 
         // 2. Establecer nueva sucursal
+        S.userSelectedBranch = true;
         S.branchId = b.id;
         S.branchName = b.name;
         S.cutsFilterBranchId = b.id;
@@ -16725,6 +16735,74 @@
 ];
 
 
+    function getLocalBranchSales(canonicalTarget = null) {
+        const out = [];
+        const seen = new Set();
+        const add = (s) => {
+            if (!s || isSystemNonSaleRecord(s)) return;
+            const sid = String(s.id || s.sale_number || s.local_id || "");
+            if (sid && seen.has(sid)) return;
+            if (canonicalTarget && resolveCanonicalBranch(s) !== canonicalTarget) return;
+            if (sid) seen.add(sid);
+            out.push(s);
+        };
+        const sources = [
+            _sessionSales,
+            lr("sales", []),
+            lr("pending_sync_sales", []),
+            lr("all_sales", []),
+            gr("all_sales", []),
+            lr("all_printed_tickets", []),
+            lr("last_printed_sale") ? [lr("last_printed_sale")] : [],
+            lr("calzada_sales", []),
+            lr("calzada_today_sales", []),
+            lr("mollotes_sales", []),
+            lr("rescate_sales", []),
+            lr("tagarete_1_sales", []),
+            lr("tagarete_2_sales", []),
+            lr("cnop_sales", [])
+        ];
+        BRANCH_NAMES.forEach(bn => {
+            const slug = bn.toLowerCase().replace(/\s+/g, "_");
+            const bRaw = lr(slug + "_sales", []);
+            if (Array.isArray(bRaw)) sources.push(bRaw);
+        });
+        for (let i = 1; i <= 6; i++) {
+            const bRaw = lr("branch-" + i + "_sales", []);
+            if (Array.isArray(bRaw)) sources.push(bRaw);
+        }
+        sources.forEach(src => {
+            if (Array.isArray(src)) src.forEach(add);
+        });
+        return out;
+    }
+
+    window.retrySupabaseConnection = async function() {
+        window._supabaseRestricted = false;
+        toast("Reintentando conexión con la nube de Supabase...", "info", 3000);
+        try {
+            const res = await fetch("https://rxyfitblocfvaltuxvqp.supabase.co/rest/v1/sales?select=id&limit=1", {
+                headers: { "apikey": "sb_publishable_YEnMCOAPzxEWJTbaZHzIGA_ahFaXg02" }
+            });
+            if (res.status === 402) {
+                window._supabaseRestricted = true;
+                toast("⚠️ Supabase sigue con restricción de cuota (HTTP 402 exceed_egress_quota). Desactiva el Spend Cap en supabase.com", "warning", 6000);
+            } else if (res.ok) {
+                window._supabaseRestricted = false;
+                toast("✅ ¡Conexión con Supabase restablecida con éxito!", "success", 4000);
+                await triggerLiveNetworkSync();
+                if (S.view === "private-access") await loadPrivateAccess();
+                if (S.view === "accounting") await loadAccounting();
+                if (S.view === "sales") await loadSales();
+                if (S.view === "cuts") await loadCuts();
+            } else {
+                toast("Respuesta de Supabase: HTTP " + res.status, "info", 4000);
+            }
+        } catch(e) {
+            toast("Error conectando con Supabase: " + e.message, "error", 4000);
+        }
+    };
+
     async function getConsolidatedSalesForChain(forceRefresh = false) {
         const nowMs = Date.now();
         if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 30000)) {
@@ -16734,9 +16812,9 @@
         if (db) {
             try {
                 const {data, error} = await safeQuery(db.from("sales")
-                    .select("*")
+                    .select("id,sale_number,company_id,branch_id,user_id,subtotal,discount,tax,total,status,observations,created_at")
                     .order("created_at", {ascending:false})
-                    .limit(300), null, 1500);
+                    .limit(60), null, 2500);
                 if (data && data.length) {
                     remoteSales = data.filter(s => !isSystemNonSaleRecord(s)).map(s => {
                         let obs = {};
@@ -17073,33 +17151,16 @@
                 return matchesBranch(s, targetBranchRef);
             });
 
-        // Garantizar que las ventas registradas para Calzada estén siempre en branchSales
-        if (isCalzadaFilter) {
-            const localSources = [
-                _sessionSales,
-                lr("sales", []),
-                lr("calzada_sales", []),
-                lr("calzada_today_sales", []),
-                lr("branch-1_sales", []),
-                lr("la_fuente_calzada_sales", []),
-                lr("all_printed_tickets", []),
-                lr("last_printed_sale") ? [lr("last_printed_sale")] : []
-            ];
-            localSources.forEach(list => {
-                if (Array.isArray(list)) {
-                    list.forEach(ls => {
-                        if (ls && !isSystemNonSaleRecord(ls)) {
-                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada";
-                            if (isCalz) {
-                                if (!branchSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
-                                    branchSales.unshift(ls);
-                                }
-                            }
-                        }
-                    });
+        // Garantizar que las ventas locales de la sucursal seleccionada (o de toda la red) estén siempre en branchSales
+        const targetCanonical = (activeBranchFilter === "all") ? null : resolveCanonicalBranch(targetBranchRef);
+        const localBranchSales = getLocalBranchSales(targetCanonical);
+        localBranchSales.forEach(ls => {
+            if (ls && !isSystemNonSaleRecord(ls)) {
+                if (!branchSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                    branchSales.unshift(ls);
                 }
-            });
-        }
+            }
+        });
         
         const todayStr = toDateKey();
         const datesMap = new Map();
@@ -17807,7 +17868,7 @@
         }
 
         const allConsolidatedCuts = await getConsolidatedCutsForChain();
-        const activeFilter = S.isSU ? (S.cutsFilterBranchId || S.branchId) : S.branchId;
+        const activeFilter = S.isSU ? (S.cutsFilterBranchId || "all") : S.branchId;
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
         const isCalzadaBranch = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada" ||
                                 resolveCanonicalBranch(activeFilter) === "La Fuente Calzada";
@@ -17836,31 +17897,16 @@
         const todayStr = toDateKey();
         let todayActiveSales = currentBranchSales.filter(s => !isSystemNonSaleRecord(s) && isTodaySale(s, todayStr) && String(s.status||"").toUpperCase() !== "CANCELLED");
 
-        // Para Calzada: asegurar inclusión directa de todas las ventas en memoria y locales recientes
-        if (isCalzadaBranch) {
-            const localSources = [
-                _sessionSales,
-                lr("sales", []),
-                lr("calzada_sales", []),
-                lr("calzada_today_sales", []),
-                lr("branch-1_sales", []),
-                lr("la_fuente_calzada_sales", []),
-                lr("all_printed_tickets", []),
-                lr("last_printed_sale") ? [lr("last_printed_sale")] : []
-            ];
-            localSources.forEach(list => {
-                if (Array.isArray(list)) {
-                    list.forEach(ls => {
-                        if (ls && !isSystemNonSaleRecord(ls) && String(ls.status || "").toUpperCase() !== "CANCELLED" && isTodaySale(ls, todayStr)) {
-                            const isCalz = resolveCanonicalBranch(ls) === "La Fuente Calzada";
-                            if (isCalz && !todayActiveSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
-                                todayActiveSales.unshift(ls);
-                            }
-                        }
-                    });
+        // Asegurar inclusión directa de todas las ventas locales y en memoria para la sucursal activa
+        const cutBranchCanonical = resolveCanonicalBranch({ id: S.branchId, name: S.branchName });
+        const localBranchSales = getLocalBranchSales(cutBranchCanonical);
+        localBranchSales.forEach(ls => {
+            if (ls && !isSystemNonSaleRecord(ls) && String(ls.status || "").toUpperCase() !== "CANCELLED" && isTodaySale(ls, todayStr)) {
+                if (!todayActiveSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                    todayActiveSales.unshift(ls);
                 }
-            });
-        }
+            }
+        });
 
         const currentCategory = (S.shift.toLowerCase().includes("tarde") || S.shift.toLowerCase().includes("vesp")) ? "vespertino" : "matutino";
         
@@ -19294,7 +19340,16 @@
         let chainVesTotal = 0;
 
         const summary = S.branches.map(b => {
-            const bs = todaySales.filter(s => matchesBranch(s, b));
+            const canonicalTarget = resolveCanonicalBranch(b);
+            let bs = todaySales.filter(s => matchesBranch(s, b));
+            const localBS = getLocalBranchSales(canonicalTarget);
+            localBS.forEach(ls => {
+                if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED" && isTodaySale(ls, selectedDate === "today" ? todayStr : selectedDate)) {
+                    if (!bs.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                        bs.unshift(ls);
+                    }
+                }
+            });
             const total = bs.reduce((acc,s) => acc + Number(s.total||0), 0);
             const cashTotal = bs.filter(s => (s.payment_method || "cash") === "cash").reduce((acc,s) => acc + Number(s.total||0), 0);
             const cardTotal = bs.filter(s => s.payment_method === "card").reduce((acc,s) => acc + Number(s.total||0), 0);
@@ -19333,23 +19388,16 @@
         let branchTargetVes = 0;
 
         if (isSingleBranch && activeBranchObj) {
+            const canonicalTarget = resolveCanonicalBranch(activeBranchObj);
             branchTargetSales = todaySales.filter(s => matchesBranch(s, activeBranchObj));
-            if (resolveCanonicalBranch(activeBranchObj) === "La Fuente Calzada") {
-                const localCalz = [
-                    ...lr("sales", []),
-                    ...lr("calzada_sales", []),
-                    ...lr("calzada_today_sales", []),
-                    ...lr("all_printed_tickets", []),
-                    ...(lr("last_printed_sale") ? [lr("last_printed_sale")] : [])
-                ];
-                localCalz.forEach(ls => {
-                    if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED" && isTodaySale(ls, selectedDate === "today" ? todayStr : selectedDate)) {
-                        if (!branchTargetSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
-                            branchTargetSales.unshift(ls);
-                        }
+            const localBranchSales = getLocalBranchSales(canonicalTarget);
+            localBranchSales.forEach(ls => {
+                if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED" && isTodaySale(ls, selectedDate === "today" ? todayStr : selectedDate)) {
+                    if (!branchTargetSales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                        branchTargetSales.unshift(ls);
                     }
-                });
-            }
+                }
+            });
             branchTargetTotal = branchTargetSales.reduce((acc, s) => acc + Number(s.total || 0), 0);
             branchTargetCash = branchTargetSales.filter(s => (s.payment_method || "cash") === "cash").reduce((acc, s) => acc + Number(s.total || 0), 0);
             branchTargetCard = branchTargetSales.filter(s => s.payment_method === "card").reduce((acc, s) => acc + Number(s.total || 0), 0);
@@ -19362,7 +19410,25 @@
 
         const currentSummaryBranch = S.prodSummaryBranch || (isSingleBranch ? activeBranchObj.id : "all");
 
+        const quotaNoticeHtml = window._supabaseRestricted ? `
+            <div style="background:#fffbeb;border:2px solid #f59e0b;padding:14px 20px;border-radius:14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:0 2px 10px rgba(245,158,11,0.15)">
+                <div style="display:flex;align-items:center;gap:12px;max-width:820px">
+                    <span style="font-size:26px">⚠️</span>
+                    <div>
+                        <strong style="color:#b45309;font-size:14px;display:block">Cuota de Red en la Nube Supabase Agotada (HTTP 402 exceed_egress_quota)</strong>
+                        <span style="color:#92400e;font-size:12px;line-height:1.4;display:block">
+                            Todas las tablets en las sucursales siguen cobrando y guardando ventas de forma 100% segura. Para recibir las ventas en vivo en teléfonos o computadoras directivas, el dueño debe ingresar a <strong>supabase.com</strong> y desactivar el límite de gasto (Spend Cap).
+                        </span>
+                    </div>
+                </div>
+                <button type="button" onclick="window.retrySupabaseConnection()" style="padding:10px 18px;background:#f59e0b;color:#fff;border:none;border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
+                    🔄 Reintentar Conexión Nube
+                </button>
+            </div>
+        ` : '';
+
         c.innerHTML = `
+        ${quotaNoticeHtml}
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;background:var(--wine-50);border:1.5px solid var(--wine-200);padding:14px 20px;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
             <div style="display:flex;align-items:center;gap:12px">
                 <span style="font-size:24px">📅</span>
@@ -19375,6 +19441,9 @@
                     <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
                         <button type="button" id="btn-clean-su-cache" style="padding:6px 12px;background:#fee2e2;color:#991b1b;border:1.5px solid #f87171;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">
                             🧹 Limpiar Caché de Superusuario
+                        </button>
+                        <button type="button" onclick="window.retrySupabaseConnection()" style="padding:6px 12px;background:#fef3c7;color:#92400e;border:1.5px solid #f59e0b;border-radius:8px;font-weight:800;font-size:11px;cursor:pointer">
+                            🔄 Reintentar Nube
                         </button>
                     </div>
                 </div>
@@ -19825,7 +19894,7 @@
             : allCuts.filter(c => toDateKey(c.created_at) === (selectedDate === "today" ? todayStr : selectedDate) || String(c.created_at||"").slice(0,10) === (selectedDate === "today" ? todayStr : selectedDate));
 
         // Filtro de Sucursal en Contabilidad
-        const activeBranchFilter = S.accBranchFilter || S.branchId || "all";
+        const activeBranchFilter = S.accBranchFilter || (S.isSU ? "all" : S.branchId) || "all";
         const isSingleBranch = (activeBranchFilter !== "all");
         const activeBranchObj = isSingleBranch
             ? (S.branches.find(b => String(b.id) === String(activeBranchFilter) || resolveCanonicalBranch(b) === resolveCanonicalBranch(activeBranchFilter)) || { id: activeBranchFilter, name: S.branchName })
@@ -19835,25 +19904,27 @@
         let displayCuts = dateCuts;
 
         if (isSingleBranch && activeBranchObj) {
+            const canonicalTarget = resolveCanonicalBranch(activeBranchObj);
             displaySales = activeUnarchivedSales.filter(s => matchesBranch(s, activeBranchObj));
             displayCuts = dateCuts.filter(c => matchesBranch(c, activeBranchObj));
 
-            if (resolveCanonicalBranch(activeBranchObj) === "La Fuente Calzada") {
-                const localCalz = [
-                    ...lr("sales", []),
-                    ...lr("calzada_sales", []),
-                    ...lr("calzada_today_sales", []),
-                    ...lr("all_printed_tickets", []),
-                    ...(lr("last_printed_sale") ? [lr("last_printed_sale")] : [])
-                ];
-                localCalz.forEach(ls => {
-                    if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED" && isTodaySale(ls, selectedDate === "today" ? todayStr : selectedDate)) {
-                        if (!displaySales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
-                            displaySales.unshift(ls);
-                        }
+            const localBranchSales = getLocalBranchSales(canonicalTarget);
+            localBranchSales.forEach(ls => {
+                if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED" && isTodaySale(ls, selectedDate === "today" ? todayStr : selectedDate)) {
+                    if (!displaySales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                        displaySales.unshift(ls);
                     }
-                });
-            }
+                }
+            });
+        } else {
+            const allLocalSales = getLocalBranchSales(null);
+            allLocalSales.forEach(ls => {
+                if (ls && String(ls.status||"").toUpperCase() !== "CANCELLED" && isTodaySale(ls, selectedDate === "today" ? todayStr : selectedDate)) {
+                    if (!displaySales.some(x => String(x.id) === String(ls.id) || String(x.sale_number) === String(ls.sale_number))) {
+                        displaySales.unshift(ls);
+                    }
+                }
+            });
         }
 
         const totalSelectedDate = displaySales.reduce((acc,s) => acc + Number(s.total||0), 0);
@@ -20946,7 +21017,7 @@
 
         // Heartbeat de auto-sincronización periódica activa cada 30 segundos
         if (window._syncTimer) clearInterval(window._syncTimer);
-        window._syncTimer = setInterval(triggerLiveNetworkSync, 30000);
+        window._syncTimer = setInterval(triggerLiveNetworkSync, 60000);
 
         // Sincronización inmediata al volver a enfocar la pestaña
         window.addEventListener("focus", triggerLiveNetworkSync);
