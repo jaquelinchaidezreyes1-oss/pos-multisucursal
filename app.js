@@ -3229,6 +3229,12 @@
                         prod.price = 45;
                     }
                 }
+            } else if (isMollotesActive()) {
+                if (!prod.user_edited_price_v69) {
+                    if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve" || pNameNorm.includes("medio litro")) {
+                        prod.price = 60;
+                    }
+                }
             } else {
                 // En las demás sucursales, conservar su precio original del catálogo general si provienen de los IDs compartidos
                 if (!prod.user_edited_price_v69) {
@@ -3939,7 +3945,8 @@
                 { id: "prod_moll_cheetos_prep", name: "Cheetos preparados", cat: "preparados", price: 55, code: "CP", stock: 50 },
                 { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
                 { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
-                { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 }
+                { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
+                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
             ];
 
             const officialMollotesIds = new Set(officialMollotesConfig.map(c => c.id));
@@ -4039,6 +4046,11 @@
                 // 2. Quitar cualquier duplicado de Mini
                 if ((pNameNorm === "mini" || pNameNorm === "paleta mini" || pid === "prod_calz_paleta_mini") && pid !== "p_mini") {
                     combinedMap.delete(pid);
+                }
+                // 3. Medio Litro de Nieve a $60 en Mollotes
+                if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve" || pNameNorm.includes("medio litro")) {
+                    if (!prod.user_edited_price_v69) prod.price = 60;
+                    prod.allowed_in_mollotes = true;
                 }
             }
 
@@ -4965,8 +4977,20 @@
                 { id: "prod_moll_cheetos_prep", name: "Cheetos preparados", cat: "preparados", price: 55, code: "CP", stock: 50 },
                 { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
                 { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
-                { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 }
+                { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
+                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
             ];
+
+            // Garantizar Medio Litro de Nieve a $60 en Mollotes
+            p.forEach(prod => {
+                if (!prod) return;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+                if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve" || pNameNorm.includes("medio litro")) {
+                    if (!prod.user_edited_price_v69) prod.price = 60;
+                    prod.allowed_in_mollotes = true;
+                }
+            });
 
             officialMollotesItems.forEach(ob => {
                 let found = p.find(x => String(x.product_id) === ob.id || (String(x.product_name||"").trim().toLowerCase() === ob.name.toLowerCase() && !x.is_custom && !String(x.product_id||"").startsWith("prod_")));
@@ -5546,6 +5570,9 @@
                 } else if (pid === "p_mini" || pName === "mini" || pName === "paleta mini") {
                     item.price = 5;
                     item.product_name = "Paleta mini";
+                } else if (pid === "prod_calz_medio_litro" || pName === "medio litro de nieve" || pName.includes("medio litro")) {
+                    item.price = 60;
+                    item.product_name = "Medio Litro de Nieve";
                 }
             });
         } else if (bCanonCart === "CNOP") {
@@ -7038,6 +7065,24 @@
                 if (aCust !== bCust) return bCust - aCust;
                 return (a.product_name || "").localeCompare(b.product_name || "");
             });
+            displayedProducts.forEach(prod => {
+                if (!prod) return;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+                if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve" || pNameNorm.includes("medio litro")) {
+                    if (!prod.user_edited_price_v69) prod.price = 60;
+                }
+            });
+
+            displayedProducts.forEach(prod => {
+                if (!prod) return;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+                if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve" || pNameNorm.includes("medio litro")) {
+                    if (!prod.user_edited_price_v69) prod.price = 60;
+                }
+            });
+
             const seenMollotesAdmin = new Set();
             displayedProducts = displayedProducts.filter(p => {
                 const normName = String(p.product_name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
