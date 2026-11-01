@@ -1742,6 +1742,18 @@
             "p_paleta_chaparrita": 16,
             "p_mini": 36,
             "prod_calz_paleta_mini": 36,
+            "p_paleta_crema_gde": 160,
+            "p_paleta_agua_gde": 105,
+            "p_mordisco": 5,
+            "prod_moll_tostitos_prep": 15,
+            "p_tostilocos": 15,
+            "p_fresa_congelada": 1,
+            "prod_moll_cheetos_prep": 50,
+            "p_ag_grande": 40,
+            "p_ag_mediana": 40,
+            "p_ag_chica": 40,
+            "p_papas_cueros": 50,
+            "prod_calz_medio_litro": 50,
             "adbc5511-68a8-4525-97a3-ac7972856e89": 75,
             "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 80,
             "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 70,
@@ -2607,8 +2619,40 @@
         return p;
     }
     
-    function broadcastCatalogChanges(actionDescription = "Modificación de catálogo") {
-        const customList = gr("custom_products", []);
+    async function broadcastCatalogChanges(actionDescription = "Modificación de catálogo") {
+        const customMap = new Map();
+        (gr("custom_products", []) || []).forEach(p => {
+            if (p && p.product_id) customMap.set(String(p.product_id), p);
+        });
+        const permKeys = [
+            "lf_mollotes_permanent_products", "lf_mollotes_custom_products", "lf_branch-3_custom_products",
+            "lf_cnop_permanent_products", "lf_cnop_custom_products", "lf_branch-6_custom_products",
+            "lf_tagarete_1_permanent_products", "lf_tagarete_2_permanent_products",
+            "lf_rescate_permanent_products", "lf_calzada_permanent_products"
+        ];
+        permKeys.forEach(pk => {
+            try {
+                const raw = localStorage.getItem(pk);
+                if (raw) {
+                    const arr = JSON.parse(raw);
+                    if (Array.isArray(arr)) {
+                        arr.forEach(p => {
+                            if (p && p.product_id) {
+                                const pid = String(p.product_id);
+                                const prev = customMap.get(pid);
+                                if (!prev || (p.updated_at && (!prev.updated_at || p.updated_at >= prev.updated_at)) || p.user_edited_price_v69) {
+                                    customMap.set(pid, { ...(prev || {}), ...p });
+                                }
+                            }
+                        });
+                    }
+                }
+            } catch(e) {}
+        });
+        const customList = Array.from(customMap.values());
+        gw("custom_products", customList);
+        lw("custom_products", customList);
+
         const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
         const deletedList = gr(branchDelKey, []);
         
@@ -2634,7 +2678,7 @@
         // 2. Persistir en la nube de Supabase para que cualquier dispositivo / Superusuario lo reciba aunque abra después
         if (db) {
             try {
-                safeQuery(db.from("sales").insert({
+                await safeQuery(db.from("sales").insert({
                     branch_id: "c188dd82-7faf-41b8-948b-af8e789facba",
                     company_id: "51bc275d-4e19-4115-be3f-42c0ce3dae5a",
                     shift_id: "1dabe6df-2ce6-4e3a-97df-b81e179898ab",
@@ -2745,19 +2789,42 @@
             }
         } catch(e) {}
 
-        // Cargar registros de personalizaciones y productos de todas las sucursales desde la nube (sin borrar productos de ninguna sucursal)
+        // Cargar registros de personalizaciones y productos de todas las sucursales desde la nube (sin borrar productos ni pisar ediciones locales más recientes)
         if (db) {
             try {
                 const {data: catalogRecords} = await safeQuery(db.from("sales").select("*").eq("status", "CATALOG_RECORD").order("created_at", {ascending: false}).limit(50), null, 2500);
                 if (catalogRecords && catalogRecords.length) {
                     const localCustom = gr("custom_products", []);
-                    const mapCust = new Map();
+                    const localLatestMap = new Map();
                     localCustom.forEach(rawP => {
                         const p = sanitizeSharedCatalogProduct(rawP);
                         if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
-                            mapCust.set(String(p.product_id), p);
+                            localLatestMap.set(String(p.product_id), p);
                         }
                     });
+                    // Incluir también productos guardados en listas permanentes locales (como Mollotes)
+                    ["lf_mollotes_permanent_products", "lf_mollotes_custom_products", "lf_branch-3_custom_products", "lf_cnop_permanent_products"].forEach(lk => {
+                        try {
+                            const rawL = localStorage.getItem(lk);
+                            if (rawL) {
+                                const arrL = JSON.parse(rawL);
+                                if (Array.isArray(arrL)) {
+                                    arrL.forEach(rawP => {
+                                        const p = sanitizeSharedCatalogProduct(rawP);
+                                        if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
+                                            const pid = String(p.product_id);
+                                            const prev = localLatestMap.get(pid);
+                                            if (!prev || (p.updated_at && (!prev.updated_at || p.updated_at >= prev.updated_at)) || p.user_edited_price_v69) {
+                                                localLatestMap.set(pid, { ...(prev || {}), ...p });
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        } catch(e) {}
+                    });
+
+                    const mapCust = new Map();
                     calzadaPermanent.forEach(rawP => {
                         const p = sanitizeSharedCatalogProduct(rawP);
                         if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
@@ -2774,19 +2841,70 @@
                     catalogRecords.reverse().forEach(cr => {
                         let obs = {};
                         try { obs = typeof cr.observations === "string" ? JSON.parse(cr.observations) : (cr.observations || {}); } catch(e) {}
+                        const recordUpdatedAt = obs.updated_at || cr.created_at || "";
                         if (obs.custom_products && Array.isArray(obs.custom_products)) {
                             obs.custom_products.forEach(rawP => {
                                 const p = sanitizeSharedCatalogProduct(rawP);
                                 if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) {
-                                    mapCust.set(String(p.product_id), p);
+                                    const pid = String(p.product_id);
+                                    if (!p.updated_at && recordUpdatedAt) p.updated_at = recordUpdatedAt;
+                                    mapCust.set(pid, p);
                                 }
                             });
                         }
                     });
 
+                    // Preservar ediciones o adiciones locales que sean más recientes o editadas localmente
+                    for (const [pid, localP] of localLatestMap.entries()) {
+                        const cloudP = mapCust.get(pid);
+                        if (!cloudP) {
+                            mapCust.set(pid, localP);
+                        } else {
+                            const localTime = localP.updated_at || localP.created_at || "";
+                            const cloudTime = cloudP.updated_at || cloudP.created_at || "";
+                            if ((localTime && cloudTime && localTime >= cloudTime) || (localP.user_edited_price_v69 && !cloudP.user_edited_price_v69) || (localTime && !cloudTime)) {
+                                mapCust.set(pid, { ...cloudP, ...localP });
+                            } else {
+                                mapCust.set(pid, { ...localP, ...cloudP });
+                            }
+                        }
+                    }
+
                     const mergedCustom = Array.from(mapCust.values());
                     gw("custom_products", mergedCustom);
                     lw("custom_products", mergedCustom);
+
+                    // Sincronizar productos de Mollotes recibidos desde otros usuarios/dispositivos hacia lf_mollotes_permanent_products
+                    try {
+                        const mollCloudItems = mergedCustom.filter(p =>
+                            p && (p.allowed_in_mollotes || resolveCanonicalBranch(p.branch_name) === "Mollotes" || String(p.branch_id) === "branch-3") &&
+                            !explicitDelSet.has(String(p.product_id))
+                        );
+                        if (mollCloudItems.length) {
+                            const rawM = localStorage.getItem("lf_mollotes_permanent_products") || "[]";
+                            let mArr = JSON.parse(rawM);
+                            if (!Array.isArray(mArr)) mArr = [];
+                            const mMap = new Map();
+                            mArr.forEach(p => { if (p && p.product_id && !explicitDelSet.has(String(p.product_id))) mMap.set(String(p.product_id), p); });
+                            mollCloudItems.forEach(cp => {
+                                const pid = String(cp.product_id);
+                                const existingM = mMap.get(pid);
+                                if (!existingM) {
+                                    mMap.set(pid, cp);
+                                } else {
+                                    const lTime = existingM.updated_at || existingM.created_at || "";
+                                    const cTime = cp.updated_at || cp.created_at || "";
+                                    if (cTime && (!lTime || cTime >= lTime)) {
+                                        mMap.set(pid, { ...existingM, ...cp });
+                                    }
+                                }
+                            });
+                            const updatedMArr = Array.from(mMap.values());
+                            localStorage.setItem("lf_mollotes_permanent_products", JSON.stringify(updatedMArr));
+                            localStorage.setItem("lf_mollotes_custom_products", JSON.stringify(updatedMArr));
+                            localStorage.setItem("lf_branch-3_custom_products", JSON.stringify(updatedMArr));
+                        }
+                    } catch(e) {}
                 }
             } catch(e) {}
         }
@@ -3943,6 +4061,7 @@
                 { id: "prod_moll_tostitos_prep", name: "Tostitos preparados", cat: "preparados", price: 55, code: "TP", stock: 15 },
                 { id: "p_fresa_congelada", name: "Fresa congelada", cat: "congelados", price: 45, code: "FC", stock: 1 },
                 { id: "prod_moll_cheetos_prep", name: "Cheetos preparados", cat: "preparados", price: 55, code: "CP", stock: 50 },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG", stock: 40 },
                 { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
                 { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
                 { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
@@ -4054,15 +4173,21 @@
                 }
             }
 
-            // C. Garantizar productos oficiales únicos de Mollotes
+            // C. Garantizar productos oficiales únicos de Mollotes (respetando modificaciones de usuario)
             officialMollotesConfig.forEach(cfg => {
                 let existing = combinedMap.get(cfg.id);
                 if (existing) {
-                    existing.product_name = cfg.name;
-                    existing.category = cfg.cat;
                     existing.allowed_in_mollotes = true;
-                    if (!existing.user_edited_price_v69) existing.price = cfg.price;
-                    if (cfg.code) existing.product_code = cfg.code;
+                    if (!existing.user_edited_price_v69) {
+                        existing.product_name = cfg.name;
+                        existing.category = cfg.cat;
+                        existing.price = cfg.price;
+                        if (cfg.code) existing.product_code = cfg.code;
+                    } else {
+                        if (!existing.product_name) existing.product_name = cfg.name;
+                        if (!existing.category) existing.category = cfg.cat;
+                        if (!existing.product_code && cfg.code) existing.product_code = cfg.code;
+                    }
                     if (!existing.initial_stock) existing.initial_stock = cfg.stock;
                 } else {
                     const hasCustomMatch = Array.from(combinedMap.values()).some(p =>
@@ -4098,6 +4223,28 @@
                     }
                 }
             });
+
+            // C.1 Re-aplicar cualquier modificación o producto personalizado de Mollotes en lf_mollotes_permanent_products
+            try {
+                const rawPermM = localStorage.getItem("lf_mollotes_permanent_products");
+                if (rawPermM) {
+                    const arrPermM = JSON.parse(rawPermM);
+                    if (Array.isArray(arrPermM)) {
+                        arrPermM.forEach(mp => {
+                            if (!mp || !mp.product_id) return;
+                            const mpid = String(mp.product_id);
+                            if (explicitDelSet.has(mpid)) return;
+                            const cur = combinedMap.get(mpid) || {};
+                            combinedMap.set(mpid, {
+                                ...cur,
+                                ...mp,
+                                product_id: mpid,
+                                allowed_in_mollotes: true
+                            });
+                        });
+                    }
+                }
+            } catch(e) {}
 
             // D. Deduplicación general y blindaje de productos únicos para Mollotes
             const seenMollotesGeneral = new Map();
@@ -4975,13 +5122,14 @@
                 { id: "prod_moll_tostitos_prep", name: "Tostitos preparados", cat: "preparados", price: 55, code: "TP", stock: 15 },
                 { id: "p_fresa_congelada", name: "Fresa congelada", cat: "congelados", price: 45, code: "FC", stock: 1 },
                 { id: "prod_moll_cheetos_prep", name: "Cheetos preparados", cat: "preparados", price: 55, code: "CP", stock: 50 },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG", stock: 40 },
                 { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
                 { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
                 { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
                 { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
             ];
 
-            // Garantizar Medio Litro de Nieve a $60 en Mollotes
+            // Garantizar Medio Litro de Nieve a $60 en Mollotes (salvo edición explícita)
             p.forEach(prod => {
                 if (!prod) return;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
@@ -4995,11 +5143,17 @@
             officialMollotesItems.forEach(ob => {
                 let found = p.find(x => String(x.product_id) === ob.id || (String(x.product_name||"").trim().toLowerCase() === ob.name.toLowerCase() && !x.is_custom && !String(x.product_id||"").startsWith("prod_")));
                 if (found) {
-                    found.product_name = ob.name;
-                    found.category = ob.cat;
-                    if (!found.user_edited_price_v69) found.price = ob.price;
-                    if (ob.code) found.product_code = ob.code;
                     found.allowed_in_mollotes = true;
+                    if (!found.user_edited_price_v69) {
+                        found.product_name = ob.name;
+                        found.category = ob.cat;
+                        found.price = ob.price;
+                        if (ob.code) found.product_code = ob.code;
+                    } else {
+                        if (!found.product_name) found.product_name = ob.name;
+                        if (!found.category) found.category = ob.cat;
+                        if (!found.product_code && ob.code) found.product_code = ob.code;
+                    }
                 } else {
                     const newProd = {
                         product_id: ob.id,
@@ -5033,14 +5187,19 @@
                 S.inv["p_mini"] = 36;
                 S.inv["prod_calz_paleta_mini"] = 36;
                 S.inv["prod_moll_cheetos_prep"] = 50;
+                S.inv["p_ag_grande"] = 40;
                 S.inv["p_ag_mediana"] = 40;
                 S.inv["p_ag_chica"] = 40;
                 S.inv["p_papas_cueros"] = 50;
                 saveBranchInv();
                 localStorage.setItem("lf_mollotes_stock_sync_v91", "1");
             }
+            if (S.inv["p_ag_grande"] === undefined || S.inv["p_ag_grande"] === null) {
+                S.inv["p_ag_grande"] = 40;
+                saveBranchInv();
+            }
 
-            // Inyectar productos personalizados de Mollotes si faltaran
+            // Inyectar y actualizar productos personalizados o modificados de Mollotes
             try {
                 const mollCustomKeys = ["lf_mollotes_permanent_products", "lf_mollotes_custom_products", "lf_branch-3_custom_products"];
                 mollCustomKeys.forEach(mk => {
@@ -5051,10 +5210,16 @@
                             parsed.forEach(cp => {
                                 if (!cp || !cp.product_id) return;
                                 const cpid = String(cp.product_id);
-                                if (!p.some(x => String(x.product_id || x.id) === cpid)) {
+                                const existingIdx = p.findIndex(x => String(x.product_id || x.id) === cpid);
+                                if (existingIdx >= 0) {
+                                    p[existingIdx] = { ...p[existingIdx], ...cp, allowed_in_mollotes: true };
+                                } else {
                                     p.push({ ...cp, allowed_in_mollotes: true });
                                 }
-                                if (!S.products.some(x => String(x.product_id || x.id) === cpid)) {
+                                const sIdx = S.products.findIndex(x => String(x.product_id || x.id) === cpid);
+                                if (sIdx >= 0) {
+                                    S.products[sIdx] = { ...S.products[sIdx], ...cp, allowed_in_mollotes: true };
+                                } else {
                                     S.products.push({ ...cp, allowed_in_mollotes: true });
                                 }
                             });
@@ -5564,7 +5729,12 @@
             S.cart.forEach(item => {
                 const pid = String(item.product_id || "").toLowerCase();
                 const pName = String(item.product_name || "").toLowerCase().trim();
-                if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pName.includes("chaparrita")) {
+                const catProd = S.products.find(x => String(x.product_id || "").toLowerCase() === pid);
+                const isEdited = item.user_edited_price_v69 || (catProd && catProd.user_edited_price_v69);
+                if (isEdited && catProd) {
+                    item.price = Number(catProd.price);
+                    item.product_name = catProd.product_name;
+                } else if (pid === "p_paleta_chapurrita" || pid === "p_paleta_chaparrita" || pName.includes("chaparrita")) {
                     item.price = 20;
                     item.product_name = "Paleta Chaparrita";
                 } else if (pid === "p_mini" || pName === "mini" || pName === "paleta mini") {
@@ -7047,6 +7217,80 @@
                                 resolveCanonicalBranch(S.branches.find(b => String(b.id) === String(activeAdminFilter))?.name) === "Mollotes";
 
         if (isMollotesAdmin) {
+            const officialMollotesAdminItems = [
+                { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH", stock: 16 },
+                { id: "p_mini", name: "Paleta mini", cat: "paletas", price: 5, code: "MINI", stock: 36 },
+                { id: "p_paleta_crema_gde", name: "Paleta de Crema Grande", cat: "paletas", price: 30, code: "PCG", stock: 160 },
+                { id: "p_paleta_agua_gde", name: "Paleta de Agua Grande", cat: "paletas", price: 25, code: "PAG", stock: 105 },
+                { id: "p_mordisco", name: "Mordiscos", cat: "congelados", price: 25, code: "Mordi", stock: 5 },
+                { id: "prod_moll_tostitos_prep", name: "Tostitos preparados", cat: "preparados", price: 55, code: "TP", stock: 15 },
+                { id: "p_fresa_congelada", name: "Fresa congelada", cat: "congelados", price: 45, code: "FC", stock: 1 },
+                { id: "prod_moll_cheetos_prep", name: "Cheetos preparados", cat: "preparados", price: 55, code: "CP", stock: 50 },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG", stock: 40 },
+                { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
+                { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
+                { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
+                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
+            ];
+            officialMollotesAdminItems.forEach(ob => {
+                const found = displayedProducts.find(x => String(x.product_id) === ob.id || (String(x.product_name||"").trim().toLowerCase() === ob.name.toLowerCase() && !x.is_custom && !String(x.product_id||"").startsWith("prod_")));
+                if (found) {
+                    found.allowed_in_mollotes = true;
+                    if (!found.user_edited_price_v69) {
+                        found.product_name = ob.name;
+                        found.category = ob.cat;
+                        found.price = ob.price;
+                        if (ob.code) found.product_code = ob.code;
+                    }
+                } else {
+                    const newProd = {
+                        product_id: ob.id,
+                        product_name: ob.name,
+                        product_code: ob.code,
+                        category: ob.cat,
+                        price: ob.price,
+                        initial_stock: ob.stock,
+                        branch_name: "Mollotes",
+                        branch_id: "branch-3",
+                        allowed_in_mollotes: true,
+                        is_active: true
+                    };
+                    displayedProducts.push(newProd);
+                    if (!S.products.some(x => String(x.product_id || x.id) === ob.id)) {
+                        S.products.push(newProd);
+                    }
+                }
+            });
+
+            // Inyectar y actualizar productos personalizados o editados de Mollotes en displayedProducts y S.products
+            try {
+                const mollCustomKeys = ["lf_mollotes_permanent_products", "lf_mollotes_custom_products", "lf_branch-3_custom_products"];
+                mollCustomKeys.forEach(mk => {
+                    const raw = localStorage.getItem(mk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                const dIdx = displayedProducts.findIndex(x => String(x.product_id) === cpid);
+                                if (dIdx >= 0) {
+                                    displayedProducts[dIdx] = { ...displayedProducts[dIdx], ...cp, allowed_in_mollotes: true };
+                                } else {
+                                    displayedProducts.push({ ...cp, allowed_in_mollotes: true });
+                                }
+                                const sIdx = S.products.findIndex(x => String(x.product_id) === cpid);
+                                if (sIdx >= 0) {
+                                    S.products[sIdx] = { ...S.products[sIdx], ...cp, allowed_in_mollotes: true };
+                                } else {
+                                    S.products.push({ ...cp, allowed_in_mollotes: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+
             displayedProducts = displayedProducts.filter(p => {
                 if (!p) return false;
                 const pNameNorm = String(p.product_name || "").trim().toLowerCase();
@@ -7065,15 +7309,6 @@
                 if (aCust !== bCust) return bCust - aCust;
                 return (a.product_name || "").localeCompare(b.product_name || "");
             });
-            displayedProducts.forEach(prod => {
-                if (!prod) return;
-                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
-                const pid = String(prod.product_id || "");
-                if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve" || pNameNorm.includes("medio litro")) {
-                    if (!prod.user_edited_price_v69) prod.price = 60;
-                }
-            });
-
             displayedProducts.forEach(prod => {
                 if (!prod) return;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
@@ -7555,7 +7790,8 @@
 
         // Editar producto existente
         c.querySelectorAll(".btn-edit-prod").forEach(btn => btn.addEventListener("click", () => {
-            const p = S.products.find(x => String(x.product_id) === String(btn.dataset.id));
+            const p = displayedProducts.find(x => String(x.product_id) === String(btn.dataset.id)) ||
+                      S.products.find(x => String(x.product_id) === String(btn.dataset.id));
             if (!p) return;
 
             editingProductId = p.product_id;
@@ -7567,6 +7803,17 @@
             const stkInput = document.getElementById("np-stock");
             if (stkInput) stkInput.value = curStk;
             document.getElementById("np-pack-units").value = p.units_per_package || 50;
+
+            const branchSel = document.getElementById("np-branch");
+            if (branchSel && S.isSU) {
+                if (activeAdminFilter !== "all" && activeBranchName) {
+                    const matchingOpt = Array.from(branchSel.options || []).find(opt => resolveCanonicalBranch(opt.value) === resolveCanonicalBranch(activeBranchName));
+                    if (matchingOpt) branchSel.value = matchingOpt.value;
+                } else if (p.branch_name && p.branch_name !== "General") {
+                    const matchingOpt = Array.from(branchSel.options || []).find(opt => resolveCanonicalBranch(opt.value) === resolveCanonicalBranch(p.branch_name));
+                    if (matchingOpt) branchSel.value = matchingOpt.value;
+                }
+            }
 
             const isComp = !!p.is_composite;
             const chk = document.getElementById("np-is-composite");
@@ -7648,6 +7895,7 @@
                                     targetBranch === "all";
 
             const isMollotesTarget = isMollotesActive() ||
+                                     isMollotesAdmin ||
                                      resolveCanonicalBranch(targetBranch) === "Mollotes" ||
                                      resolveCanonicalBranch(S.branchName) === "Mollotes" ||
                                      bId === "branch-3" ||
@@ -7693,6 +7941,8 @@
                 prodToEdit.category = cat;
                 prodToEdit.price = price;
                 prodToEdit.user_edited_price_v69 = true;
+                prodToEdit.is_custom = true;
+                prodToEdit.updated_at = now();
                 prodToEdit.initial_stock = stockInp;
                 prodToEdit.units_per_package = packUnits;
                 prodToEdit.branch_id = isSharedId ? "all" : bId;
@@ -7717,6 +7967,14 @@
                 }
                 if (isCnopTarget) {
                     prodToEdit.allowed_in_cnop = true;
+                }
+
+                // Actualizar en memoria S.products inmediatamente
+                const sIdxEdit = S.products.findIndex(x => String(x.product_id) === String(editingProductId));
+                if (sIdxEdit >= 0) {
+                    S.products[sIdxEdit] = { ...S.products[sIdxEdit], ...prodToEdit };
+                } else {
+                    S.products.push({ ...prodToEdit });
                 }
 
                 // Actualizar stock directamente
@@ -7819,7 +8077,7 @@
                     }
                 } catch(e) {}
 
-                broadcastCatalogChanges("Producto '" + name + "' editado");
+                await broadcastCatalogChanges("Producto '" + name + "' editado");
                 toast("✓ Cambios guardados en '" + name + "' (Stock: " + stockInp + " uds).", "success", 3500);
             } else {
                 // CREAR NUEVO PRODUCTO
@@ -7847,9 +8105,11 @@
                     is_supply: (cat === "desechables" || price === 0),
                     units_per_package: packUnits,
                     initial_stock: stockInp,
-                    created_at: now()
+                    created_at: now(),
+                    updated_at: now()
                 };
 
+                S.products.push({ ...newProd });
                 S.inv[newProdId] = stockInp; saveBranchInv();
                 alertInv();
 
@@ -7937,7 +8197,7 @@
                     }
                 } catch(e) {}
 
-                broadcastCatalogChanges("Nuevo producto '" + name + "' registrado");
+                await broadcastCatalogChanges("Nuevo producto '" + name + "' registrado");
                 if (db) {
                     try {
                         await db.from("products").insert({
@@ -8422,6 +8682,81 @@
         const isTag2Inv = isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2" || S.branchId === "branch-5";
         const isTag1Inv = isTagarete1Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 1" || S.branchId === "branch-4";
         const isRescateInv = resolveCanonicalBranch(S.branchName) === "Rescate" || S.branchId === "branch-2";
+        const isMollotesInv = isMollotesActive() || resolveCanonicalBranch(S.branchName) === "Mollotes" || S.branchId === "branch-3";
+
+        if (isMollotesInv) {
+            const officialMollotesInvItems = [
+                { id: "p_paleta_chapurrita", name: "Paleta Chaparrita", cat: "paletas", price: 20, code: "PCH", stock: 16 },
+                { id: "p_mini", name: "Paleta mini", cat: "paletas", price: 5, code: "MINI", stock: 36 },
+                { id: "p_paleta_crema_gde", name: "Paleta de Crema Grande", cat: "paletas", price: 30, code: "PCG", stock: 160 },
+                { id: "p_paleta_agua_gde", name: "Paleta de Agua Grande", cat: "paletas", price: 25, code: "PAG", stock: 105 },
+                { id: "p_mordisco", name: "Mordiscos", cat: "congelados", price: 25, code: "Mordi", stock: 5 },
+                { id: "prod_moll_tostitos_prep", name: "Tostitos preparados", cat: "preparados", price: 55, code: "TP", stock: 15 },
+                { id: "p_fresa_congelada", name: "Fresa congelada", cat: "congelados", price: 45, code: "FC", stock: 1 },
+                { id: "prod_moll_cheetos_prep", name: "Cheetos preparados", cat: "preparados", price: 55, code: "CP", stock: 50 },
+                { id: "p_ag_grande", name: "Agua Grande", cat: "aguas", price: 45, code: "AG", stock: 40 },
+                { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
+                { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
+                { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
+                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
+            ];
+            officialMollotesInvItems.forEach(ob => {
+                const found = branchAllowedProducts.find(x => String(x.product_id) === ob.id || (String(x.product_name||"").trim().toLowerCase() === ob.name.toLowerCase() && !x.is_custom && !String(x.product_id||"").startsWith("prod_")));
+                if (found) {
+                    found.allowed_in_mollotes = true;
+                    if (!found.user_edited_price_v69) {
+                        found.product_name = ob.name;
+                        found.category = ob.cat;
+                        found.price = ob.price;
+                        if (ob.code) found.product_code = ob.code;
+                    }
+                } else {
+                    const newProd = {
+                        product_id: ob.id,
+                        product_name: ob.name,
+                        product_code: ob.code,
+                        category: ob.cat,
+                        price: ob.price,
+                        initial_stock: ob.stock,
+                        branch_name: "Mollotes",
+                        branch_id: "branch-3",
+                        allowed_in_mollotes: true,
+                        is_active: true
+                    };
+                    branchAllowedProducts.push(newProd);
+                    if (!S.products.some(x => String(x.product_id || x.id) === ob.id)) {
+                        S.products.push(newProd);
+                    }
+                }
+            });
+            try {
+                const mollCustomKeys = ["lf_mollotes_permanent_products", "lf_mollotes_custom_products", "lf_branch-3_custom_products"];
+                mollCustomKeys.forEach(mk => {
+                    const raw = localStorage.getItem(mk);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(cp => {
+                                if (!cp || !cp.product_id) return;
+                                const cpid = String(cp.product_id);
+                                const bIdx = branchAllowedProducts.findIndex(x => String(x.product_id) === cpid);
+                                if (bIdx >= 0) {
+                                    branchAllowedProducts[bIdx] = { ...branchAllowedProducts[bIdx], ...cp, allowed_in_mollotes: true };
+                                } else {
+                                    branchAllowedProducts.push({ ...cp, allowed_in_mollotes: true });
+                                }
+                                const sIdx = S.products.findIndex(x => String(x.product_id) === cpid);
+                                if (sIdx >= 0) {
+                                    S.products[sIdx] = { ...S.products[sIdx], ...cp, allowed_in_mollotes: true };
+                                } else {
+                                    S.products.push({ ...cp, allowed_in_mollotes: true });
+                                }
+                            });
+                        }
+                    }
+                });
+            } catch(e) {}
+        }
 
         if (isTag2Inv || isTag1Inv) {
             const officialTagBase = [
@@ -20994,7 +21329,26 @@
                                 modified = true;
                             }
                         });
-                        gw("custom_products", Array.from(map.values()));
+                        const mergedArr = Array.from(map.values());
+                        gw("custom_products", mergedArr);
+                        lw("custom_products", mergedArr);
+
+                        // Actualizar lf_mollotes_permanent_products en tiempo real para todos los usuarios de Mollotes
+                        try {
+                            const mollItems = mergedArr.filter(p => p && (p.allowed_in_mollotes || resolveCanonicalBranch(p.branch_name) === "Mollotes" || String(p.branch_id) === "branch-3"));
+                            if (mollItems.length) {
+                                const rawM = localStorage.getItem("lf_mollotes_permanent_products") || "[]";
+                                let mArr = JSON.parse(rawM);
+                                if (!Array.isArray(mArr)) mArr = [];
+                                const mMap = new Map();
+                                mArr.forEach(p => { if (p && p.product_id) mMap.set(String(p.product_id), p); });
+                                mollItems.forEach(p => { mMap.set(String(p.product_id), { ...(mMap.get(String(p.product_id)) || {}), ...p }); });
+                                const nextM = Array.from(mMap.values());
+                                localStorage.setItem("lf_mollotes_permanent_products", JSON.stringify(nextM));
+                                localStorage.setItem("lf_mollotes_custom_products", JSON.stringify(nextM));
+                                localStorage.setItem("lf_branch-3_custom_products", JSON.stringify(nextM));
+                            }
+                        } catch(e) {}
                     }
                     if (payload.deleted_product_ids && Array.isArray(payload.deleted_product_ids) && payload.deleted_branch_key) {
                         const bKey = payload.deleted_branch_key;
