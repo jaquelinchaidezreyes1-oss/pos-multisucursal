@@ -1754,6 +1754,10 @@
             "p_ag_chica": 40,
             "p_papas_cueros": 50,
             "prod_calz_medio_litro": 50,
+            "p_helado_vaso2": 80,
+            "p_helado_vaso3": 80,
+            "p_helado_vaso4": 80,
+            "p_cono_sencillo": 80,
             "adbc5511-68a8-4525-97a3-ac7972856e89": 75,
             "a5c3b67a-c276-42f2-863f-a01c6f9294ed": 80,
             "adef0123-f92d-46ed-8797-2dfb46fb5b6d": 70,
@@ -4065,7 +4069,11 @@
                 { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
                 { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
                 { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
-                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
+                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 },
+                { id: "p_helado_vaso2", name: "Vaso de Nieve 2 Bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
+                { id: "p_helado_vaso3", name: "Vaso de Nieve 3 Bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
+                { id: "p_helado_vaso4", name: "Vaso de Nieve 4", cat: "helados", price: 50, code: "HV4", stock: 80 },
+                { id: "p_cono_sencillo", name: "Cono Sencillo", cat: "helados", price: 25, code: "CS", stock: 80 }
             ];
 
             const officialMollotesIds = new Set(officialMollotesConfig.map(c => c.id));
@@ -4166,9 +4174,14 @@
                 if ((pNameNorm === "mini" || pNameNorm === "paleta mini" || pid === "prod_calz_paleta_mini") && pid !== "p_mini") {
                     combinedMap.delete(pid);
                 }
-                // 3. Medio Litro de Nieve a $60 en Mollotes
+                // 3. Medio Litro de Nieve a $60 y Cono Sencillo (CS) a $25 en Mollotes
                 if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve" || pNameNorm.includes("medio litro")) {
                     if (!prod.user_edited_price_v69) prod.price = 60;
+                    prod.allowed_in_mollotes = true;
+                }
+                if (pid === "p_cono_sencillo" || pNameNorm === "cono sencillo" || String(prod.product_code || "").trim().toUpperCase() === "CS") {
+                    if (!prod.user_edited_price_v69) prod.price = 25;
+                    prod.product_code = "CS";
                     prod.allowed_in_mollotes = true;
                 }
             }
@@ -5126,16 +5139,26 @@
                 { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
                 { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
                 { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
-                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
+                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 },
+                { id: "p_helado_vaso2", name: "Vaso de Nieve 2 Bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
+                { id: "p_helado_vaso3", name: "Vaso de Nieve 3 Bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
+                { id: "p_helado_vaso4", name: "Vaso de Nieve 4", cat: "helados", price: 50, code: "HV4", stock: 80 },
+                { id: "p_cono_sencillo", name: "Cono Sencillo", cat: "helados", price: 25, code: "CS", stock: 80 }
             ];
 
-            // Garantizar Medio Litro de Nieve a $60 en Mollotes (salvo edición explícita)
+            // Garantizar Medio Litro de Nieve a $60 y Cono Sencillo (CS) a $25 en Mollotes (salvo edición explícita)
             p.forEach(prod => {
                 if (!prod) return;
                 const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
                 const pid = String(prod.product_id || "");
+                const pCode = String(prod.product_code || "").trim().toUpperCase();
                 if (pid === "prod_calz_medio_litro" || pNameNorm === "medio litro de nieve" || pNameNorm.includes("medio litro")) {
                     if (!prod.user_edited_price_v69) prod.price = 60;
+                    prod.allowed_in_mollotes = true;
+                }
+                if (pid === "p_cono_sencillo" || pNameNorm === "cono sencillo" || pCode === "CS") {
+                    if (!prod.user_edited_price_v69) prod.price = 25;
+                    prod.product_code = "CS";
                     prod.allowed_in_mollotes = true;
                 }
             });
@@ -5198,6 +5221,11 @@
                 S.inv["p_ag_grande"] = 40;
                 saveBranchInv();
             }
+            ["p_helado_vaso2", "p_helado_vaso3", "p_helado_vaso4", "p_cono_sencillo"].forEach(hid => {
+                if (S.inv[hid] === undefined || S.inv[hid] === null) {
+                    S.inv[hid] = 80;
+                }
+            });
 
             // Inyectar y actualizar productos personalizados o modificados de Mollotes
             try {
@@ -5743,6 +5771,18 @@
                 } else if (pid === "prod_calz_medio_litro" || pName === "medio litro de nieve" || pName.includes("medio litro")) {
                     item.price = 60;
                     item.product_name = "Medio Litro de Nieve";
+                } else if (pid === "p_helado_vaso2" || pName.includes("2 bolita") || pName.includes("dos bolita")) {
+                    item.price = 35;
+                    item.product_name = "Vaso de Nieve 2 Bolitas";
+                } else if (pid === "p_helado_vaso3" || pName.includes("3 bolita") || pName.includes("tres bolita")) {
+                    item.price = 45;
+                    item.product_name = "Vaso de Nieve 3 Bolitas";
+                } else if (pid === "p_helado_vaso4" || pName.includes("vaso de nieve 4") || pName.includes("vaso 4") || pName.includes("cuatro bolita")) {
+                    item.price = 50;
+                    item.product_name = "Vaso de Nieve 4";
+                } else if (pid === "p_cono_sencillo" || pName === "cono sencillo" || pName === "cs") {
+                    item.price = 25;
+                    item.product_name = "Cono Sencillo";
                 }
             });
         } else if (bCanonCart === "CNOP") {
@@ -7230,7 +7270,11 @@
                 { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
                 { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
                 { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
-                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
+                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 },
+                { id: "p_helado_vaso2", name: "Vaso de Nieve 2 Bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
+                { id: "p_helado_vaso3", name: "Vaso de Nieve 3 Bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
+                { id: "p_helado_vaso4", name: "Vaso de Nieve 4", cat: "helados", price: 50, code: "HV4", stock: 80 },
+                { id: "p_cono_sencillo", name: "Cono Sencillo", cat: "helados", price: 25, code: "CS", stock: 80 }
             ];
             officialMollotesAdminItems.forEach(ob => {
                 const found = displayedProducts.find(x => String(x.product_id) === ob.id || (String(x.product_name||"").trim().toLowerCase() === ob.name.toLowerCase() && !x.is_custom && !String(x.product_id||"").startsWith("prod_")));
@@ -8698,7 +8742,11 @@
                 { id: "p_ag_mediana", name: "Agua mediana", cat: "aguas", price: 30, code: "AM", stock: 40 },
                 { id: "p_ag_chica", name: "Agua chica", cat: "aguas", price: 25, code: "ACH", stock: 40 },
                 { id: "p_papas_cueros", name: "Papas con cueros", cat: "preparados", price: 50, code: "PCC", stock: 50 },
-                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 }
+                { id: "prod_calz_medio_litro", name: "Medio Litro de Nieve", cat: "helados", price: 60, code: "MLN", stock: 50 },
+                { id: "p_helado_vaso2", name: "Vaso de Nieve 2 Bolitas", cat: "helados", price: 35, code: "HV2", stock: 80 },
+                { id: "p_helado_vaso3", name: "Vaso de Nieve 3 Bolitas", cat: "helados", price: 45, code: "HV3", stock: 80 },
+                { id: "p_helado_vaso4", name: "Vaso de Nieve 4", cat: "helados", price: 50, code: "HV4", stock: 80 },
+                { id: "p_cono_sencillo", name: "Cono Sencillo", cat: "helados", price: 25, code: "CS", stock: 80 }
             ];
             officialMollotesInvItems.forEach(ob => {
                 const found = branchAllowedProducts.find(x => String(x.product_id) === ob.id || (String(x.product_name||"").trim().toLowerCase() === ob.name.toLowerCase() && !x.is_custom && !String(x.product_id||"").startsWith("prod_")));
