@@ -3606,6 +3606,64 @@
                 else if (pid === "p_rebanada_pay" || pNameNorm === "rebanada pay") { prod.price = 50; }
                 else if (pid === "p_chocoflan" || pNameNorm === "chocoflan") { prod.price = 50; }
             }
+
+            // F. Deduplicación general en combinedMap exclusivamente para El Rescate
+            for (const [pid, prod] of Array.from(combinedMap.entries())) {
+                if (!prod) { combinedMap.delete(pid); continue; }
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") { combinedMap.delete(pid); continue; }
+                if (pid === "prod_calz_paleta_mini" || ((pNameNorm === "paleta mini" || pNameNorm === "mini") && pid !== "p_mini")) { combinedMap.delete(pid); continue; }
+                if (pNameNorm === "trol" && pid !== "p_trol") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande" || pNameNorm === "paleta esquimal grande") && pid !== "prod_1789344787923_spve") { combinedMap.delete(pid); continue; }
+                if (pNameNorm === "zanahoria" && pid !== "p_paleta_zanahoria") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "bolis" || pNameNorm === "boli") && pid !== "p_bolis") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("bolsa") && pid !== "p_chechis_bolsa") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("waffle") && pid !== "p_waffle") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("frapp") && pid !== "p_frappe") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("soda italiana") && pid !== "p_sodas_italianas") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("agua mediana") && pid !== "p_ag_mediana") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("agua chica") && !pNameNorm.includes("natural") && !pNameNorm.includes("paleta") && pid !== "p_ag_chica") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("agua natural chica") && pid !== "p_ag_nat_chica") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("agua natural grande") && pid !== "p_ag_nat_grande") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") { combinedMap.delete(pid); continue; }
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) { combinedMap.delete(pid); continue; }
+                if (pNameNorm === "helado") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "mordisco" || pNameNorm === "mordiscos") && pid !== "p_mordisco") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "mangonadas" || pNameNorm === "mangonada") && pid !== "p_mangonadas") { combinedMap.delete(pid); continue; }
+                if (pNameNorm === "mango congelado" && pid !== "p_mango_congelado") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "donas" || pNameNorm === "dona") && pid !== "p_donas") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "paleta agua chica" || pNameNorm === "paleta de agua chica") && pid !== "p_paleta_agua_chica") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") { combinedMap.delete(pid); continue; }
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") { combinedMap.delete(pid); continue; }
+                if ((pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso"))) && pid !== "p_tostiloco_vaso") { combinedMap.delete(pid); continue; }
+            }
+
+            const seenRescateGeneral = new Map();
+            for (const [pid, prod] of Array.from(combinedMap.entries())) {
+                const normName = String(prod.product_name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+                if (!seenRescateGeneral.has(normName)) {
+                    seenRescateGeneral.set(normName, pid);
+                } else {
+                    const prevPid = seenRescateGeneral.get(normName);
+                    const isCurOfficial = DEFAULT_PRODUCTS.some(dp => dp.product_id === pid) || prod.user_edited_price_v69;
+                    const isPrevOfficial = DEFAULT_PRODUCTS.some(dp => dp.product_id === prevPid) || (combinedMap.get(prevPid) && combinedMap.get(prevPid).user_edited_price_v69);
+                    if (isCurOfficial && !isPrevOfficial) {
+                        combinedMap.delete(prevPid);
+                        seenRescateGeneral.set(normName, pid);
+                    } else {
+                        combinedMap.delete(pid);
+                    }
+                }
+            }
         }
 
         // 6.2. Reglas exclusivas, deduplicación y saneamiento estricto SOLO para la sucursal Tagarete 2:
@@ -8725,7 +8783,7 @@
         let branchAllowedProducts = S.products.filter(p => isProductAllowedInBranch(p, S.branchName));
         const isTag2Inv = isTagarete2Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 2" || S.branchId === "branch-5";
         const isTag1Inv = isTagarete1Active() || resolveCanonicalBranch(S.branchName) === "Tagarete 1" || S.branchId === "branch-4";
-        const isRescateInv = resolveCanonicalBranch(S.branchName) === "Rescate" || S.branchId === "branch-2";
+        const isRescateInv = isRescateActive() || resolveCanonicalBranch(S.branchName) === "Rescate" || S.branchId === "branch-2";
         const isMollotesInv = isMollotesActive() || resolveCanonicalBranch(S.branchName) === "Mollotes" || S.branchId === "branch-3";
 
         if (isMollotesInv) {
@@ -8854,7 +8912,7 @@
                     allowed_in_rescate: true
                 });
             }
-            if (!S.inv["p_paleta_agua_chica"] || Number(S.inv["p_paleta_agua_chica"]) <= 0) {
+            if (S.inv["p_paleta_agua_chica"] === undefined || S.inv["p_paleta_agua_chica"] === null) {
                 S.inv["p_paleta_agua_chica"] = 50;
             }
             try {
@@ -8875,6 +8933,72 @@
                     }
                 });
             } catch(e) {}
+
+            // Eliminar productos duplicados en el inventario de El Rescate (sin alterar cantidades de S.inv)
+            branchAllowedProducts = branchAllowedProducts.filter(prod => {
+                if (!prod) return false;
+                const pNameNorm = String(prod.product_name || "").trim().toLowerCase();
+                const pid = String(prod.product_id || "");
+
+                if ((pNameNorm === "chaparrita" || pNameNorm === "paleta chapurrita" || pNameNorm === "paleta chaparrita") && pid !== "p_paleta_chapurrita" && pid !== "p_paleta_chaparrita") return false;
+                if (pid === "prod_calz_paleta_mini" || ((pNameNorm === "paleta mini" || pNameNorm === "mini") && pid !== "p_mini")) return false;
+                if (pNameNorm === "trol" && pid !== "p_trol") return false;
+                if ((pNameNorm === "esquimal grande" || pNameNorm === "el esquimal grande" || pNameNorm === "paleta esquimal grande") && pid !== "prod_1789344787923_spve") return false;
+                if (pNameNorm === "zanahoria" && pid !== "p_paleta_zanahoria") return false;
+                if ((pNameNorm === "bolis" || pNameNorm === "boli") && pid !== "p_bolis") return false;
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("bolsa") && pid !== "p_chechis_bolsa") return false;
+                if (pNameNorm.includes("chechis") && pNameNorm.includes("vaso") && pid !== "p_chechis_vaso") return false;
+                if (pNameNorm.includes("waffle") && pid !== "p_waffle") return false;
+                if (pNameNorm.includes("frapp") && pid !== "p_frappe") return false;
+                if (pNameNorm.includes("soda italiana") && pid !== "p_sodas_italianas") return false;
+                if (pNameNorm.includes("agua grande") && pid !== "p_ag_grande") return false;
+                if (pNameNorm.includes("agua mediana") && pid !== "p_ag_mediana") return false;
+                if (pNameNorm.includes("agua chica") && !pNameNorm.includes("natural") && !pNameNorm.includes("paleta") && pid !== "p_ag_chica") return false;
+                if (pNameNorm.includes("agua natural chica") && pid !== "p_ag_nat_chica") return false;
+                if (pNameNorm.includes("agua natural grande") && pid !== "p_ag_nat_grande") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("congelad") && pid !== "p_fresa_congelada") return false;
+                if (pNameNorm.includes("fresa") && pNameNorm.includes("natural") && pid !== "p_fresa_natural") return false;
+                if ((pNameNorm.includes("1 bolita") || pNameNorm.includes("una bolita") || pNameNorm === "helado vaso 1") && pid !== "p_helado_vaso1") return false;
+                if ((pNameNorm.includes("2 bolita") || pNameNorm.includes("dos bolita") || pNameNorm === "helado vaso 2") && pid !== "p_helado_vaso2") return false;
+                if ((pNameNorm.includes("3 bolita") || pNameNorm.includes("tres bolita") || pNameNorm === "helado vaso 3") && pid !== "p_helado_vaso3") return false;
+                if ((pNameNorm.includes("4") || pNameNorm.includes("cuatro")) && pid !== "p_helado_vaso4" && pNameNorm.includes("helado")) return false;
+                if (pNameNorm === "helado") return false;
+                if ((pNameNorm === "mordisco" || pNameNorm === "mordiscos") && pid !== "p_mordisco") return false;
+                if ((pNameNorm === "mangonadas" || pNameNorm === "mangonada") && pid !== "p_mangonadas") return false;
+                if (pNameNorm === "mango congelado" && pid !== "p_mango_congelado") return false;
+                if ((pNameNorm === "semilla" || pNameNorm === "semillas") && pid !== "p_semillas") return false;
+                if ((pNameNorm === "donas" || pNameNorm === "dona") && pid !== "p_donas") return false;
+                if ((pNameNorm === "paleta de agua grande" || pNameNorm === "paleta agua grande") && pid !== "p_paleta_agua_gde") return false;
+                if ((pNameNorm === "paleta crema grande" || pNameNorm === "paleta de crema grande") && pid !== "p_paleta_crema_gde") return false;
+                if ((pNameNorm === "paleta agua chica" || pNameNorm === "paleta de agua chica") && pid !== "p_paleta_agua_chica") return false;
+                if ((pNameNorm.includes("piñon") || pNameNorm.includes("pinon")) && pid !== "p_paleta_pinon") return false;
+                if (pNameNorm === "tostilocos" && pid !== "p_tostilocos") return false;
+                if ((pNameNorm === "tostiloco vaso" || (pNameNorm.includes("tostiloco") && pNameNorm.includes("vaso"))) && pid !== "p_tostiloco_vaso") return false;
+                return true;
+            });
+
+            const seenRescateInvIds = new Set();
+            const seenRescateInvCodes = new Set();
+            const seenRescateInvNames = new Set();
+            branchAllowedProducts = branchAllowedProducts.filter(prod => {
+                if (!prod) return false;
+                const pid = String(prod.product_id || prod.id || "");
+                if (pid && seenRescateInvIds.has(pid)) return false;
+                if (pid) seenRescateInvIds.add(pid);
+
+                const code = String(prod.product_code || "").trim().toUpperCase();
+                if (code && !code.startsWith("LF-") && seenRescateInvCodes.has(code)) return false;
+                if (code && !code.startsWith("LF-")) seenRescateInvCodes.add(code);
+
+                const normName = String(prod.product_name || "")
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                    .trim().toLowerCase().replace(/\s+/g, " ");
+                const key = String(prod.category || "").toLowerCase() + "__" + normName;
+                if (seenRescateInvNames.has(key) || seenRescateInvNames.has(normName)) return false;
+                seenRescateInvNames.add(key);
+                seenRescateInvNames.add(normName);
+                return true;
+            });
         }
 
         if (isTag2Inv) {
@@ -9026,7 +9150,7 @@
         <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
             <button type="button" class="inv-tab-btn${S.invTab==='all'?' active-inv-tab':''}" data-tab="all"
                 style="padding:8px 16px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer;${S.invTab==='all'?'background:var(--gold-400);color:#1a0205;border:1.5px solid var(--gold-500)':'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2)'}">
-                🌈 Todos los Artículos (${S.products.length})
+                🌈 Todos los Artículos (${branchAllowedProducts.length})
             </button>
             <button type="button" class="inv-tab-btn${S.invTab==='sales'?' active-inv-tab':''}" data-tab="sales"
                 style="padding:8px 16px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer;${S.invTab==='sales'?'background:var(--gold-400);color:#1a0205;border:1.5px solid var(--gold-500)':'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2)'}">
