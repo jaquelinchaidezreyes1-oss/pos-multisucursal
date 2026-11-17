@@ -919,11 +919,6 @@
                     if (cat === "vespertino") {
                         if (isStaticBaseSale(s)) return true;
                         if (s.date_key === "2026-09-18" || (s.created_at && String(s.created_at).startsWith("2026-09-18"))) return true;
-                        // Para la sucursal Calzada: poner en ceros los valores de la tarde hasta que las muchachas comiencen a registrar sus ventas de hoy
-                        // Mantener únicamente ventas en vivo que hayan sido marcadas explícitamente como realizadas en la sesión actual
-                        if (!s._is_today_live_pm) {
-                            return true;
-                        }
                     }
                 }
                 return false;
@@ -1086,7 +1081,9 @@
             const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
             const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
 
-            const localSales = lr("pending_sync_sales", []).concat(lr("sales", []));
+            const localSales = lr("pending_sync_sales", [])
+                .concat(lr("sales", []))
+                .concat(typeof getLocalBranchSales === "function" ? getLocalBranchSales(null) : []);
             const syncedIds = new Set(gr("synced_sales_ids", []));
             const seenLocals = new Set();
             const unsynced = [];
@@ -1094,10 +1091,12 @@
             localSales.forEach(s => {
                 if (!s || !s.id || isSystemNonSaleRecord(s)) return;
                 const sid = String(s.id);
+                const snum = s.sale_number ? String(s.sale_number) : "";
                 // Ignorar ventas semilla estáticas para no saturar la red
-                if (sid.startsWith("sale_calz_today_") || sid.startsWith("sale_1789")) return;
-                if (!syncedIds.has(sid) && !uuid(sid) && !seenLocals.has(sid)) {
+                if (sid.startsWith("sale_calz_today_") || sid.startsWith("sale_1789") || isStaticBaseSale(s)) return;
+                if (!syncedIds.has(sid) && (!snum || !syncedIds.has(snum)) && !uuid(sid) && !seenLocals.has(sid)) {
                     seenLocals.add(sid);
+                    if (snum) seenLocals.add(snum);
                     unsynced.push(s);
                 }
             });
@@ -1145,6 +1144,7 @@
                 }
                 if (!error && data && data.length) {
                     syncedIds.add(String(s.id));
+                    if (s.sale_number) syncedIds.add(String(s.sale_number));
                     if (data[0].id) syncedIds.add(String(data[0].id));
                 }
             }
@@ -17690,11 +17690,17 @@
     function getDateBoundsISO(startDateStr, endDateStr) {
         const s = String(startDateStr || toDateKey()).trim().slice(0, 10);
         const e = String(endDateStr || s).trim().slice(0, 10);
+        let startISO = s + "T00:00:00-06:00";
+        let endISO = e + "T23:59:59.999-06:00";
+        try {
+            startISO = new Date(s + "T00:00:00-06:00").toISOString();
+            endISO = new Date(e + "T23:59:59.999-06:00").toISOString();
+        } catch(err) {}
         return {
             startKey: s,
             endKey: e,
-            startISO: s + "T00:00:00-06:00",
-            endISO: e + "T23:59:59.999-06:00"
+            startISO,
+            endISO
         };
     }
 
@@ -17862,9 +17868,14 @@
                     .gte("created_at", startISO)
                     .lte("created_at", endISO)
                     .order("created_at", {ascending:false})
-                    .limit(150), null, 2500);
+                    .limit(400), null, 3500);
                 if (data && data.length) {
                     remoteSales = data.filter(s => !isSystemNonSaleRecord(s)).map(normalizeRemoteSaleRow);
+                    remoteSales.forEach(ms => {
+                        if (!_sessionSales.some(x => String(x.id) === String(ms.id) || (x.sale_number && x.sale_number === ms.sale_number))) {
+                            _sessionSales.push(ms);
+                        }
+                    });
                 }
             } catch(e) {
                 console.warn("Supabase fetch sales error:", e);
@@ -22343,8 +22354,9 @@
                         else if (S.view === "products") await loadProductsAdmin();
                     }
                 })
-                // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS (OPTIMIZADO SOLO AL DÍA ACTUAL)
+                // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS (ENVÍA TODAS LAS VENTAS ALMACENADAS EN EL DÍA)
                 .on("broadcast", { event: "request_sync" }, async () => {
+                    syncPendingSalesToSupabase();
                     const todayKey = toDateKey();
                     const mySales = lr("sales", []);
                     const myCuts = lr("cuts", []);
@@ -22352,10 +22364,32 @@
                     const allGCuts = gr("all_cuts", []);
                     const allGShifts = gr("all_shifts", []);
                     const myShifts = lr("shifts", []);
-                    const rawSalesToSend = (_sessionSales.length ? _sessionSales : (mySales.length ? mySales : allGSales));
-                    const salesToSend = rawSalesToSend.filter(s => s && isTodaySale(s, todayKey)).slice(0, 80);
-                    const rawCutsToSend = (myCuts.length ? myCuts : allGCuts);
-                    const cutsToSend = rawCutsToSend.filter(c => c && toDateKey(c.created_at) === todayKey).slice(0, 20);
+                    const branchLocalSales = typeof getLocalBranchSales === "function" ? getLocalBranchSales(null) : [];
+
+                    const combinedTodayMap = new Map();
+                    [_sessionSales, mySales, branchLocalSales, allGSales].forEach(list => {
+                        (list || []).forEach(s => {
+                            if (!s || isSystemNonSaleRecord(s) || isStaticBaseSale(s)) return;
+                            if (isTodaySale(s, todayKey)) {
+                                const key = String(s.sale_number || s.local_id || s.id);
+                                if (key && !combinedTodayMap.has(key)) combinedTodayMap.set(key, s);
+                            }
+                        });
+                    });
+                    const salesToSend = Array.from(combinedTodayMap.values())
+                        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+                        .slice(0, 250);
+
+                    const combinedCutsMap = new Map();
+                    [myCuts, allGCuts].forEach(list => {
+                        (list || []).forEach(c => {
+                            if (c && toDateKey(c.created_at) === todayKey) {
+                                const key = String(c.id || c.created_at);
+                                if (key && !combinedCutsMap.has(key)) combinedCutsMap.set(key, c);
+                            }
+                        });
+                    });
+                    const cutsToSend = Array.from(combinedCutsMap.values()).slice(0, 50);
 
                     if (realtimeChannel) {
                         try {
@@ -22617,6 +22651,8 @@
             initSearch();
             setupRealtime();
             syncPendingSalesToSupabase();
+            await fetchCloudRecordsForDateRange(toDateKey(), toDateKey(), true);
+            await getConsolidatedSalesForChain(true);
             autoReconnectPrinters();
             if (S.isSU && window.changeView) window.changeView("private-access");
             else if (window.changeView) window.changeView("pos");
@@ -22646,6 +22682,9 @@
                         await loadCurrentShift();
                         initSearch();
                         setupRealtime();
+                        syncPendingSalesToSupabase();
+                        await fetchCloudRecordsForDateRange(toDateKey(), toDateKey(), true);
+                        await getConsolidatedSalesForChain(true);
                         if (S.isSU && window.changeView) window.changeView("private-access");
                         else if (window.changeView) window.changeView("pos");
                     }
