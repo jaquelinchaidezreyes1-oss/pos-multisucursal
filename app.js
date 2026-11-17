@@ -17684,64 +17684,187 @@
         }
     };
 
-    async function getConsolidatedSalesForChain(forceRefresh = false) {
+    /* ── OPTIMIZACIÓN DE CONSULTA DIARIA Y DESCARGA DE INFORMES (DIARIO Y SEMANAL PARA SUPERUSUARIOS) ── */
+    const _fetchedCloudDateRanges = new Map();
+
+    function getDateBoundsISO(startDateStr, endDateStr) {
+        const s = String(startDateStr || toDateKey()).trim().slice(0, 10);
+        const e = String(endDateStr || s).trim().slice(0, 10);
+        return {
+            startKey: s,
+            endKey: e,
+            startISO: s + "T00:00:00-06:00",
+            endISO: e + "T23:59:59.999-06:00"
+        };
+    }
+
+    function shiftDateKeyByDays(dateKeyStr, deltaDays) {
+        try {
+            const parts = String(dateKeyStr || toDateKey()).trim().slice(0, 10).split("-");
+            const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+            dt.setDate(dt.getDate() + deltaDays);
+            const y = dt.getFullYear();
+            const m = String(dt.getMonth() + 1).padStart(2, "0");
+            const d = String(dt.getDate()).padStart(2, "0");
+            return `${y}-${m}-${d}`;
+        } catch(e) {
+            return toDateKey();
+        }
+    }
+
+    function normalizeRemoteSaleRow(s) {
+        let obs = {};
+        try {
+            obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
+        } catch(e) {}
+
+        const cashierName = obs.cashier_name || s.user_name || obs.performed_by_name || "";
+        const saleRef = { ...s, cashier_name: cashierName, observations: obs };
+
+        let bName = resolveCanonicalBranch(saleRef) || resolveCanonicalBranch(obs) || resolveCanonicalBranch(s.branch_name);
+        if (!bName && s.branch_id) {
+            const found = S.branches.find(b => String(b.id) === String(s.branch_id));
+            if (found) bName = resolveCanonicalBranch(found);
+        }
+        if (!bName) {
+            bName = resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
+        }
+        const realB = S.branches.find(b => resolveCanonicalBranch(b) === bName);
+
+        const rawShift = obs.shift_name || s.shift_name || "";
+        const shiftCat = getShiftCategory({ cashier_name: cashierName, shift_name: rawShift, created_at: s.created_at, observations: obs });
+        const shiftDisplayName = (shiftCat === "vespertino") ? "Tarde" : "Mañana";
+
+        return {
+            id: s.id,
+            sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
+            branch_id: realB ? realB.id : (bName === "Tagarete 1" ? "branch-4" : (bName === "La Fuente Calzada" ? "c188dd82-7faf-41b8-948b-af8e789facba" : s.branch_id)),
+            branch_name: bName,
+            shift_name: rawShift || shiftDisplayName,
+            cashier_id: s.user_id,
+            cashier_name: cashierName || "Encargada",
+            total: Number(s.total || 0),
+            payment_method: obs.payment_method || "cash",
+            status: (String(s.status||"").toUpperCase() === "CANCELLED" || String(obs.status||"").toUpperCase() === "CANCELLED") ? "CANCELLED" : "COMPLETED",
+            cancelled_reason: obs.cancelled_reason || null,
+            cancelled_by: obs.cancelled_by || null,
+            cancelled_at: obs.cancelled_at || null,
+            items: (obs.items && obs.items.length) ? obs.items : (s.items || []),
+            created_at: s.created_at || now(),
+            local_id: obs.local_id || s.id,
+            observations: s.observations
+        };
+    }
+
+    async function fetchCloudRecordsForDateRange(startDateStr, endDateStr, force = false) {
+        if (!db || window._supabaseRestricted) return;
+        const { startKey, endKey, startISO, endISO } = getDateBoundsISO(startDateStr, endDateStr);
+        const cacheKey = `${startKey}_${endKey}`;
+        const lastFetched = _fetchedCloudDateRanges.get(cacheKey) || 0;
+        const isTodayRange = (endKey === toDateKey());
+        const ttl = isTodayRange ? 45000 : 300000; // 45s para hoy, 5 min para fechas pasadas ya descargadas
+        if (!force && (Date.now() - lastFetched < ttl)) return;
+
+        try {
+            const { data: salesData } = await safeQuery(
+                db.from("sales")
+                    .select("id,sale_number,company_id,branch_id,user_id,subtotal,discount,tax,total,status,observations,created_at")
+                    .gte("created_at", startISO)
+                    .lte("created_at", endISO)
+                    .order("created_at", { ascending: false })
+                    .limit(400),
+                null,
+                3500
+            );
+            if (salesData && salesData.length) {
+                const mappedSales = salesData.filter(s => !isSystemNonSaleRecord(s)).map(normalizeRemoteSaleRow);
+                mappedSales.forEach(ms => {
+                    if (!_sessionSales.some(x => String(x.id) === String(ms.id) || (x.sale_number && x.sale_number === ms.sale_number))) {
+                        _sessionSales.push(ms);
+                    }
+                });
+                const existingAll = gr("all_sales", []);
+                const mapS = new Map();
+                existingAll.forEach(s => { if (s && (s.id || s.sale_number)) mapS.set(String(s.id || s.sale_number), s); });
+                mappedSales.forEach(s => { mapS.set(String(s.id || s.sale_number), s); });
+                gw("all_sales", Array.from(mapS.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)));
+                _cachedConsolidatedSales = null;
+            }
+        } catch(e) {}
+
+        try {
+            const { data: cutsData } = await safeQuery(
+                db.from("cash_cuts")
+                    .select("*")
+                    .gte("created_at", startISO)
+                    .lte("created_at", endISO)
+                    .order("created_at", { ascending: false })
+                    .limit(150),
+                null,
+                3000
+            );
+            if (cutsData && cutsData.length) {
+                const existingCuts = gr("all_cuts", []);
+                const mapC = new Map();
+                existingCuts.forEach(c => { if (c && c.id) mapC.set(String(c.id), c); });
+                cutsData.forEach(ct => {
+                    let obs = {};
+                    try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
+                    let bName = obs.branch_name || ct.branch_name || "";
+                    if (!bName && ct.branch_id) {
+                        const found = S.branches.find(b => String(b.id) === String(ct.branch_id));
+                        if (found) bName = found.name;
+                    }
+                    const normCut = {
+                        ...ct,
+                        branch_name: resolveCanonicalBranch({ ...ct, observations: obs, branch_name: bName }) || bName || "La Fuente Calzada",
+                        shift_name: obs.shift_name || ct.shift_name || (getShiftCategory({ cashier_name: obs.cashier_name, created_at: ct.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
+                        cashier_name: obs.cashier_name || obs.performed_by_name || ct.cashier_name || "Encargada",
+                        performed_by_name: obs.performed_by_name || obs.cashier_name || "Encargada",
+                        opening_amount: obs.opening_amount != null ? obs.opening_amount : ct.opening_amount,
+                        cash_sales: obs.cash_sales != null ? obs.cash_sales : ct.cash_sales,
+                        card_sales: obs.card_sales != null ? obs.card_sales : ct.card_sales,
+                        net_sales_without_fund: obs.net_sales_without_fund != null ? obs.net_sales_without_fund : ct.net_sales_without_fund
+                    };
+                    mapC.set(String(normCut.id), normCut);
+                });
+                gw("all_cuts", Array.from(mapC.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)));
+                _cachedConsolidatedCuts = null;
+            }
+        } catch(e) {}
+
+        _fetchedCloudDateRanges.set(cacheKey, Date.now());
+    }
+
+    async function getConsolidatedSalesForChain(forceRefresh = false, requestedDate = null) {
+        const todayStr = toDateKey();
+        const targetDate = (!requestedDate || requestedDate === "today") ? todayStr : requestedDate;
+
+        // Si el usuario seleccionó una fecha específica pasada, cargarla bajo demanda
+        if (targetDate && targetDate !== "all" && targetDate !== todayStr && /^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+            await fetchCloudRecordsForDateRange(targetDate, targetDate, forceRefresh);
+        }
+
         const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 30000)) {
+        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 60000)) {
             return _cachedConsolidatedSales;
         }
         let remoteSales = [];
         if (db) {
             try {
-                const {data, error} = await safeQuery(db.from("sales")
+                // OPTIMIZACIÓN DIARIA: Por defecto solo descargar de Supabase las ventas del día actual (o de la fecha solicitada)
+                const { startISO, endISO } = getDateBoundsISO(
+                    targetDate === "all" ? shiftDateKeyByDays(todayStr, -7) : targetDate,
+                    targetDate === "all" ? todayStr : targetDate
+                );
+                const {data} = await safeQuery(db.from("sales")
                     .select("id,sale_number,company_id,branch_id,user_id,subtotal,discount,tax,total,status,observations,created_at")
+                    .gte("created_at", startISO)
+                    .lte("created_at", endISO)
                     .order("created_at", {ascending:false})
-                    .limit(60), null, 2500);
+                    .limit(150), null, 2500);
                 if (data && data.length) {
-                    remoteSales = data.filter(s => !isSystemNonSaleRecord(s)).map(s => {
-                        let obs = {};
-                        try {
-                            obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {});
-                        } catch(e) {}
-
-                        const cashierName = obs.cashier_name || s.user_name || obs.performed_by_name || "";
-                        const saleRef = { ...s, cashier_name: cashierName, observations: obs };
-
-                        // 1. Detección inequívoca de sucursal canónica (prioriza observaciones y cajera auténtica)
-                        let bName = resolveCanonicalBranch(saleRef) || resolveCanonicalBranch(obs) || resolveCanonicalBranch(s.branch_name);
-                        if (!bName && s.branch_id) {
-                            const found = S.branches.find(b => String(b.id) === String(s.branch_id));
-                            if (found) bName = resolveCanonicalBranch(found);
-                        }
-                        if (!bName) {
-                            bName = resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
-                        }
-                        const realB = S.branches.find(b => resolveCanonicalBranch(b) === bName);
-
-                        // 2. Detección precisa de turno (Matutino vs Vespertino)
-                        const rawShift = obs.shift_name || s.shift_name || "";
-                        const shiftCat = getShiftCategory({ cashier_name: cashierName, shift_name: rawShift, created_at: s.created_at, observations: obs });
-                        const shiftDisplayName = (shiftCat === "vespertino") ? "Tarde" : "Mañana";
-
-                        return {
-                            id: s.id,
-                            sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-                            branch_id: realB ? realB.id : (bName === "Tagarete 1" ? "branch-4" : (bName === "La Fuente Calzada" ? "c188dd82-7faf-41b8-948b-af8e789facba" : s.branch_id)),
-                            branch_name: bName,
-                            shift_name: rawShift || shiftDisplayName,
-                            cashier_id: s.user_id,
-                            cashier_name: cashierName || "Encargada",
-                            total: Number(s.total || 0),
-                            payment_method: obs.payment_method || "cash",
-                            status: (String(s.status||"").toUpperCase() === "CANCELLED" || String(obs.status||"").toUpperCase() === "CANCELLED") ? "CANCELLED" : "COMPLETED",
-                            cancelled_reason: obs.cancelled_reason || null,
-                            cancelled_by: obs.cancelled_by || null,
-                            cancelled_at: obs.cancelled_at || null,
-                            items: (obs.items && obs.items.length) ? obs.items : (s.items || []),
-                            created_at: s.created_at || now(),
-                            local_id: obs.local_id || s.id,
-                            observations: s.observations
-                        };
-                    });
+                    remoteSales = data.filter(s => !isSystemNonSaleRecord(s)).map(normalizeRemoteSaleRow);
                 }
             } catch(e) {
                 console.warn("Supabase fetch sales error:", e);
@@ -18007,7 +18130,8 @@
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando ventas de ${esc(S.branchName)}…</p></div>`;
         }
 
-        const consolidated = await getConsolidatedSalesForChain(true);
+        if (S.salesFilterDate === undefined) S.salesFilterDate = "today";
+        const consolidated = await getConsolidatedSalesForChain(false, S.salesFilterDate || "today");
         const activeBranchFilter = S.isSU ? (S.salesFilterBranchId || "all") : S.branchId;
 
         const targetBranchRef = (activeBranchFilter === "all")
@@ -18232,10 +18356,13 @@
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                     <label style="font-size:12px;font-weight:900;color:var(--wine-800)">📅 FECHA:</label>
                     <select id="sales-date-filter" style="padding:7px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12px;font-weight:700;background:#fff;outline:none">
-                        <option value="today"${selectedDate==='today'?' selected':''}>📅 Hoy (${fd(todayStr)})</option>
-                        <option value="all"${selectedDate==='all'?' selected':''}>🌐 Todo el Histórico</option>
+                        <option value="today"${selectedDate==='today'||selectedDate===todayStr?' selected':''}>🟢 Hoy (${fd(todayStr)})</option>
                         ${dateOptions.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?' selected':''}>📅 ${fd(d)}</option>`).join("")}
+                        <option value="all"${selectedDate==='all'?' selected':''}>🌐 Todo el Histórico</option>
                     </select>
+                    <input type="date" id="sales-calendar-picker" value="${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}" max="${todayStr}"
+                        title="Seleccionar cualquier fecha para cargar sus registros"
+                        style="padding:6px 10px;border:1.5px solid var(--wine-400);border-radius:10px;font-size:12px;font-weight:800;color:var(--wine-900);background:#fffef9;cursor:pointer">
 
                     <label style="font-size:12px;font-weight:900;color:var(--wine-800);margin-left:6px">🌅 TURNO:</label>
                     <div style="display:inline-flex;gap:4px;background:#f3f4f6;padding:3px;border-radius:10px;border:1px solid #e5e7eb">
@@ -18254,7 +18381,7 @@
                     </div>
                 </div>
 
-                <div style="display:flex;gap:6px">
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
                     <button type="button" class="sales-tab-btn${S.salesTab==='active'?' active-stab':''}" data-tab="active"
                         style="padding:7px 14px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;${S.salesTab==='active'?'background:#15803d;color:#fff;border:none':'background:#f3f4f6;color:#374151;border:1px solid #d1d5db'}">
                         ✓ Ventas Activas (${activeSales.length})
@@ -18265,6 +18392,33 @@
                     </button>
                 </div>
             </div>
+
+            ${S.isSU ? `
+            <!-- BARRA DE DESCARGA DE INFORMES DIARIO Y SEMANAL (EXCLUSIVO SUPERUSUARIOS) -->
+            <div style="margin-top:12px;padding-top:12px;border-top:1.5px dashed #cbd5e1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:#faf5ff;padding:10px 14px;border-radius:10px;border:1px solid #e9d5ff">
+                <div style="font-size:12px;font-weight:900;color:#581c87;display:flex;align-items:center;gap:6px">
+                    <span>👑</span>
+                    <span>INFORMES EJECUTIVOS (${selectedDate==='today'||selectedDate==='all'?fd(todayStr):fd(selectedDate)}):</span>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="button" onclick="window.downloadSUReport('daily','csv','${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}','${activeBranchFilter}')"
+                        style="padding:7px 13px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(22,163,74,0.25)">
+                        📥 Descargar Informe Diario (Excel/CSV)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('daily','pdf','${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}','${activeBranchFilter}')"
+                        style="padding:7px 13px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(153,16,36,0.25)">
+                        📄 Informe Diario (PDF/Imprimir)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('weekly','csv','${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}','${activeBranchFilter}')"
+                        style="padding:7px 13px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(37,99,235,0.25)">
+                        📊 Descargar Informe Semanal (7 Días Excel/CSV)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('weekly','pdf','${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}','${activeBranchFilter}')"
+                        style="padding:7px 13px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(124,58,237,0.25)">
+                        📑 Informe Semanal (PDF/Imprimir)
+                    </button>
+                </div>
+            </div>` : ''}
 
             <!-- BUSCADOR RÁPIDO DE TICKETS EN VIVO -->
             <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -18374,7 +18528,21 @@
         });
 
         document.getElementById("sales-date-filter")?.addEventListener("change", async e => {
-            S.salesFilterDate = e.target.value;
+            const val = e.target.value;
+            S.salesFilterDate = val;
+            if (val && val !== "today" && val !== "all" && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                toast(`📅 Cargando registros del día ${fd(val)}…`, "info", 2000);
+                await fetchCloudRecordsForDateRange(val, val, true);
+            }
+            await loadSales();
+        });
+
+        document.getElementById("sales-calendar-picker")?.addEventListener("change", async e => {
+            const picked = e.target.value;
+            if (!picked) return;
+            S.salesFilterDate = (picked === todayStr) ? "today" : picked;
+            toast(`📅 Cargando registros del día ${fd(picked)}…`, "info", 2200);
+            await fetchCloudRecordsForDateRange(picked, picked, true);
             await loadSales();
         });
 
@@ -18385,7 +18553,10 @@
 
         document.getElementById("btn-ref-sales")?.addEventListener("click", async () => {
             cleanCalzadaGhostSales();
+            const dTarget = (!S.salesFilterDate || S.salesFilterDate === "today" || S.salesFilterDate === "all") ? todayStr : S.salesFilterDate;
+            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
             _cachedConsolidatedSales = null;
+            await getConsolidatedSalesForChain(true, dTarget);
             await loadSales();
             toast("Ventas actualizadas.", "info");
         });
@@ -18582,10 +18753,275 @@
     }
 
 
+    /* ── DESCARGA DE INFORMES EJECUTIVOS (DIARIO Y SEMANAL EN EXCEL/CSV Y PDF/IMPRESIÓN PARA SUPERUSUARIOS) ── */
+    window.downloadSUReport = async function(mode = "daily", format = "csv", refDate = null, branchFilter = "all") {
+        const todayStr = toDateKey();
+        const endKey = (!refDate || refDate === "today" || refDate === "all") ? todayStr : String(refDate).slice(0, 10);
+        const startKey = (mode === "weekly") ? shiftDateKeyByDays(endKey, -6) : endKey;
+        const periodLabel = (mode === "weekly") ? `SEMANAL (${fd(startKey)} al ${fd(endKey)})` : `DIARIO (${fd(endKey)})`;
+
+        toast(`⏳ Preparando Informe ${periodLabel}…`, "info", 2500);
+        await fetchCloudRecordsForDateRange(startKey, endKey, true);
+
+        const allSales = await getConsolidatedSalesForChain(false, endKey);
+        const allCuts = await getConsolidatedCutsForChain(false, endKey);
+
+        // Filtrar por rango de fechas [startKey .. endKey]
+        const inDateRange = (isoOrDate) => {
+            const dk = toDateKey(isoOrDate);
+            return dk >= startKey && dk <= endKey;
+        };
+
+        const targetBranchObj = (branchFilter && branchFilter !== "all")
+            ? (S.branches.find(b => String(b.id) === String(branchFilter) || resolveCanonicalBranch(b) === resolveCanonicalBranch(branchFilter)) || { id: branchFilter, name: branchFilter })
+            : null;
+        const branchDisplay = targetBranchObj ? targetBranchObj.name : "Todas las Sucursales (6 Sucursales)";
+
+        const periodSales = allSales.filter(s => {
+            if (!s || isSystemNonSaleRecord(s)) return false;
+            if (!inDateRange(s.created_at)) return false;
+            if (targetBranchObj && !matchesBranch(s, targetBranchObj)) return false;
+            return true;
+        });
+
+        const activeSales = periodSales.filter(s => String(s.status || "").toUpperCase() !== "CANCELLED");
+        const cancelledSales = periodSales.filter(s => String(s.status || "").toUpperCase() === "CANCELLED");
+
+        const periodCuts = allCuts.filter(ct => {
+            if (!ct) return false;
+            if (!inDateRange(ct.created_at)) return false;
+            if (targetBranchObj && !matchesBranch(ct, targetBranchObj)) return false;
+            return true;
+        });
+
+        const totalMoney = activeSales.reduce((a, s) => a + Number(s.total || 0), 0);
+        const totalCash = activeSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a, s) => a + Number(s.total || 0), 0);
+        const totalCard = activeSales.filter(s => s.payment_method === "card").reduce((a, s) => a + Number(s.total || 0), 0);
+        const matSales = activeSales.filter(s => getShiftCategory(s) === "matutino");
+        const vesSales = activeSales.filter(s => getShiftCategory(s) === "vespertino");
+        const totalMat = matSales.reduce((a, s) => a + Number(s.total || 0), 0);
+        const totalVes = vesSales.reduce((a, s) => a + Number(s.total || 0), 0);
+
+        // Desglose por día (especialmente útil en el semanal)
+        const daysList = [];
+        const totalDays = (mode === "weekly") ? 7 : 1;
+        for (let i = totalDays - 1; i >= 0; i--) {
+            const dKey = shiftDateKeyByDays(endKey, -i);
+            const dSales = activeSales.filter(s => toDateKey(s.created_at) === dKey);
+            const dCuts = periodCuts.filter(c => toDateKey(c.created_at) === dKey);
+            const dMat = dSales.filter(s => getShiftCategory(s) === "matutino").reduce((a, s) => a + Number(s.total || 0), 0);
+            const dVes = dSales.filter(s => getShiftCategory(s) === "vespertino").reduce((a, s) => a + Number(s.total || 0), 0);
+            const dCash = dSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a, s) => a + Number(s.total || 0), 0);
+            const dCard = dSales.filter(s => s.payment_method === "card").reduce((a, s) => a + Number(s.total || 0), 0);
+            daysList.push({
+                date: dKey,
+                tickets: dSales.length,
+                cuts: dCuts.length,
+                mat: dMat,
+                ves: dVes,
+                cash: dCash,
+                card: dCard,
+                total: dMat + dVes
+            });
+        }
+
+        // Desglose por sucursal
+        const branchesToReport = targetBranchObj ? [targetBranchObj.name] : BRANCH_NAMES;
+        const branchRows = branchesToReport.map(bName => {
+            const bSales = activeSales.filter(s => matchesBranch(s, bName));
+            const bCuts = periodCuts.filter(c => matchesBranch(c, bName));
+            const bMat = bSales.filter(s => getShiftCategory(s) === "matutino").reduce((a, s) => a + Number(s.total || 0), 0);
+            const bVes = bSales.filter(s => getShiftCategory(s) === "vespertino").reduce((a, s) => a + Number(s.total || 0), 0);
+            const bCash = bSales.filter(s => (s.payment_method || "cash") === "cash").reduce((a, s) => a + Number(s.total || 0), 0);
+            const bCard = bSales.filter(s => s.payment_method === "card").reduce((a, s) => a + Number(s.total || 0), 0);
+            return {
+                name: bName,
+                tickets: bSales.length,
+                cutsCount: bCuts.length,
+                mat: bMat,
+                ves: bVes,
+                cash: bCash,
+                card: bCard,
+                total: bCash + bCard
+            };
+        });
+
+        // Desglose de productos vendidos
+        const prodMap = new Map();
+        activeSales.forEach(s => {
+            const shiftCat = getShiftCategory(s);
+            (s.items || []).forEach(it => {
+                const key = String(it.product_name || it.product_id || "Producto").trim();
+                if (!prodMap.has(key)) {
+                    prodMap.set(key, { name: key, matQty: 0, vesQty: 0, totalQty: 0, totalMoney: 0 });
+                }
+                const rec = prodMap.get(key);
+                const q = Number(it.quantity || it.qty || 1);
+                const sub = Number(it.subtotal != null ? it.subtotal : (Number(it.price || 0) * q));
+                if (shiftCat === "vespertino") rec.vesQty += q;
+                else rec.matQty += q;
+                rec.totalQty += q;
+                rec.totalMoney += sub;
+            });
+        });
+        const prodRows = Array.from(prodMap.values()).sort((a, b) => b.totalQty - a.totalQty);
+
+        if (format === "csv") {
+            const csvCell = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+            const lines = [];
+            lines.push([csvCell(`NEVERÍA LA FUENTE — INFORME EJECUTIVO ${periodLabel}`)].join(","));
+            lines.push([csvCell("Sucursal:"), csvCell(branchDisplay), csvCell("Generado:"), csvCell(fdt(now()))].join(","));
+            lines.push("");
+
+            lines.push([csvCell("1. RESUMEN GENERAL DEL PERÍODO")].join(","));
+            lines.push(["Concepto", "Monto / Cantidad"].map(csvCell).join(","));
+            lines.push(["Venta Total Cobrada", round2(totalMoney)].map(csvCell).join(","));
+            lines.push(["Total Efectivo", round2(totalCash)].map(csvCell).join(","));
+            lines.push(["Total Tarjeta", round2(totalCard)].map(csvCell).join(","));
+            lines.push(["Turno Mañana (Matutino)", round2(totalMat)].map(csvCell).join(","));
+            lines.push(["Turno Tarde (Vespertino)", round2(totalVes)].map(csvCell).join(","));
+            lines.push(["Tickets Activos Cobrados", activeSales.length].map(csvCell).join(","));
+            lines.push(["Tickets Cancelados", cancelledSales.length].map(csvCell).join(","));
+            lines.push(["Cortes de Caja Registrados", periodCuts.length].map(csvCell).join(","));
+            lines.push("");
+
+            lines.push([csvCell("2. DESGLOSE DÍA POR DÍA")].join(","));
+            lines.push(["Fecha", "Tickets", "Cortes", "Turno Mañana ($)", "Turno Tarde ($)", "Efectivo ($)", "Tarjeta ($)", "Total Día ($)"].map(csvCell).join(","));
+            daysList.forEach(d => {
+                lines.push([d.date, d.tickets, d.cuts, round2(d.mat), round2(d.ves), round2(d.cash), round2(d.card), round2(d.total)].map(csvCell).join(","));
+            });
+            lines.push("");
+
+            lines.push([csvCell("3. DESGLOSE POR SUCURSAL")].join(","));
+            lines.push(["Sucursal", "Tickets", "Cortes", "Turno Mañana ($)", "Turno Tarde ($)", "Efectivo ($)", "Tarjeta ($)", "Total Sucursal ($)"].map(csvCell).join(","));
+            branchRows.forEach(b => {
+                lines.push([b.name, b.tickets, b.cutsCount, round2(b.mat), round2(b.ves), round2(b.cash), round2(b.card), round2(b.total)].map(csvCell).join(","));
+            });
+            lines.push("");
+
+            lines.push([csvCell("4. CORTES DE CAJA REGISTRADOS EN EL PERÍODO")].join(","));
+            lines.push(["Fecha y Hora", "Sucursal", "Turno", "Encargada", "Fondo Inicial ($)", "Efectivo ($)", "Tarjeta ($)", "Total Vendido ($)", "Efectivo Contado ($)", "Diferencia ($)", "Corte Neto ($)"].map(csvCell).join(","));
+            periodCuts.forEach(ct => {
+                const net = Number(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash || 0) - Number(ct.opening_amount || 0)));
+                lines.push([
+                    fdt(ct.created_at),
+                    ct.branch_name || "",
+                    ct.shift_name || "",
+                    ct.performed_by_name || ct.cashier_name || "Encargada",
+                    round2(ct.opening_amount || 0),
+                    round2(ct.cash_sales || 0),
+                    round2(ct.card_sales || 0),
+                    round2(ct.total_sales || 0),
+                    round2(ct.counted_cash || 0),
+                    round2(ct.difference || 0),
+                    round2(net)
+                ].map(csvCell).join(","));
+            });
+            lines.push("");
+
+            lines.push([csvCell("5. CONTEO DE PRODUCTOS VENDIDOS")].join(","));
+            lines.push(["Producto", "Piezas Mañana", "Piezas Tarde", "Total Piezas", "Importe Total ($)"].map(csvCell).join(","));
+            prodRows.forEach(p => {
+                lines.push([p.name, p.matQty, p.vesQty, p.totalQty, round2(p.totalMoney)].map(csvCell).join(","));
+            });
+            lines.push("");
+
+            lines.push([csvCell("6. DETALLE DE TICKETS Y REGISTROS DEL PERÍODO")].join(","));
+            lines.push(["Fecha y Hora", "Ticket #", "Sucursal", "Turno", "Encargada", "Método Pago", "Estado", "Productos", "Total ($)"].map(csvCell).join(","));
+            periodSales.forEach(s => {
+                const itemsDesc = (s.items || []).map(i => `${i.quantity}x ${i.product_name || 'Producto'}`).join(" | ");
+                lines.push([
+                    fdt(s.created_at),
+                    s.sale_number || s.id,
+                    s.branch_name || "",
+                    s.shift_name || "",
+                    s.cashier_name || "Encargada",
+                    s.payment_method === "card" ? "Tarjeta" : "Efectivo",
+                    String(s.status || "").toUpperCase() === "CANCELLED" ? "CANCELADA" : "COBRADA",
+                    itemsDesc,
+                    round2(s.total || 0)
+                ].map(csvCell).join(","));
+            });
+
+            const csvContent = "\uFEFF" + lines.join("\r\n");
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            const fileSlug = (mode === "weekly") ? `Informe_Semanal_${startKey}_a_${endKey}` : `Informe_Diario_${endKey}`;
+            a.href = url;
+            a.download = `LaFuente_${fileSlug}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+            toast(`✅ Archivo Excel/CSV descargado: LaFuente_${fileSlug}.csv`, "success", 4500);
+            return;
+        }
+
+        // Formato PDF / Impresión Ejecutiva
+        const win = window.open("", "_blank", "width=980,height=800");
+        if (!win) return toast("Permite las ventanas emergentes para ver/descargar el PDF.", "warn", 4000);
+        const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+        <title>Informe ${esc(periodLabel)} — Nevería La Fuente</title>
+        <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 24px; background: #fff; }
+            h1 { color: #520712; margin: 0 0 4px; font-size: 22px; }
+            h2 { color: #520712; font-size: 15px; margin: 22px 0 8px; border-bottom: 2px solid #bc840a; padding-bottom: 4px; }
+            .meta { font-size: 12px; color: #475569; margin-bottom: 16px; }
+            .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px; }
+            .kpi { border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; background: #f8fafc; }
+            .kpi small { display: block; font-size: 10px; font-weight: 800; color: #64748b; }
+            .kpi strong { font-size: 17px; color: #0f172a; }
+            table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-bottom: 16px; }
+            th, td { border: 1px solid #cbd5e1; padding: 7px 9px; text-align: left; }
+            th { background: #f1f5f9; font-weight: 800; color: #1e293b; }
+            .num { text-align: right; font-weight: 700; }
+            .no-print { margin-bottom: 16px; display: flex; gap: 10px; }
+            .btn-p { padding: 10px 18px; background: #991024; color: #fff; border: none; border-radius: 8px; font-weight: 800; cursor: pointer; }
+            @media print { .no-print { display: none; } body { margin: 10px; } }
+        </style></head><body>
+        <div class="no-print">
+            <button class="btn-p" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+            <button class="btn-p" style="background:#475569" onclick="window.close()">Cerrar</button>
+        </div>
+        <h1>🍦 NEVERÍA LA FUENTE — INFORME EJECUTIVO ${esc(periodLabel)}</h1>
+        <div class="meta"><strong>Sucursal:</strong> ${esc(branchDisplay)} &nbsp;|&nbsp; <strong>Generado:</strong> ${esc(fdt(now()))}</div>
+        <div class="kpi-grid">
+            <div class="kpi"><small>VENTA TOTAL</small><strong>${money(totalMoney)}</strong><small>${activeSales.length} tickets</small></div>
+            <div class="kpi"><small>💵 EFECTIVO</small><strong style="color:#15803d">${money(totalCash)}</strong></div>
+            <div class="kpi"><small>💳 TARJETA</small><strong style="color:#1d4ed8">${money(totalCard)}</strong></div>
+            <div class="kpi"><small>🌅 MATUTINO</small><strong>${money(totalMat)}</strong></div>
+            <div class="kpi"><small>🌇 VESPERTINO</small><strong>${money(totalVes)}</strong></div>
+        </div>
+        <h2>1. Resumen Día por Día</h2>
+        <table><thead><tr><th>Fecha</th><th>Tickets</th><th>Cortes</th><th class="num">Mañana</th><th class="num">Tarde</th><th class="num">Efectivo</th><th class="num">Tarjeta</th><th class="num">Total Día</th></tr></thead>
+        <tbody>${daysList.map(d => `<tr><td>${esc(fd(d.date))} (${esc(d.date)})</td><td>${d.tickets}</td><td>${d.cuts}</td><td class="num">${money(d.mat)}</td><td class="num">${money(d.ves)}</td><td class="num">${money(d.cash)}</td><td class="num">${money(d.card)}</td><td class="num">${money(d.total)}</td></tr>`).join("")}</tbody></table>
+        <h2>2. Desglose por Sucursal</h2>
+        <table><thead><tr><th>Sucursal</th><th>Tickets</th><th>Cortes</th><th class="num">Mañana</th><th class="num">Tarde</th><th class="num">Efectivo</th><th class="num">Tarjeta</th><th class="num">Total</th></tr></thead>
+        <tbody>${branchRows.map(b => `<tr><td><strong>${esc(b.name)}</strong></td><td>${b.tickets}</td><td>${b.cutsCount}</td><td class="num">${money(b.mat)}</td><td class="num">${money(b.ves)}</td><td class="num">${money(b.cash)}</td><td class="num">${money(b.card)}</td><td class="num">${money(b.total)}</td></tr>`).join("")}</tbody></table>
+        <h2>3. Cortes de Caja del Período (${periodCuts.length})</h2>
+        <table><thead><tr><th>Fecha y Hora</th><th>Sucursal</th><th>Turno</th><th>Encargada</th><th class="num">Fondo</th><th class="num">Efectivo</th><th class="num">Tarjeta</th><th class="num">Contado</th><th class="num">Diferencia</th><th class="num">Corte Neto</th></tr></thead>
+        <tbody>${periodCuts.length ? periodCuts.map(ct => {
+            const net = Number(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash || 0) - Number(ct.opening_amount || 0)));
+            return `<tr><td>${esc(fdt(ct.created_at))}</td><td>${esc(ct.branch_name)}</td><td>${esc(ct.shift_name)}</td><td>${esc(ct.performed_by_name || ct.cashier_name || 'Encargada')}</td><td class="num">${money(ct.opening_amount)}</td><td class="num">${money(ct.cash_sales)}</td><td class="num">${money(ct.card_sales)}</td><td class="num">${money(ct.counted_cash)}</td><td class="num">${money(ct.difference)}</td><td class="num">${money(net)}</td></tr>`;
+        }).join("") : `<tr><td colspan="10" style="text-align:center">Sin cortes registrados en este período</td></tr>`}</tbody></table>
+        <h2>4. Productos Vendidos (${prodRows.length})</h2>
+        <table><thead><tr><th>Producto</th><th class="num">Mañana (pz)</th><th class="num">Tarde (pz)</th><th class="num">Total Piezas</th><th class="num">Importe Total</th></tr></thead>
+        <tbody>${prodRows.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.matQty}</td><td class="num">${p.vesQty}</td><td class="num">${p.totalQty}</td><td class="num">${money(p.totalMoney)}</td></tr>`).join("")}</tbody></table>
+        </body></html>`;
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
+    };
+
     /* ── CORTES DE CAJA (ARQUEOS Y CIERRES DE TURNO) ── */
-    async function getConsolidatedCutsForChain(forceRefresh = false) {
+    async function getConsolidatedCutsForChain(forceRefresh = false, requestedDate = null) {
+        const todayStr = toDateKey();
+        const targetDate = (!requestedDate || requestedDate === "today") ? todayStr : requestedDate;
+        if (targetDate && targetDate !== "all" && targetDate !== todayStr && /^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+            await fetchCloudRecordsForDateRange(targetDate, targetDate, forceRefresh);
+        }
         const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedCuts && (nowMs - _lastCutsFetchTime < 30000)) {
+        if (!forceRefresh && _cachedConsolidatedCuts && (nowMs - _lastCutsFetchTime < 60000)) {
             return _cachedConsolidatedCuts;
         }
         const cutsMap = new Map();
@@ -18668,10 +19104,14 @@
             if (Array.isArray(list)) list.forEach(c => addCut(c, null));
         });
 
-        // Cortes remotos desde Supabase
+        // Cortes remotos desde Supabase (optimizado al día actual o fecha solicitada)
         if (db) {
             try {
-                const {data} = await safeQuery(db.from("cash_cuts").select("*").order("created_at", {ascending:false}).limit(200), null, 2000);
+                const { startISO, endISO } = getDateBoundsISO(
+                    targetDate === "all" ? shiftDateKeyByDays(todayStr, -7) : targetDate,
+                    targetDate === "all" ? todayStr : targetDate
+                );
+                const {data} = await safeQuery(db.from("cash_cuts").select("*").gte("created_at", startISO).lte("created_at", endISO).order("created_at", {ascending:false}).limit(80), null, 2000);
                 if (data && data.length) {
                     data.forEach(ct => {
                         let obs = {};
@@ -18700,7 +19140,7 @@
         // Cargar registros de cortes eliminados desde Supabase
         if (db) {
             try {
-                const {data: delRecs} = await safeQuery(db.from("sales").select("observations").eq("status", "CUT_DELETED_RECORD").limit(100), null, 2000);
+                const {data: delRecs} = await safeQuery(db.from("sales").select("observations").eq("status", "CUT_DELETED_RECORD").limit(40), null, 2000);
                 if (delRecs && delRecs.length) {
                     const localDelCuts = new Set(gr("deleted_cut_ids", []));
                     delRecs.forEach(dr => {
@@ -18748,14 +19188,25 @@
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando cortes de caja de ${esc(S.branchName)}…</p></div>`;
         }
 
-        const allConsolidatedCuts = await getConsolidatedCutsForChain();
+        const todayStr = toDateKey();
+        if (!S.cutsFilterDate) S.cutsFilterDate = todayStr;
+        const selectedCutDate = S.cutsFilterDate || todayStr;
+
+        const allConsolidatedCuts = await getConsolidatedCutsForChain(false, selectedCutDate);
         const activeFilter = S.isSU ? (S.cutsFilterBranchId || "all") : S.branchId;
         const deletedCutIds = new Set(gr("deleted_cut_ids", []));
         const isCalzadaBranch = resolveCanonicalBranch({ id: S.branchId, name: S.branchName }) === "La Fuente Calzada" ||
                                 resolveCanonicalBranch(activeFilter) === "La Fuente Calzada";
 
-        // Filtrar según sucursal activa o seleccionada
-        const cutsList = allConsolidatedCuts
+        const cutDatesSet = new Set([todayStr]);
+        allConsolidatedCuts.forEach(ct => {
+            const d = toDateKey(ct.created_at);
+            if (d) cutDatesSet.add(d);
+        });
+        const availableCutDates = Array.from(cutDatesSet).sort().reverse();
+
+        // Filtrar según sucursal activa o seleccionada y por fecha seleccionada (por defecto: solo hoy)
+        const branchFilteredCuts = allConsolidatedCuts
             .filter(ct => !deletedCutIds.has(String(ct.id)))
             .filter(ct => {
                 if (!S.isSU) {
@@ -18768,14 +19219,17 @@
             })
             .sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
+        const cutsList = (selectedCutDate === "all")
+            ? branchFilteredCuts
+            : branchFilteredCuts.filter(ct => toDateKey(ct.created_at) === (selectedCutDate === "today" ? todayStr : selectedCutDate));
+
         // Calcular ventas activas del turno/día actual para el corte
-        const consolidatedSales = await getConsolidatedSalesForChain(true);
+        const consolidatedSales = await getConsolidatedSalesForChain(false, selectedCutDate);
         const currentBranchSales = consolidatedSales.filter(s => {
             if (isSystemNonSaleRecord(s)) return false;
             if (isCalzadaBranch) return resolveCanonicalBranch(s) === "La Fuente Calzada";
             return matchesBranch(s, { id: S.branchId, name: S.branchName });
         });
-        const todayStr = toDateKey();
         let todayActiveSales = currentBranchSales.filter(s => !isSystemNonSaleRecord(s) && isTodaySale(s, todayStr) && String(s.status||"").toUpperCase() !== "CANCELLED");
 
         // Asegurar inclusión directa de todas las ventas locales y en memoria para la sucursal activa
@@ -18899,8 +19353,49 @@
         </div>
 
         <!-- HISTORIAL DE CORTES DE CAJA DE LA SUCURSAL -->
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-            <h3 style="color:#ffffff;margin:0;font-weight:900">📜 Historial de Cortes de Caja — ${esc(currentBranchDisplayName)} (${cutsList.length} registrados)</h3>
+        <div class="dashboard-card" style="padding:14px 18px;border-radius:14px;margin-bottom:16px;background:#ffffff;border:1.5px solid rgba(188,132,10,0.35)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                <div>
+                    <h3 style="color:var(--wine-900);margin:0;font-weight:900;font-size:16px">📜 Historial de Cortes de Caja — ${esc(currentBranchDisplayName)} (${cutsList.length} en vista)</h3>
+                    <small style="color:var(--text-muted);font-weight:700">Mostrando cortes de: <strong>${selectedCutDate === todayStr || selectedCutDate === 'today' ? '🟢 HOY (' + fd(todayStr) + ')' : (selectedCutDate === 'all' ? '🌐 Todo el Histórico' : '📅 ' + fd(selectedCutDate))}</strong></small>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <label style="font-size:12px;font-weight:900;color:var(--wine-800)">📅 FECHA DE CORTE:</label>
+                    <select id="cuts-date-filter" style="padding:7px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:12px;font-weight:800;background:#fff;outline:none;color:var(--wine-900)">
+                        <option value="${todayStr}"${selectedCutDate===todayStr||selectedCutDate==='today'?' selected':''}>🟢 Hoy (${fd(todayStr)})</option>
+                        ${availableCutDates.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedCutDate===d?' selected':''}>📅 ${fd(d)}</option>`).join("")}
+                        <option value="all"${selectedCutDate==='all'?' selected':''}>🌐 Todo el Histórico</option>
+                    </select>
+                    <input type="date" id="cuts-calendar-picker" value="${selectedCutDate==='today'||selectedCutDate==='all'?todayStr:selectedCutDate}" max="${todayStr}"
+                        title="Seleccionar cualquier día para cargar sus cortes"
+                        style="padding:6px 10px;border:1.5px solid var(--wine-400);border-radius:10px;font-size:12px;font-weight:800;color:var(--wine-900);background:#fffef9;cursor:pointer">
+                </div>
+            </div>
+            ${S.isSU ? `
+            <div style="margin-top:12px;padding-top:12px;border-top:1.5px dashed #cbd5e1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:#faf5ff;padding:10px 14px;border-radius:10px;border:1px solid #e9d5ff">
+                <div style="font-size:12px;font-weight:900;color:#581c87;display:flex;align-items:center;gap:6px">
+                    <span>👑</span>
+                    <span>DESCARGAR INFORMES DE CORTES Y VENTAS (${selectedCutDate==='today'||selectedCutDate==='all'?fd(todayStr):fd(selectedCutDate)}):</span>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="button" onclick="window.downloadSUReport('daily','csv','${selectedCutDate==='today'||selectedCutDate==='all'?todayStr:selectedCutDate}','${activeFilter}')"
+                        style="padding:7px 13px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                        📥 Informe Diario (Excel/CSV)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('daily','pdf','${selectedCutDate==='today'||selectedCutDate==='all'?todayStr:selectedCutDate}','${activeFilter}')"
+                        style="padding:7px 13px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                        📄 Informe Diario (PDF/Imprimir)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('weekly','csv','${selectedCutDate==='today'||selectedCutDate==='all'?todayStr:selectedCutDate}','${activeFilter}')"
+                        style="padding:7px 13px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                        📊 Informe Semanal (7 Días Excel/CSV)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('weekly','pdf','${selectedCutDate==='today'||selectedCutDate==='all'?todayStr:selectedCutDate}','${activeFilter}')"
+                        style="padding:7px 13px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                        📑 Informe Semanal (PDF/Imprimir)
+                    </button>
+                </div>
+            </div>` : ''}
         </div>
         ${cutsList.length ? `
         <div style="display:flex;flex-direction:column;gap:14px">
@@ -18989,8 +19484,29 @@
             }
         });
 
+        document.getElementById("cuts-date-filter")?.addEventListener("change", async e => {
+            const val = e.target.value;
+            S.cutsFilterDate = val;
+            if (val && val !== "today" && val !== "all" && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                toast(`📅 Cargando cortes del día ${fd(val)}…`, "info", 2000);
+                await fetchCloudRecordsForDateRange(val, val, true);
+            }
+            await loadCuts();
+        });
+
+        document.getElementById("cuts-calendar-picker")?.addEventListener("change", async e => {
+            const picked = e.target.value;
+            if (!picked) return;
+            S.cutsFilterDate = picked;
+            toast(`📅 Cargando cortes del día ${fd(picked)}…`, "info", 2200);
+            await fetchCloudRecordsForDateRange(picked, picked, true);
+            await loadCuts();
+        });
+
         document.getElementById("btn-ref-cuts")?.addEventListener("click", async () => {
             cleanCalzadaGhostSales();
+            const dTarget = (!S.cutsFilterDate || S.cutsFilterDate === "today" || S.cutsFilterDate === "all") ? todayStr : S.cutsFilterDate;
+            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
             _cachedConsolidatedCuts = null;
             _cachedConsolidatedSales = null;
             await loadCuts();
@@ -20174,8 +20690,9 @@
             return;
         }
 
-        const consolidatedSales = await getConsolidatedSalesForChain();
         const todayStr = toDateKey();
+        if (!S.privateAccessDate) S.privateAccessDate = todayStr;
+        const consolidatedSales = await getConsolidatedSalesForChain(false, S.privateAccessDate || todayStr);
         const closedDates = gr("closed_business_days", []);
         const isTodayClosed = closedDates.includes(todayStr);
 
@@ -20329,15 +20846,34 @@
                     </div>
                 </div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <label style="font-size:12px;font-weight:700;color:var(--wine-800)">Filtrar Fecha:</label>
                 <select id="sel-private-access-date" style="padding:8px 14px;border:1.5px solid var(--wine-400);border-radius:8px;font-weight:700;color:var(--wine-900);background:#fff;cursor:pointer">
                     <option value="${todayStr}" ${selectedDate === todayStr ? 'selected' : ''}>🟢 Hoy (${todayStr})</option>
                     ${Array.from(datesMap.keys()).filter(d => d !== todayStr).sort().reverse().map(d => `<option value="${d}" ${selectedDate === d ? 'selected' : ''}>📆 ${d}</option>`).join('')}
                     <option value="all" ${selectedDate === 'all' ? 'selected' : ''}>🌐 Todas las fechas</option>
                 </select>
-            
-                <div style="display:flex;align-items:center;gap:8px;margin-top:10px;width:100%;justify-content:flex-end">
+                <input type="date" id="private-access-calendar-picker" value="${selectedDate === 'all' ? todayStr : selectedDate}" max="${todayStr}"
+                    title="Seleccionar cualquier día del calendario para cargar sus ventas y cortes"
+                    style="padding:7px 10px;border:1.5px solid var(--wine-400);border-radius:8px;font-weight:800;font-size:12px;color:var(--wine-900);background:#fffef9;cursor:pointer">
+
+                <div style="display:flex;align-items:center;gap:8px;margin-top:10px;width:100%;justify-content:flex-end;flex-wrap:wrap">
+                    <button type="button" onclick="window.downloadSUReport('daily','csv','${selectedDate === 'all' ? todayStr : selectedDate}','${activeBranchFilter}')"
+                        style="padding:9px 14px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(22,163,74,0.25)">
+                        <span>📥</span><span>Descargar Informe Diario (Excel)</span>
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('daily','pdf','${selectedDate === 'all' ? todayStr : selectedDate}','${activeBranchFilter}')"
+                        style="padding:9px 14px;background:linear-gradient(135deg,#0f172a,#334155);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(0,0,0,0.2)">
+                        <span>📄</span><span>Informe Diario (PDF)</span>
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('weekly','csv','${selectedDate === 'all' ? todayStr : selectedDate}','${activeBranchFilter}')"
+                        style="padding:9px 14px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(37,99,235,0.25)">
+                        <span>📊</span><span>Descargar Informe Semanal (7 Días Excel)</span>
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('weekly','pdf','${selectedDate === 'all' ? todayStr : selectedDate}','${activeBranchFilter}')"
+                        style="padding:9px 14px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:10px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 6px rgba(124,58,237,0.25)">
+                        <span>📑</span><span>Informe Semanal (PDF)</span>
+                    </button>
                     <button type="button" id="btn-close-business-day" style="padding:10px 18px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);display:flex;align-items:center;gap:6px">
                         <span>🔒</span><span>Realizar Corte General & Cerrar Día Oficial</span>
                     </button>
@@ -20549,9 +21085,26 @@
         }
         const selDate = $("#sel-private-access-date");
         if (selDate) {
-            selDate.addEventListener("change", (e) => {
-                S.privateAccessDate = e.target.value;
-                loadPrivateAccess();
+            selDate.addEventListener("change", async (e) => {
+                const val = e.target.value;
+                S.privateAccessDate = val;
+                if (val && val !== "all" && val !== todayStr && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                    toast(`📅 Cargando registros y cortes del día ${fd(val)}…`, "info", 2000);
+                    await fetchCloudRecordsForDateRange(val, val, true);
+                }
+                await loadPrivateAccess();
+            });
+        }
+
+        const calPicker = $("#private-access-calendar-picker");
+        if (calPicker) {
+            calPicker.addEventListener("change", async (e) => {
+                const picked = e.target.value;
+                if (!picked) return;
+                S.privateAccessDate = picked;
+                toast(`📅 Cargando registros y cortes del día ${fd(picked)}…`, "info", 2200);
+                await fetchCloudRecordsForDateRange(picked, picked, true);
+                await loadPrivateAccess();
             });
         }
 
@@ -20579,6 +21132,7 @@
             btn.addEventListener("click", async () => {
                 const bId = btn.dataset.bid;
                 if (bId) {
+                    S.salesFilterDate = (selectedDate === todayStr) ? "today" : selectedDate;
                     await changeBranch(bId);
                     if (window.changeView) window.changeView("sales");
                 }
@@ -20589,6 +21143,7 @@
             btn.addEventListener("click", async () => {
                 const bId = btn.dataset.bid;
                 if (bId) {
+                    S.cutsFilterDate = selectedDate;
                     await changeBranch(bId);
                     if (window.changeView) window.changeView("cuts");
                 }
@@ -20729,9 +21284,13 @@
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando balances y contabilidad sincronizada…</p></div>`;
         }
 
+        const todayStr = toDateKey();
+        if (!S.accHistoryFilterDate) {
+            S.accHistoryFilterDate = todayStr;
+        }
         const history = gr("accounting_history", []);
-        const allSales = await getConsolidatedSalesForChain();
-        const allCuts = await getConsolidatedCutsForChain();
+        const allSales = await getConsolidatedSalesForChain(false, S.accHistoryFilterDate || todayStr);
+        const allCuts = await getConsolidatedCutsForChain(false, S.accHistoryFilterDate || todayStr);
 
         const allHistoricalActive = allSales.filter(s => String(s.status||"").toUpperCase() !== "CANCELLED");
         const grandHistoricalTotal = allHistoricalActive.reduce((acc,s) => acc + Number(s.total||0), 0);
@@ -20739,7 +21298,6 @@
         const grandHistoricalCard = allHistoricalActive.filter(s => s.payment_method === "card").reduce((a,s)=>a+Number(s.total||0), 0);
         const grandHistoricalTickets = allHistoricalActive.length;
 
-        const todayStr = toDateKey();
         const datesMap = new Map();
         allSales.forEach(s => {
             const d = toDateKey(s.created_at);
@@ -20838,14 +21396,35 @@
 
                     <label style="font-size:12px;font-weight:900;color:var(--wine-800)">FECHA:</label>
                     <select id="acc-date-filter" style="padding:8px 12px;border:1.5px solid var(--gold-500);border-radius:10px;font-size:13px;font-weight:700;background:#fff;outline:none;color:#1a0205">
-                        <option value="today"${selectedDate==="today"||selectedDate===todayStr?" selected":""}>📅 Hoy (${fd(todayStr)})</option>
-                        <option value="all"${selectedDate==="all"?" selected":""}>🌐 Todo el Histórico Consolidado</option>
+                        <option value="today"${selectedDate==="today"||selectedDate===todayStr?" selected":""}>🟢 Hoy (${fd(todayStr)})</option>
                         ${dateOptions.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?" selected":""}>📅 ${fd(d)}</option>`).join("")}
+                        <option value="all"${selectedDate==="all"?" selected":""}>🌐 Todo el Histórico Consolidado</option>
                     </select>
+                    <input type="date" id="acc-calendar-picker" value="${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}" max="${todayStr}"
+                        title="Seleccionar cualquier día para cargar sus registros y cortes"
+                        style="padding:7px 10px;border:1.5px solid var(--wine-400);border-radius:10px;font-size:12px;font-weight:800;color:var(--wine-900);background:#fffef9;cursor:pointer">
                     <button type="button" id="btn-print-daily-acc" style="padding:8px 16px;background:linear-gradient(135deg,#991024,#520712);color:#fff;border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;font-size:12px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15)">
                         <span>🖨️</span><span>Imprimir Corte Diario</span>
                     </button>
                     <button type="button" id="btn-ref-acc" style="padding:8px 16px;background:#fff;border:1.5px solid var(--gold-500);border-radius:10px;cursor:pointer;font-weight:bold;font-size:12px">🔄 Actualizar</button>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;width:100%;justify-content:flex-end;margin-top:6px;padding-top:10px;border-top:1px dashed rgba(188,132,10,0.35)">
+                    <button type="button" onclick="window.downloadSUReport('daily','csv','${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}','${activeBranchFilter}')"
+                        style="padding:8px 14px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:9px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                        📥 Descargar Informe Diario (Excel/CSV)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('daily','pdf','${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}','${activeBranchFilter}')"
+                        style="padding:8px 14px;background:linear-gradient(135deg,#0f172a,#334155);color:#fff;border:none;border-radius:9px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                        📄 Informe Diario (PDF/Imprimir)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('weekly','csv','${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}','${activeBranchFilter}')"
+                        style="padding:8px 14px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:9px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                        📊 Descargar Informe Semanal (7 Días Excel/CSV)
+                    </button>
+                    <button type="button" onclick="window.downloadSUReport('weekly','pdf','${selectedDate==='today'||selectedDate==='all'?todayStr:selectedDate}','${activeBranchFilter}')"
+                        style="padding:8px 14px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:9px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                        📑 Informe Semanal (PDF/Imprimir)
+                    </button>
                 </div>
             </div>
 
@@ -21070,11 +21649,29 @@
         });
 
         document.getElementById("acc-date-filter")?.addEventListener("change", async e => {
-            S.accHistoryFilterDate = e.target.value;
+            const val = e.target.value;
+            S.accHistoryFilterDate = val;
+            if (val && val !== "today" && val !== "all" && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                toast(`📅 Cargando balances y cortes del día ${fd(val)}…`, "info", 2000);
+                await fetchCloudRecordsForDateRange(val, val, true);
+            }
+            await loadAccounting();
+        });
+
+        document.getElementById("acc-calendar-picker")?.addEventListener("change", async e => {
+            const picked = e.target.value;
+            if (!picked) return;
+            S.accHistoryFilterDate = picked;
+            toast(`📅 Cargando balances y cortes del día ${fd(picked)}…`, "info", 2200);
+            await fetchCloudRecordsForDateRange(picked, picked, true);
             await loadAccounting();
         });
 
         document.getElementById("btn-ref-acc")?.addEventListener("click", async () => {
+            const dTarget = (!S.accHistoryFilterDate || S.accHistoryFilterDate === "today" || S.accHistoryFilterDate === "all") ? todayStr : S.accHistoryFilterDate;
+            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
+            _cachedConsolidatedSales = null;
+            _cachedConsolidatedCuts = null;
             await loadAccounting();
             toast("Contabilidad actualizada y sincronizada.", "info");
         });
@@ -21112,8 +21709,10 @@
             c.innerHTML = `<div style="padding:24px;text-align:center"><div class="loading-spinner"></div><p style="margin-top:10px;color:var(--text-muted)">Cargando conteo de productos vendidos…</p></div>`;
         }
 
-        const consolidatedSales = await getConsolidatedSalesForChain();
         const todayStr = toDateKey();
+        if (!S.salesCountDate) S.salesCountDate = todayStr;
+        const selectedDate = S.salesCountDate;
+        const consolidatedSales = await getConsolidatedSalesForChain(false, selectedDate);
 
         // 1. Recoger todas las fechas disponibles
         const datesSet = new Set([todayStr]);
@@ -21123,8 +21722,6 @@
         });
         const availableDates = Array.from(datesSet).sort().reverse();
 
-        if (!S.salesCountDate) S.salesCountDate = todayStr;
-        const selectedDate = S.salesCountDate;
         const isAllDates = (selectedDate === "all");
 
         // 2. Filtrar ventas por fecha seleccionada y activas (no canceladas)
@@ -21136,18 +21733,6 @@
             }
             return toDateKey(s.created_at) === selectedDate || isTodaySale(s, selectedDate);
         });
-
-        // Fallback si la fecha de hoy aún no tiene ventas
-        if (!activeSales.length && consolidatedSales.length && (selectedDate === "today" || selectedDate === todayStr)) {
-            const dateList = availableDates.filter(d => d !== todayStr);
-            if (dateList.length) {
-                const fallbackDate = dateList[0];
-                activeSales = consolidatedSales.filter(s => {
-                    if (String(s.status || "").toUpperCase() === "CANCELLED") return false;
-                    return toDateKey(s.created_at) === fallbackDate || isTodaySale(s, fallbackDate);
-                });
-            }
-        }
 
         // 3. Filtros de Sucursal y Turno
         const selectedBranchFilter = S.isSU ? (S.salesCountBranch || "all") : (S.branchName || S.branchId || "La Fuente Calzada");
@@ -21307,17 +21892,40 @@
                 </div>
                 <div>
                     <label style="font-size:11px;font-weight:800;color:var(--gold-300);display:block;margin-bottom:4px">📅 FECHA:</label>
-                    <select id="sc-date-filter" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;color:var(--wine-900)">
-                        <option value="${todayStr}"${selectedDate===todayStr?' selected':''}>🟢 Hoy (${todayStr})</option>
-                        ${availableDates.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?' selected':''}>📆 ${d}</option>`).join("")}
-                        <option value="all"${selectedDate==='all'?' selected':''}>🌐 Histórico Completo</option>
-                    </select>
+                    <div style="display:flex;gap:6px;align-items:center">
+                        <select id="sc-date-filter" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fff;color:var(--wine-900)">
+                            <option value="${todayStr}"${selectedDate===todayStr?' selected':''}>🟢 Hoy (${todayStr})</option>
+                            ${availableDates.filter(d => d !== todayStr).map(d => `<option value="${d}"${selectedDate===d?' selected':''}>📆 ${d}</option>`).join("")}
+                            <option value="all"${selectedDate==='all'?' selected':''}>🌐 Histórico Completo</option>
+                        </select>
+                        <input type="date" id="sc-calendar-picker" value="${selectedDate==='all'?todayStr:selectedDate}" max="${todayStr}"
+                            style="padding:6px 10px;border-radius:8px;border:1.5px solid var(--gold-400);font-weight:800;font-size:12px;background:#fffef9;color:var(--wine-900);cursor:pointer">
+                    </div>
                 </div>
                 <button type="button" id="btn-ref-sales-count"
                     style="margin-top:18px;padding:8px 16px;background:linear-gradient(135deg,#fff,#fceed3);border:1.5px solid var(--gold-400);border-radius:10px;cursor:pointer;font-weight:900;color:var(--wine-950)">
                     🔄 Actualizar
                 </button>
             </div>
+            ${S.isSU ? `
+            <div style="width:100%;margin-top:8px;padding-top:10px;border-top:1px dashed rgba(252,211,77,0.4);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+                <button type="button" onclick="window.downloadSUReport('daily','csv','${selectedDate==='all'?todayStr:selectedDate}','${selectedBranchFilter}')"
+                    style="padding:7px 13px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                    📥 Descargar Informe Diario (Excel/CSV)
+                </button>
+                <button type="button" onclick="window.downloadSUReport('daily','pdf','${selectedDate==='all'?todayStr:selectedDate}','${selectedBranchFilter}')"
+                    style="padding:7px 13px;background:linear-gradient(135deg,#0f172a,#334155);color:#fff;border:1px solid var(--gold-400);border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                    📄 Informe Diario (PDF)
+                </button>
+                <button type="button" onclick="window.downloadSUReport('weekly','csv','${selectedDate==='all'?todayStr:selectedDate}','${selectedBranchFilter}')"
+                    style="padding:7px 13px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                    📊 Descargar Informe Semanal (7 Días Excel/CSV)
+                </button>
+                <button type="button" onclick="window.downloadSUReport('weekly','pdf','${selectedDate==='all'?todayStr:selectedDate}','${selectedBranchFilter}')"
+                    style="padding:7px 13px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:8px;font-weight:900;font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:5px">
+                    📑 Informe Semanal (PDF)
+                </button>
+            </div>` : ''}
         </div>
 
         <!-- TARJETAS RESUMEN KPIS -->
@@ -21417,13 +22025,30 @@
             loadSalesCount();
         });
 
-        document.getElementById("sc-date-filter")?.addEventListener("change", e => {
-            S.salesCountDate = e.target.value;
-            loadSalesCount();
+        document.getElementById("sc-date-filter")?.addEventListener("change", async e => {
+            const val = e.target.value;
+            S.salesCountDate = val;
+            if (val && val !== "today" && val !== "all" && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                toast(`📅 Cargando conteo del día ${fd(val)}…`, "info", 2000);
+                await fetchCloudRecordsForDateRange(val, val, true);
+            }
+            await loadSalesCount();
         });
 
-        document.getElementById("btn-ref-sales-count")?.addEventListener("click", () => {
-            loadSalesCount();
+        document.getElementById("sc-calendar-picker")?.addEventListener("change", async e => {
+            const picked = e.target.value;
+            if (!picked) return;
+            S.salesCountDate = picked;
+            toast(`📅 Cargando conteo del día ${fd(picked)}…`, "info", 2200);
+            await fetchCloudRecordsForDateRange(picked, picked, true);
+            await loadSalesCount();
+        });
+
+        document.getElementById("btn-ref-sales-count")?.addEventListener("click", async () => {
+            const dTarget = (!S.salesCountDate || S.salesCountDate === "today" || S.salesCountDate === "all") ? todayStr : S.salesCountDate;
+            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
+            _cachedConsolidatedSales = null;
+            await loadSalesCount();
             toast("Conteo de ventas actualizado.", "info");
         });
     }
@@ -21451,6 +22076,7 @@
     async function triggerLiveNetworkSync() {
         if (!S.user) return;
         if (window._supabaseRestricted) return;
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
         try {
             await syncPendingSalesToSupabase();
             const consolidated = await getConsolidatedSalesForChain();
@@ -21717,16 +22343,19 @@
                         else if (S.view === "products") await loadProductsAdmin();
                     }
                 })
-                // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS
+                // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS (OPTIMIZADO SOLO AL DÍA ACTUAL)
                 .on("broadcast", { event: "request_sync" }, async () => {
+                    const todayKey = toDateKey();
                     const mySales = lr("sales", []);
                     const myCuts = lr("cuts", []);
                     const allGSales = gr("all_sales", []);
                     const allGCuts = gr("all_cuts", []);
                     const allGShifts = gr("all_shifts", []);
                     const myShifts = lr("shifts", []);
-                    const salesToSend = (_sessionSales.length ? _sessionSales : (mySales.length ? mySales : allGSales));
-                    const cutsToSend = (myCuts.length ? myCuts : allGCuts);
+                    const rawSalesToSend = (_sessionSales.length ? _sessionSales : (mySales.length ? mySales : allGSales));
+                    const salesToSend = rawSalesToSend.filter(s => s && isTodaySale(s, todayKey)).slice(0, 80);
+                    const rawCutsToSend = (myCuts.length ? myCuts : allGCuts);
+                    const cutsToSend = rawCutsToSend.filter(c => c && toDateKey(c.created_at) === todayKey).slice(0, 20);
 
                     if (realtimeChannel) {
                         try {
@@ -21739,11 +22368,11 @@
                                     shift_name: S.shift,
                                     sales: salesToSend,
                                     cuts: cutsToSend,
-                                    shifts: (myShifts && myShifts.length) ? myShifts : allGShifts,
+                                    shifts: ((myShifts && myShifts.length) ? myShifts : allGShifts).slice(0, 15),
                                     inv: S.inv,
                                     custom_products: gr("custom_products", []),
-                                    damage_reports: gr("all_damage_reports", []),
-                                    notices: gr("all_notices", [])
+                                    damage_reports: gr("all_damage_reports", []).slice(0, 20),
+                                    notices: gr("all_notices", []).slice(0, 20)
                                 }
                             });
                         } catch(e) {}
