@@ -445,7 +445,7 @@
                                 "encargado11lafuente@gmail.com", "encargado12lafuente@gmail.com"
                             ];
 
-                            if (superUsers.includes(emailLower) || staffEmails.includes(emailLower) || emailLower.includes("encargado") || emailLower.includes("lafuente") || emailLower.includes("tagarete") || emailLower.includes("calzada") || emailLower.includes("mollotes") || emailLower.includes("rescate") || emailLower.includes("cnop")) {
+                            if (superUsers.includes(emailLower) || staffEmails.includes(emailLower) || emailLower.includes("encargado") || emailLower.includes("encargada") || emailLower.includes("lafuente") || emailLower.includes("tagarete") || emailLower.includes("calzada") || emailLower.includes("mollotes") || emailLower.includes("rescate") || emailLower.includes("cnop") || emailLower.includes("cenop") || emailLower.includes("bicentenario")) {
                                 if (!password) throw new Error("Por favor ingresa tu contraseña.");
                                 userObj = {
                                     id: "usr_" + emailLower.replace(/[^a-z0-9]/g, "_"),
@@ -471,6 +471,9 @@
                             if (window.LaFuentePOS.loadProfile) await window.LaFuentePOS.loadProfile();
                             if (window.LaFuentePOS.loadProducts) await window.LaFuentePOS.loadProducts();
                             if (window.LaFuentePOS.loadCurrentShift) await window.LaFuentePOS.loadCurrentShift();
+                            if (window.LaFuentePOS.setupRealtime) window.LaFuentePOS.setupRealtime();
+                            if (window.LaFuentePOS.syncPendingSalesToSupabase) window.LaFuentePOS.syncPendingSalesToSupabase();
+                            if (window.LaFuentePOS.triggerLiveNetworkSync) window.LaFuentePOS.triggerLiveNetworkSync();
                             if (window.LaFuentePOS.state.isSU) { window.changeView("private-access"); }
                             else { window.changeView("pos"); }
                         }
@@ -561,6 +564,6 @@
             if (btnTopbar) btnTopbar.style.display = 'none';
         });
     </script>
-    <script src="app.js?v=98"></script>
+    <script src="app.js?v=99"></script>
 </body>
 </html>

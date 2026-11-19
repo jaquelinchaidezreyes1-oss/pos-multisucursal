@@ -90,14 +90,27 @@
         "encargada11lafuente@gmail.com": {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
         "encargado11@gmail.com":         {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
         "encargada11@gmail.com":         {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "encargado11@lafuente.com":      {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "encargada11@lafuente.com":      {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
         "cnoplafuente@gmail.com":        {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
         "cnop@gmail.com":                {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "cnop@lafuente.com":             {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "cnopmañana@gmail.com":          {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "cnopmanana@gmail.com":          {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "cnop1@gmail.com":               {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "encargadacnop@gmail.com":       {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "encargadocnop@gmail.com":       {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
+        "lacnop@gmail.com":              {b:"CNOP",             s:"Mañana", r:"Encargada CNOP (Matutino)"},
         "encargado12lafuente@gmail.com": {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
         "encargada12lafuente@gmail.com": {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
         "encargado12@gmail.com":         {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
         "encargada12@gmail.com":         {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
+        "encargado12@lafuente.com":      {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
+        "encargada12@lafuente.com":      {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
         "cnoptardelafuente@gmail.com":   {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
-        "cnoptarde@gmail.com":           {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"}
+        "cnoptarde@gmail.com":           {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
+        "cnoptarde@lafuente.com":        {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"},
+        "cnop2@gmail.com":               {b:"CNOP",             s:"Tarde",  r:"Encargada CNOP (Vespertino)"}
     };
 
     const BRANCH_NAMES = ["La Fuente Calzada","Rescate","Mollotes","Tagarete 1","Tagarete 2","CNOP"];
@@ -310,15 +323,26 @@
             const rescuedList = Array.from(rescuedMap.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
             _sessionSales = rescuedList;
 
-            // Guardar únicamente las ventas reales dinámicas (sin las 180 estáticas de BASE_ACTIVE_SALES que ya están en código)
+            // Guardar únicamente las ventas reales dinámicas y preservar llaves por sucursal (incluyendo CNOP)
             try {
                 localStorage.setItem("lf_all_sales", JSON.stringify(rescuedList.slice(0, 600)));
                 localStorage.setItem("lf_sales", JSON.stringify(rescuedList.slice(0, 400)));
+                const isCnopSale = (s) => {
+                    const str = `${s.branch_name || ""} ${s.branch_id || ""} ${s.cashier_name || ""} ${s.cashier_id || ""} ${s.user_email || ""} ${typeof s.observations === "string" ? s.observations : JSON.stringify(s.observations || {})}`.toLowerCase();
+                    return str.includes("cnop") || str.includes("cenop") || str.includes("branch-6") || /encargad[oa]\s*(11|12)(?!\d)/i.test(str);
+                };
+                const cnopOnly = rescuedList.filter(isCnopSale);
+                if (cnopOnly.length) {
+                    localStorage.setItem("lf_cnop_sales", JSON.stringify(cnopOnly.slice(0, 300)));
+                }
                 const calzOnly = rescuedList.filter(s => {
+                    if (isCnopSale(s)) return false;
+                    const str = `${s.branch_name || ""} ${s.branch_id || ""} ${s.cashier_name || ""} ${s.cashier_id || ""} ${s.user_email || ""}`.toLowerCase();
+                    if (str.includes("mollotes") || str.includes("molotes") || str.includes("rescate") || str.includes("tagarete") || /encargad[oa]\s*(3|4|5|6|7|8|9|10)(?!\d)/i.test(str)) return false;
                     const b = String(s.branch_name || "").toLowerCase();
                     const bid = String(s.branch_id || "").toLowerCase();
                     const c = String(s.cashier_name || "").toLowerCase();
-                    return b.includes("calzada") || bid === "branch-1" || bid === "c188dd82-7faf-41b8-948b-af8e789facba" || c.includes("encargado1") || c.includes("encargado2") || c.includes("calzada");
+                    return b.includes("calzada") || bid === "branch-1" || bid === "c188dd82-7faf-41b8-948b-af8e789facba" || /encargad[oa]1(?!\d)/i.test(c) || /encargad[oa]2(?!\d)/i.test(c) || c.includes("calzada");
                 });
                 localStorage.setItem("lf_calzada_sales", JSON.stringify(calzOnly.slice(0, 400)));
                 localStorage.setItem("lf_calzada_today_sales", JSON.stringify(calzOnly.filter(s => isTodaySale(s)).slice(0, 300)));
@@ -385,19 +409,21 @@
         }
 
         // 1. Mapeo prioritario oficial por encargada asignada:
-        const cashier = String(obs.cashier_name || obs.performed_by_name || s.cashier_name || s.cashier_id || s.user_name || s.performed_by_name || "").toLowerCase();
-        if (/encargad[oa](12|10|8|6|4|2)(?!\d)/i.test(cashier) ||
+        const cashier = String(obs.cashier_name || obs.performed_by_name || obs.user_email || s.cashier_name || s.cashier_id || s.user_email || s.user_name || s.performed_by_name || "").toLowerCase();
+        if (/encargad[oa]\s*(12|10|8|6|4|2)(?!\d)/i.test(cashier) ||
             cashier.includes("vespertino") || cashier.includes("tarde") || cashier.includes("noche") ||
             cashier.includes("calzada2") || cashier.includes("calzadatarde") ||
             cashier.includes("tagarete2tarde") || cashier.includes("tagarete22") ||
-            cashier.includes("mollotestarde") || cashier.includes("mollotes2")) {
+            cashier.includes("mollotestarde") || cashier.includes("mollotes2") ||
+            cashier.includes("cnoptarde") || cashier.includes("cnop2")) {
             return "vespertino";
         }
-        if (/encargad[oa](11|9|7|5|3|1)(?!\d)/i.test(cashier) ||
+        if (/encargad[oa]\s*(11|9|7|5|3|1)(?!\d)/i.test(cashier) ||
             cashier.includes("matutino") || cashier.includes("mañana") || cashier.includes("maana") ||
             cashier.includes("calzada1") || cashier.includes("calzadamañana") || cashier.includes("calzadamaana") ||
             cashier.includes("tagarete2mañana") || cashier.includes("tagarete21") ||
-            cashier.includes("mollotesmañana") || cashier.includes("mollotes1")) {
+            cashier.includes("mollotesmañana") || cashier.includes("mollotes1") ||
+            cashier.includes("cnopmañana") || cashier.includes("cnopmanana") || cashier.includes("cnop1") || cashier.includes("cnoplafuente")) {
             return "matutino";
         }
 
@@ -444,11 +470,11 @@
         if (typeof ref === "string") {
             const s = ref.toLowerCase().trim();
             if (s === "branch-4" || s.includes("tagarete 1") || s.includes("tagarete1") || s.includes("tagarete_1") || (s.includes("tagarete") && (s.includes("1") || s.includes("uno"))) || s.includes("encargado7") || s.includes("encargado8") || s.includes("encargada7") || s.includes("encargada8")) return "Tagarete 1";
-            if (s === "branch-5" || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || /encargad[oa]9(?!\d)/i.test(s) || /encargad[oa]10(?!\d)/i.test(s)) return "Tagarete 2";
-            if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || s.includes("encargado11") || s.includes("encargada11") || s.includes("encargado12") || s.includes("encargada12")) return "CNOP";
-            if (s === "branch-3" || s.includes("mollotes") || s.includes("molotes") || /encargad[oa]5(?!\d)/i.test(s) || /encargad[oa]6(?!\d)/i.test(s)) return "Mollotes";
-            if (s === "branch-2" || s.includes("rescate") || s.includes("encargado3") || s.includes("encargado4") || s.includes("encargada3") || s.includes("encargada4")) return "Rescate";
-            if (s === "branch-1" || s === "c188dd82-7faf-41b8-948b-af8e789facba" || s.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(s) && !s.includes("10") && !s.includes("11") && !s.includes("12")) || /encargad[oa]2(?!\d)/i.test(s) || s.includes("calzada1") || s.includes("calzada2")) return "La Fuente Calzada";
+            if (s === "branch-5" || s.includes("tagarete 2") || s.includes("tagarete2") || s.includes("tagarete_2") || (s.includes("tagarete") && (s.includes("2") || s.includes("dos"))) || /encargad[oa]\s*9(?!\d)/i.test(s) || /encargad[oa]\s*10(?!\d)/i.test(s)) return "Tagarete 2";
+            if (s === "branch-6" || s.includes("cnop") || s.includes("cenop") || s.includes("bicentenario") || /encargad[oa]\s*11(?!\d)/i.test(s) || /encargad[oa]\s*12(?!\d)/i.test(s)) return "CNOP";
+            if (s === "branch-3" || s.includes("mollotes") || s.includes("molotes") || /encargad[oa]\s*5(?!\d)/i.test(s) || /encargad[oa]\s*6(?!\d)/i.test(s)) return "Mollotes";
+            if (s === "branch-2" || s.includes("rescate") || /encargad[oa]\s*3(?!\d)/i.test(s) || /encargad[oa]\s*4(?!\d)/i.test(s)) return "Rescate";
+            if (s === "branch-1" || s === "c188dd82-7faf-41b8-948b-af8e789facba" || s.includes("calzada") || (/encargad[oa]\s*1(?!\d)/i.test(s) && !s.includes("10") && !s.includes("11") && !s.includes("12")) || /encargad[oa]\s*2(?!\d)/i.test(s) || s.includes("calzada1") || s.includes("calzada2")) return "La Fuente Calzada";
             return ref.trim();
         }
 
@@ -459,45 +485,49 @@
         const bName = String(obs.branch_name || ref.branch_name || ref.name || "").toLowerCase().trim();
         const obsBId = String(obs.branch_id || "").toLowerCase().trim();
         const rawBId = String(ref.branch_id || ref.id || "").toLowerCase().trim();
-        const cashier = String(obs.cashier_name || obs.performed_by_name || ref.cashier_name || ref.performed_by_name || ref.user_name || "").toLowerCase().trim();
-        const email = String(obs.user_email || ref.user_email || ref.cashier_id || ref.performed_by || "").toLowerCase().trim();
+        const cashier = String(obs.cashier_name || obs.performed_by_name || ref.cashier_name || ref.performed_by_name || ref.user_name || ref.reported_by || ref.author || "").toLowerCase().trim();
+        const email = String(obs.user_email || ref.user_email || ref.cashier_id || ref.performed_by || ref.user_id || "").toLowerCase().trim();
         const allClues = `${bName} ${obsBId} ${cashier} ${email} ${rawBId}`;
 
-        // 1. Tagarete 1
-        if (bName.includes("tagarete 1") || bName.includes("tagarete1") || bName.includes("tagarete_1") ||
-            obsBId === "branch-4" || rawBId === "branch-4" || rawBId.includes("tagarete_1") || rawBId.includes("tagarete 1") ||
-            cashier.includes("tagarete 1") || cashier.includes("tagarete1") || /encargad[oa]7(?!\d)/i.test(allClues) || /encargad[oa]8(?!\d)/i.test(allClues)) {
-            return "Tagarete 1";
+        // 1. CNOP (Máxima prioridad para que encargado11/12 o cualquier correo de CNOP jamás colisione con Calzada o UUID fallback)
+        if (bName.includes("cnop") || bName.includes("cenop") || bName.includes("bicentenario") ||
+            obsBId === "branch-6" || rawBId === "branch-6" || obsBId.includes("cnop") || rawBId.includes("cnop") ||
+            allClues.includes("cnop") || allClues.includes("cenop") || allClues.includes("bicentenario") ||
+            /encargad[oa]\s*11(?!\d)/i.test(allClues) || /encargad[oa]\s*12(?!\d)/i.test(allClues)) {
+            return "CNOP";
         }
 
         // 2. Tagarete 2
         if (bName.includes("tagarete 2") || bName.includes("tagarete2") || bName.includes("tagarete_2") ||
             obsBId === "branch-5" || rawBId === "branch-5" || rawBId.includes("tagarete_2") || rawBId.includes("tagarete 2") ||
-            cashier.includes("tagarete 2") || cashier.includes("tagarete2") || /encargad[oa]9(?!\d)/i.test(allClues) || /encargad[oa]10(?!\d)/i.test(allClues)) {
+            cashier.includes("tagarete 2") || cashier.includes("tagarete2") || email.includes("tagarete2") ||
+            /encargad[oa]\s*9(?!\d)/i.test(allClues) || /encargad[oa]\s*10(?!\d)/i.test(allClues)) {
             return "Tagarete 2";
         }
 
-        // 3. CNOP
-        if (bName.includes("cnop") || bName.includes("cenop") || obsBId === "branch-6" || rawBId === "branch-6" || rawBId.includes("cnop") ||
-            cashier.includes("cnop") || /encargad[oa]11(?!\d)/i.test(allClues) || /encargad[oa]12(?!\d)/i.test(allClues)) {
-            return "CNOP";
+        // 3. Tagarete 1
+        if (bName.includes("tagarete 1") || bName.includes("tagarete1") || bName.includes("tagarete_1") ||
+            obsBId === "branch-4" || rawBId === "branch-4" || rawBId.includes("tagarete_1") || rawBId.includes("tagarete 1") ||
+            cashier.includes("tagarete 1") || cashier.includes("tagarete1") || email.includes("tagarete1") ||
+            /encargad[oa]\s*7(?!\d)/i.test(allClues) || /encargad[oa]\s*8(?!\d)/i.test(allClues)) {
+            return "Tagarete 1";
         }
 
         // 4. Mollotes (PROTECCIÓN ESTRICTA: nunca clasificar como Calzada aunque tenga el UUID fallback c188dd82...)
         if (bName.includes("mollotes") || bName.includes("molotes") || obsBId === "branch-3" || rawBId === "branch-3" || rawBId.includes("mollotes") || rawBId.includes("molotes") ||
-            cashier.includes("mollotes") || cashier.includes("molotes") || /encargad[oa]5(?!\d)/i.test(allClues) || /encargad[oa]6(?!\d)/i.test(allClues)) {
+            allClues.includes("mollotes") || allClues.includes("molotes") || /encargad[oa]\s*5(?!\d)/i.test(allClues) || /encargad[oa]\s*6(?!\d)/i.test(allClues)) {
             return "Mollotes";
         }
 
         // 5. Rescate
         if (bName.includes("rescate") || obsBId === "branch-2" || rawBId === "branch-2" || rawBId.includes("rescate") ||
-            cashier.includes("rescate") || /encargad[oa]3(?!\d)/i.test(allClues) || /encargad[oa]4(?!\d)/i.test(allClues)) {
+            allClues.includes("rescate") || /encargad[oa]\s*3(?!\d)/i.test(allClues) || /encargad[oa]\s*4(?!\d)/i.test(allClues)) {
             return "Rescate";
         }
 
         // 6. La Fuente Calzada (ÚNICAMENTE si ninguna de las otras sucursales coincide)
         if (bName.includes("calzada") || obsBId === "branch-1" || rawBId === "branch-1" || rawBId === "c188dd82-7faf-41b8-948b-af8e789facba" ||
-            cashier.includes("calzada") || (/encargad[oa]1(?!\d)/i.test(allClues) && !allClues.includes("10") && !allClues.includes("11") && !allClues.includes("12")) || /encargad[oa]2(?!\d)/i.test(allClues)) {
+            cashier.includes("calzada") || (/encargad[oa]\s*1(?!\d)/i.test(allClues) && !allClues.includes("10") && !allClues.includes("11") && !allClues.includes("12")) || /encargad[oa]\s*2(?!\d)/i.test(allClues)) {
             return "La Fuente Calzada";
         }
 
@@ -506,6 +536,19 @@
         if (ref.branch_name && String(ref.branch_name).trim()) return String(ref.branch_name).trim();
 
         return "";
+    }
+
+    function getCanonicalBranchId(branchRef, fallbackId = "") {
+        const canon = resolveCanonicalBranch(branchRef);
+        const found = (S.branches || []).find(b => resolveCanonicalBranch(b) === canon);
+        if (found && found.id) return found.id;
+        if (canon === "CNOP") return "branch-6";
+        if (canon === "Tagarete 2") return "branch-5";
+        if (canon === "Tagarete 1") return "branch-4";
+        if (canon === "Mollotes") return "branch-3";
+        if (canon === "Rescate") return "branch-2";
+        if (canon === "La Fuente Calzada") return "c188dd82-7faf-41b8-948b-af8e789facba";
+        return fallbackId || "branch-1";
     }
 
     function getBranchForSale(sale) {
@@ -871,49 +914,29 @@
     function isSystemNonSaleRecord(s) {
         if (!s || typeof s !== "object") return true;
         const st = String(s.status || "").toUpperCase().trim();
-        if (["CATALOG_RECORD", "SHIFT_RECORD", "CUT_DELETED_RECORD", "DAMAGE_RECORD", "NOTICE_RECORD"].includes(st)) return true;
+        if (["CATALOG_RECORD", "SHIFT_RECORD", "CUT_DELETED_RECORD", "DAMAGE_RECORD", "NOTICE_RECORD", "CUT_RECORD"].includes(st)) return true;
         const snum = String(s.sale_number || "").toUpperCase().trim();
-        if (snum.startsWith("CATALOG-") || snum.startsWith("SHIFT-") || snum.startsWith("DELCUT-") || snum.startsWith("DMG-") || snum.startsWith("NOT-")) return true;
+        if (snum.startsWith("CATALOG-") || snum.startsWith("SHIFT-") || snum.startsWith("DELCUT-") || snum.startsWith("DMG-") || snum.startsWith("DAMAGE-") || snum.startsWith("NOT-") || snum.startsWith("NOTICE-") || snum.startsWith("CUT-")) return true;
         let obs = {};
         if (s.observations) {
             try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
         }
-        if (obs.is_catalog_record || obs.is_shift_record || obs.is_cut_deleted_record || obs.is_damage_record || obs.is_notice_record || obs.custom_products || obs.deleted_product_ids || obs.deleted_cut_id || obs.report || obs.notice) return true;
+        if (obs.is_catalog_record || obs.is_shift_record || obs.is_cut_deleted_record || obs.is_damage_record || obs.is_notice_record || obs.is_cut_record || obs.custom_products || obs.deleted_product_ids || obs.deleted_cut_id || obs.report || obs.notice || obs.cut) return true;
         if (Number(s.total || 0) <= 0 && (!Array.isArray(s.items) || s.items.length === 0)) return true;
         return false;
     }
 
-    /* ── PURGA INMEDIATA DE VENTAS FANTASMA Y CONTAMINACIÓN ENTRE SUCURSALES EN LA FUENTE CALZADA ── */
+    /* ── PURGA INMEDIATA DE VENTAS FANTASMA EN CALZADA (PRESERVANDO 100% CNOP Y DEMÁS SUCURSALES) ── */
     function cleanCalzadaGhostSales() {
         try {
             if (typeof localStorage === "undefined") return;
-            const todayStr = toDateKey();
 
-            // Identificador de ventas que NO deben estar en Calzada o que son remanentes vespertinos no auténticos
-            const isCalzGhost = (s) => {
+            // Identificador EXCLUSIVO de semillas fantasma de Calzada (NUNCA marca ventas reales de CNOP u otras sucursales como fantasma)
+            const isFakeCalzadaSeed = (s) => {
                 if (!s || typeof s !== "object") return false;
                 const sid = String(s.id || s.local_id || "");
                 if (sid.startsWith("sale_calz_today_v") || sid.startsWith("sale_calz_ghost")) return true;
-
-                let obs = {};
-                try { obs = typeof s.observations === "string" ? JSON.parse(s.observations) : (s.observations || {}); } catch(e) {}
-                const cashier = String(obs.cashier_name || obs.performed_by_name || s.cashier_name || s.user_name || "").toLowerCase();
-                const bObs = String(obs.branch_name || s.branch_name || "").toLowerCase();
-
-                // Si la venta pertenece explícitamente a otra sucursal (Mollotes, Rescate, CNOP, Tagarete)
-                if (cashier.includes("mollotes") || cashier.includes("molotes") || bObs.includes("mollotes") || bObs.includes("molotes") ||
-                    cashier.includes("rescate") || bObs.includes("rescate") ||
-                    cashier.includes("cnop") || bObs.includes("cnop") ||
-                    cashier.includes("tagarete") || bObs.includes("tagarete")) {
-                    return true;
-                }
-
                 const canonB = resolveCanonicalBranch(s);
-                if (canonB && canonB !== "La Fuente Calzada") {
-                    return true;
-                }
-
-                // Si es de La Fuente Calzada:
                 if (canonB === "La Fuente Calzada") {
                     const cat = getShiftCategory(s);
                     if (cat === "vespertino") {
@@ -924,19 +947,18 @@
                 return false;
             };
 
-            const filterList = (arr, isStrictCalzadaKey = false) => {
-                if (!Array.isArray(arr)) return arr;
-                return arr.filter(s => {
-                    if (!s) return false;
-                    if (isCalzGhost(s)) return false;
-                    if (isStrictCalzadaKey) {
-                        return resolveCanonicalBranch(s) === "La Fuente Calzada";
-                    }
-                    return true;
-                });
+            const rescuedCnopSales = [];
+            const recordRescuedBranchSale = (s) => {
+                if (!s || typeof s !== "object" || isFakeCalzadaSeed(s)) return;
+                const cb = resolveCanonicalBranch(s);
+                if (cb && cb !== "La Fuente Calzada") {
+                    s.branch_name = cb;
+                    s.branch_id = getCanonicalBranchId(cb, s.branch_id);
+                    if (cb === "CNOP") rescuedCnopSales.push(s);
+                }
             };
 
-            // 1. Limpieza de llaves exclusivas de Calzada
+            // 1. Limpieza de llaves exclusivas de Calzada (rescatando primero cualquier venta de CNOP que hubiera caído ahí)
             const calzadaSpecificSalesKeys = [
                 "lf_calzada_sales", "lf_calzada_today_sales",
                 "lf_c188dd82-7faf-41b8-948b-af8e789facba_sales", "lf_branch-1_sales",
@@ -948,14 +970,16 @@
                     if (raw && raw.startsWith("[")) {
                         const parsed = JSON.parse(raw);
                         if (Array.isArray(parsed)) {
-                            const cleaned = filterList(parsed, true);
+                            parsed.forEach(recordRescuedBranchSale);
+                            const cleaned = parsed.filter(s => s && !isFakeCalzadaSeed(s) && resolveCanonicalBranch(s) === "La Fuente Calzada");
                             localStorage.setItem(k, JSON.stringify(cleaned));
                         }
                     }
                 } catch(e) {}
             });
 
-            // 2. Limpieza de llaves generales de ventas
+            // 2. En llaves generales de ventas (lf_sales, lf_pending_sync_sales, lf_all_printed_tickets):
+            // JAMÁS eliminar ventas de CNOP ni de ninguna otra sucursal; solo corregir su branch_name/branch_id y quitar semillas fantasma de Calzada
             const generalSalesKeys = ["lf_sales", "lf_pending_sync_sales", "lf_all_printed_tickets"];
             generalSalesKeys.forEach(k => {
                 try {
@@ -963,9 +987,19 @@
                     if (raw && raw.startsWith("[")) {
                         const parsed = JSON.parse(raw);
                         if (Array.isArray(parsed)) {
-                            const isCalzActive = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
-                            const cleaned = filterList(parsed, isCalzActive);
-                            if (cleaned.length !== parsed.length) {
+                            let mod = false;
+                            const cleaned = parsed.filter(s => {
+                                if (!s || isFakeCalzadaSeed(s)) { mod = true; return false; }
+                                const cb = resolveCanonicalBranch(s);
+                                if (cb && (s.branch_name !== cb || (cb === "CNOP" && s.branch_id !== "branch-6"))) {
+                                    s.branch_name = cb;
+                                    s.branch_id = getCanonicalBranchId(cb, s.branch_id);
+                                    mod = true;
+                                }
+                                if (cb === "CNOP") rescuedCnopSales.push(s);
+                                return true;
+                            });
+                            if (mod || cleaned.length !== parsed.length) {
                                 localStorage.setItem(k, JSON.stringify(cleaned));
                             }
                         }
@@ -973,41 +1007,60 @@
                 } catch(e) {}
             });
 
-            // Re-asignar ventas globales para que las de Mollotes/Rescate lleven su branch_name correcto y no Calzada
+            // 3. Asegurar que cualquier venta rescatada de CNOP quede guardada en lf_cnop_sales y lf_all_sales
+            if (rescuedCnopSales.length > 0) {
+                try {
+                    const rawCnop = localStorage.getItem("lf_cnop_sales");
+                    const existingCnop = (rawCnop && rawCnop.startsWith("[")) ? JSON.parse(rawCnop) : [];
+                    const cnopMap = new Map();
+                    (Array.isArray(existingCnop) ? existingCnop : []).forEach(s => {
+                        if (s && (s.id || s.sale_number)) cnopMap.set(String(s.id || s.sale_number), s);
+                    });
+                    rescuedCnopSales.forEach(s => {
+                        if (s && (s.id || s.sale_number)) cnopMap.set(String(s.id || s.sale_number), s);
+                    });
+                    localStorage.setItem("lf_cnop_sales", JSON.stringify(Array.from(cnopMap.values())));
+                } catch(e) {}
+            }
+
+            // 4. Re-asignar ventas globales en lf_all_sales para que CNOP y todas las sucursales lleven su branch_name y branch_id exactos
             try {
                 const rawAll = localStorage.getItem("lf_all_sales");
                 if (rawAll && rawAll.startsWith("[")) {
                     let parsedAll = JSON.parse(rawAll);
                     if (Array.isArray(parsedAll)) {
-                        let mod = false;
                         parsedAll.forEach(s => {
                             if (s) {
                                 const cb = resolveCanonicalBranch(s);
-                                if (cb && cb !== s.branch_name && cb !== "La Fuente Calzada") {
+                                if (cb) {
                                     s.branch_name = cb;
-                                    mod = true;
+                                    s.branch_id = getCanonicalBranchId(cb, s.branch_id);
                                 }
                             }
                         });
-                        parsedAll = parsedAll.filter(s => {
-                            if (resolveCanonicalBranch(s) === "La Fuente Calzada") {
-                                return !isCalzGhost(s);
-                            }
-                            return true;
-                        });
+                        parsedAll = parsedAll.filter(s => s && !isFakeCalzadaSeed(s));
                         localStorage.setItem("lf_all_sales", JSON.stringify(parsedAll));
                     }
                 }
             } catch(e) {}
 
+            // 5. En _sessionSales: preservar todas las ventas reales de todas las sucursales (incluyendo CNOP)
             if (Array.isArray(_sessionSales)) {
-                _sessionSales = filterList(_sessionSales, resolveCanonicalBranch(S.branchName) === "La Fuente Calzada");
+                _sessionSales = _sessionSales.filter(s => {
+                    if (!s || isFakeCalzadaSeed(s)) return false;
+                    const cb = resolveCanonicalBranch(s);
+                    if (cb) {
+                        s.branch_name = cb;
+                        s.branch_id = getCanonicalBranchId(cb, s.branch_id);
+                    }
+                    return true;
+                });
             }
             if (Array.isArray(_cachedConsolidatedSales)) {
                 _cachedConsolidatedSales = null;
             }
 
-            // 3. Limpieza de cortes en Calzada: expulsar cortes de Mollotes/Rescate y resetear tarde si es necesario
+            // 6. Limpieza de cortes en Calzada: expulsar cortes de otras sucursales de las llaves exclusivas de Calzada
             const calzadaCutKeys = [
                 "lf_calzada_cuts", "lf_branch-1_cuts",
                 "lf_c188dd82-7faf-41b8-948b-af8e789facba_cuts", "lf_la_fuente_calzada_cuts"
@@ -1033,8 +1086,8 @@
                 } catch(e) {}
             });
 
-            // En llaves generales de cortes, asegurar que cortes de Mollotes/Rescate tengan su nombre de sucursal auténtico
-            const generalCutKeys = ["lf_all_cuts", "lf_cuts"];
+            // En llaves generales de cortes, asegurar que cortes de CNOP, Mollotes, Rescate, Tagarete tengan su nombre y branch_id auténticos
+            const generalCutKeys = ["lf_all_cuts", "lf_cuts", "lf_cnop_cuts"];
             generalCutKeys.forEach(k => {
                 try {
                     const raw = localStorage.getItem(k);
@@ -1048,8 +1101,9 @@
                                     try { obs = typeof ct.observations === "string" ? JSON.parse(ct.observations) : (ct.observations || {}); } catch(e) {}
                                     const pLow = String(obs.performed_by_name || obs.cashier_name || ct.performed_by_name || ct.cashier_name || "").toLowerCase();
                                     const cb = resolveCanonicalBranch({ ...ct, observations: obs, cashier_name: pLow });
-                                    if (cb && ct.branch_name !== cb) {
+                                    if (cb && (ct.branch_name !== cb || (cb === "CNOP" && ct.branch_id !== "branch-6"))) {
                                         ct.branch_name = cb;
+                                        ct.branch_id = getCanonicalBranchId(cb, ct.branch_id);
                                         mod = true;
                                     }
                                 }
@@ -1071,7 +1125,7 @@
     }
     cleanCalzadaGhostSales();
 
-    /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE ── */
+    /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE (VENTAS Y CORTES DE CNOP Y TODAS LAS SUCURSALES) ── */
     let _isSyncingSales = false;
     async function syncPendingSalesToSupabase() {
         if (!db || _isSyncingSales) return;
@@ -1083,6 +1137,7 @@
 
             const localSales = lr("pending_sync_sales", [])
                 .concat(lr("sales", []))
+                .concat(lr("cnop_sales", []))
                 .concat(typeof getLocalBranchSales === "function" ? getLocalBranchSales(null) : []);
             const syncedIds = new Set(gr("synced_sales_ids", []));
             const seenLocals = new Set();
@@ -1101,18 +1156,19 @@
                 }
             });
 
-            if (!unsynced.length) return;
-
             for (const s of unsynced) {
+                const canonBranch = resolveCanonicalBranch(s) || (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || s.branch_name || S.branchName;
+                const canonBranchId = getCanonicalBranchId(canonBranch, s.branch_id || S.branchId);
                 const bId = uuid(s.branch_id) ? s.branch_id : defaultBranchUUID;
                 const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
                 const uId = uuid(s.cashier_id) ? s.cashier_id : (uuid(S.user?.id) ? S.user.id : defaultUserUUID);
 
                 const observationsObj = {
-                    branch_name: s.branch_name || S.branchName,
-                    branch_id: s.branch_id || S.branchId,
+                    branch_name: canonBranch,
+                    branch_id: canonBranchId,
                     shift_name: s.shift_name || S.shift,
                     cashier_name: s.cashier_name || "Encargada",
+                    user_email: s.user_email || (!S.isSU ? (S.user?.email || "") : ""),
                     payment_method: s.payment_method || "cash",
                     items: s.items || [],
                     local_id: s.id
@@ -1148,9 +1204,85 @@
                     if (data[0].id) syncedIds.add(String(data[0].id));
                 }
             }
-            gw("synced_sales_ids", Array.from(syncedIds));
-            const remainingPending = lr("pending_sync_sales", []).filter(x => x && !syncedIds.has(String(x.id)));
-            lw("pending_sync_sales", remainingPending);
+            if (unsynced.length) {
+                gw("synced_sales_ids", Array.from(syncedIds));
+                const remainingPending = lr("pending_sync_sales", []).filter(x => x && !syncedIds.has(String(x.id)));
+                lw("pending_sync_sales", remainingPending);
+            }
+
+            // Sincronizar también cualquier corte pendiente de CNOP o de cualquier sucursal hacia Supabase
+            const syncedCutIds = new Set(gr("synced_cut_ids", []));
+            const localCuts = lr("pending_sync_cuts", [])
+                .concat(lr("cnop_cuts", []))
+                .concat(lr("cuts", []));
+            const seenCuts = new Set();
+            const unsyncedCuts = [];
+            localCuts.forEach(ct => {
+                if (!ct || !ct.id) return;
+                const cid = String(ct.id);
+                if (cid.startsWith("cut_calzada_today_") || cid.startsWith("cut_tag1_today_") || cid.startsWith("cut_res_today_") || cid.startsWith("cut_cnop_today_") || cid.startsWith("cut_t2_today_") || cid.startsWith("cut_1789")) return;
+                if (!syncedCutIds.has(cid) && !uuid(cid) && !seenCuts.has(cid)) {
+                    seenCuts.add(cid);
+                    unsyncedCuts.push(ct);
+                }
+            });
+
+            for (const ct of unsyncedCuts) {
+                const canonBranch = resolveCanonicalBranch(ct) || (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || ct.branch_name || S.branchName;
+                const canonBranchId = getCanonicalBranchId(canonBranch, ct.branch_id || S.branchId);
+                const cutToSync = { ...ct, branch_name: canonBranch, branch_id: canonBranchId };
+                try {
+                    await db.from("cash_cuts").insert({
+                        company_id: uuid(S.companyId) ? S.companyId : fallbackUUID,
+                        branch_id: uuid(ct.branch_id) ? ct.branch_id : defaultBranchUUID,
+                        cash_register_id: uuid(ct.branch_id) ? ct.branch_id : defaultBranchUUID,
+                        performed_by: uuid(S.user?.id) ? S.user.id : defaultUserUUID,
+                        total_sales: Number(ct.total_sales || 0),
+                        expected_cash: Number(ct.expected_cash || 0),
+                        counted_cash: Number(ct.counted_cash || 0),
+                        difference: Number(ct.difference || 0),
+                        observations: JSON.stringify({
+                            branch_name: canonBranch,
+                            branch_id: canonBranchId,
+                            shift_name: ct.shift_name || S.shift,
+                            cashier_name: ct.cashier_name || ct.performed_by_name || "Encargada",
+                            performed_by_name: ct.performed_by_name || ct.cashier_name || "Encargada",
+                            user_email: ct.user_email || (!S.isSU ? (S.user?.email || "") : ""),
+                            opening_amount: Number(ct.opening_amount || 0),
+                            cash_sales: Number(ct.cash_sales || 0),
+                            card_sales: Number(ct.card_sales || 0),
+                            net_sales_without_fund: Number(ct.net_sales_without_fund || 0),
+                            local_cut_id: ct.id
+                        })
+                    });
+                } catch(e) {}
+                try {
+                    const { data: cData, error: cErr } = await db.from("sales").insert({
+                        company_id: uuid(S.companyId) ? S.companyId : fallbackUUID,
+                        branch_id: defaultBranchUUID,
+                        user_id: uuid(S.user?.id) ? S.user.id : defaultUserUUID,
+                        sale_number: "CUT-" + String(ct.id).slice(-10),
+                        subtotal: 0,
+                        discount: 0,
+                        tax: 0,
+                        total: 0,
+                        status: "CUT_RECORD",
+                        observations: JSON.stringify({
+                            is_cut_record: true,
+                            cut: cutToSync
+                        }),
+                        created_at: ct.created_at || now()
+                    }).select();
+                    if (!cErr && cData) {
+                        syncedCutIds.add(String(ct.id));
+                    }
+                } catch(e) {}
+            }
+            if (unsyncedCuts.length) {
+                gw("synced_cut_ids", Array.from(syncedCutIds));
+                const remCuts = lr("pending_sync_cuts", []).filter(x => x && !syncedCutIds.has(String(x.id)));
+                lw("pending_sync_cuts", remCuts);
+            }
         } catch(e) {
             console.warn("Error en cola de sincronización:", e);
         } finally {
@@ -1686,6 +1818,7 @@
     async function logout() {
         const ok = await toastConfirm("¿Cerrar sesión de " + (S.profile?.full_name || S.user?.email) + "?");
         if (!ok) return;
+        try { localStorage.removeItem("lf_active_user_session"); } catch(e) {}
         await db?.auth.signOut();
         S.user = null; S.profile = null; S.branchId = null;
         S.cart = []; S.products = [];
@@ -1894,6 +2027,16 @@
                 localStorage.setItem("lf_inv_mollotes", JSON.stringify(invToSave));
                 gw("inv_mollotes", invToSave);
                 lw("inv_mollotes", invToSave);
+            } catch(e) {}
+        }
+
+        // Persistencia permanente específica y blindada para las encargadas de CNOP
+        if (isCnopActive()) {
+            try {
+                localStorage.setItem("lf_cnop_inv_permanent", JSON.stringify(invToSave));
+                localStorage.setItem("lf_inv_cnop", JSON.stringify(invToSave));
+                gw("inv_cnop", invToSave);
+                lw("inv_cnop", invToSave);
             } catch(e) {}
         }
         
@@ -5937,21 +6080,15 @@
         const cashierEmail = S.user?.email || "";
         const cashierName = S.profile?.full_name || cashierEmail || "Encargada";
 
-        const resolvedBranchName = resolveCanonicalBranch(S.branchName || cashierEmail) || "La Fuente Calzada";
-        const defaultBranchId = (
-            resolvedBranchName === "La Fuente Calzada" ? "branch-1" :
-            resolvedBranchName === "Rescate" ? "branch-2" :
-            resolvedBranchName === "Mollotes" ? "branch-3" :
-            resolvedBranchName === "Tagarete 1" ? "branch-4" :
-            resolvedBranchName === "Tagarete 2" ? "branch-5" :
-            resolvedBranchName === "CNOP" ? "branch-6" : "branch-1"
-        );
-        const saleBranchId = S.branchId || defaultBranchId;
+        const emailBranch = !S.isSU ? (resolveCanonicalBranch(cashierEmail) || resolveCanonicalBranch(cashierName) || resolveCanonicalBranch(S.role)) : "";
+        const resolvedBranchName = emailBranch || resolveCanonicalBranch(S.branchName) || "La Fuente Calzada";
+        const saleBranchId = getCanonicalBranchId(resolvedBranchName, S.branchId);
         const saleBranchName = resolvedBranchName;
         const isTag1 = resolvedBranchName === "Tagarete 1";
         const isTag2 = resolvedBranchName === "Tagarete 2";
         const isCalzada = resolvedBranchName === "La Fuente Calzada";
         const isMollotes = resolvedBranchName === "Mollotes";
+        const isCnop = resolvedBranchName === "CNOP";
 
         const currentTodayKey = toDateKey();
         const saleRecord = {
@@ -5962,6 +6099,7 @@
             shift_name: S.shift || (getShiftCategory({ cashier_name: cashierEmail, created_at: now() }) === "vespertino" ? "Tarde" : "Mañana"),
             cashier_id: S.user?.id || "offline",
             cashier_name: cashierEmail ? (cashierName + " (" + cashierEmail + ")") : cashierName,
+            user_email: cashierEmail,
             total: total,
             payment_method: payMethod,
             status: "COMPLETADA",
@@ -5990,6 +6128,10 @@
             const bSalesList = lr(bKey + "_sales", []);
             bSalesList.unshift(saleRecord);
             lw(bKey + "_sales", bSalesList);
+            if (isCnop) {
+                lw("cnop_sales", bSalesList);
+                try { localStorage.setItem("lf_cnop_sales", JSON.stringify(bSalesList.slice(0, 300))); } catch(e) {}
+            }
             if (isCalzada) {
                 const calzToday = lr("calzada_today_sales", []);
                 calzToday.unshift(saleRecord);
@@ -17744,11 +17886,12 @@
         return {
             id: s.id,
             sale_number: s.sale_number || ("TICK-" + String(s.id).substring(0,8)),
-            branch_id: realB ? realB.id : (bName === "Tagarete 1" ? "branch-4" : (bName === "La Fuente Calzada" ? "c188dd82-7faf-41b8-948b-af8e789facba" : s.branch_id)),
+            branch_id: getCanonicalBranchId(bName, realB ? realB.id : s.branch_id),
             branch_name: bName,
             shift_name: rawShift || shiftDisplayName,
             cashier_id: s.user_id,
             cashier_name: cashierName || "Encargada",
+            user_email: obs.user_email || "",
             total: Number(s.total || 0),
             payment_method: obs.payment_method || "cash",
             status: (String(s.status||"").toUpperCase() === "CANCELLED" || String(obs.status||"").toUpperCase() === "CANCELLED") ? "CANCELLED" : "COMPLETED",
@@ -17783,6 +17926,33 @@
                 3500
             );
             if (salesData && salesData.length) {
+                // Rescatar cortes de caja respaldados como CUT_RECORD en la tabla sales (ej. de CNOP y demás sucursales)
+                const mirrorCuts = [];
+                salesData.forEach(row => {
+                    if (!row) return;
+                    let obs = {};
+                    try { obs = typeof row.observations === "string" ? JSON.parse(row.observations) : (row.observations || {}); } catch(e) {}
+                    if (String(row.status || "").toUpperCase() === "CUT_RECORD" || obs.is_cut_record || obs.cut) {
+                        const rawCut = obs.cut || obs;
+                        const cBranch = resolveCanonicalBranch(rawCut) || resolveCanonicalBranch(obs) || rawCut.branch_name || "CNOP";
+                        mirrorCuts.push({
+                            ...rawCut,
+                            id: rawCut.id || row.id,
+                            branch_name: cBranch,
+                            branch_id: getCanonicalBranchId(cBranch, rawCut.branch_id || row.branch_id),
+                            created_at: rawCut.created_at || row.created_at || now()
+                        });
+                    }
+                });
+                if (mirrorCuts.length) {
+                    const existingCuts = gr("all_cuts", []);
+                    const mapMC = new Map();
+                    existingCuts.forEach(c => { if (c && c.id) mapMC.set(String(c.id), c); });
+                    mirrorCuts.forEach(mc => { if (mc && mc.id) mapMC.set(String(mc.id), mc); });
+                    gw("all_cuts", Array.from(mapMC.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)));
+                    _cachedConsolidatedCuts = null;
+                }
+
                 const mappedSales = salesData.filter(s => !isSystemNonSaleRecord(s)).map(normalizeRemoteSaleRow);
                 mappedSales.forEach(ms => {
                     if (!_sessionSales.some(x => String(x.id) === String(ms.id) || (x.sale_number && x.sale_number === ms.sale_number))) {
@@ -17983,8 +18153,7 @@
                 else if (bPrev && bPrev !== "General") finalBranch = bPrev;
                 else finalBranch = s.branch_name || prev.branch_name || "La Fuente Calzada";
 
-                const realB = S.branches.find(b => resolveCanonicalBranch(b) === finalBranch);
-                const finalBranchId = realB ? realB.id : (finalBranch === "Tagarete 1" ? "branch-4" : (finalBranch === "La Fuente Calzada" ? "c188dd82-7faf-41b8-948b-af8e789facba" : (s.branch_id || prev.branch_id)));
+                const finalBranchId = getCanonicalBranchId(finalBranch, s.branch_id || prev.branch_id);
                 const finalShift = prev.shift_name || s.shift_name;
                 const finalItems = (prev.items && prev.items.length) ? prev.items : (s.items || []);
 
@@ -18015,14 +18184,7 @@
             const assignedBranch = getBranchForSale(s);
             if (assignedBranch) {
                 s.branch_name = assignedBranch;
-                const realB = S.branches.find(b => resolveCanonicalBranch(b) === assignedBranch);
-                if (realB) {
-                    s.branch_id = realB.id;
-                } else if (assignedBranch === "Tagarete 1") {
-                    s.branch_id = "branch-4";
-                } else if (assignedBranch === "La Fuente Calzada") {
-                    s.branch_id = s.branch_id || "c188dd82-7faf-41b8-948b-af8e789facba";
-                }
+                s.branch_id = getCanonicalBranchId(assignedBranch, s.branch_id);
             }
 
             // Asignación inequívoca de turno
@@ -19105,6 +19267,8 @@
         const localCutSources = [
             gr("all_cuts", []),
             lr("cuts", []),
+            lr("cnop_cuts", []),
+            lr("branch-6_cuts", []),
             lr("calzada_cuts", []),
             lr("branch-1_cuts", []),
             lr("c188dd82-7faf-41b8-948b-af8e789facba_cuts", []),
@@ -19115,13 +19279,13 @@
             if (Array.isArray(list)) list.forEach(c => addCut(c, null));
         });
 
-        // Cortes remotos desde Supabase (optimizado al día actual o fecha solicitada)
+        // Cortes remotos desde Supabase (optimizado al día actual o fecha solicitada, incluyendo respaldo CUT_RECORD en sales)
         if (db) {
+            const { startISO, endISO } = getDateBoundsISO(
+                targetDate === "all" ? shiftDateKeyByDays(todayStr, -7) : targetDate,
+                targetDate === "all" ? todayStr : targetDate
+            );
             try {
-                const { startISO, endISO } = getDateBoundsISO(
-                    targetDate === "all" ? shiftDateKeyByDays(todayStr, -7) : targetDate,
-                    targetDate === "all" ? todayStr : targetDate
-                );
                 const {data} = await safeQuery(db.from("cash_cuts").select("*").gte("created_at", startISO).lte("created_at", endISO).order("created_at", {ascending:false}).limit(80), null, 2000);
                 if (data && data.length) {
                     data.forEach(ct => {
@@ -19143,6 +19307,25 @@
                             card_sales: obs.card_sales != null ? obs.card_sales : ct.card_sales,
                             net_sales_without_fund: obs.net_sales_without_fund != null ? obs.net_sales_without_fund : ct.net_sales_without_fund
                         }, bName);
+                    });
+                }
+            } catch(e) {}
+            try {
+                const {data: mirrorCutRows} = await safeQuery(db.from("sales").select("*").eq("status", "CUT_RECORD").gte("created_at", startISO).lte("created_at", endISO).order("created_at", {ascending:false}).limit(80), null, 2000);
+                if (mirrorCutRows && mirrorCutRows.length) {
+                    mirrorCutRows.forEach(row => {
+                        let obs = {};
+                        try { obs = typeof row.observations === "string" ? JSON.parse(row.observations) : (row.observations || {}); } catch(e) {}
+                        const rawCut = obs.cut || obs;
+                        if (rawCut) {
+                            const bName = resolveCanonicalBranch(rawCut) || resolveCanonicalBranch(obs) || rawCut.branch_name || "";
+                            addCut({
+                                ...rawCut,
+                                id: rawCut.id || row.id,
+                                branch_name: bName,
+                                created_at: rawCut.created_at || row.created_at
+                            }, bName);
+                        }
                     });
                 }
             } catch(e) {}
@@ -19542,13 +19725,17 @@
             if (!ok) return;
 
             const uname = S.profile?.full_name || S.user?.email || "Encargada";
+            const uemail = S.user?.email || "";
+            const cutBranchName = (!S.isSU ? (resolveCanonicalBranch(uemail) || resolveCanonicalBranch(uname) || resolveCanonicalBranch(S.role)) : "") || resolveCanonicalBranch(S.branchName) || S.branchName;
+            const cutBranchId = getCanonicalBranchId(cutBranchName, S.branchId);
             const cutRecord = {
                 id: "cut_" + Date.now() + "_" + Math.random().toString(36).substring(2,6),
-                branch_id: S.branchId,
-                branch_name: S.branchName,
+                branch_id: cutBranchId,
+                branch_name: cutBranchName,
                 shift_name: S.shift,
-                cashier_name: uname,
-                performed_by_name: uname,
+                cashier_name: uemail ? (uname + " (" + uemail + ")") : uname,
+                performed_by_name: uemail ? (uname + " (" + uemail + ")") : uname,
+                user_email: uemail,
                 opening_amount: initialFund,
                 cash_sales: currentCashSales,
                 card_sales: currentCardSales,
@@ -19569,16 +19756,20 @@
             gCuts.unshift(cutRecord);
             gw("all_cuts", gCuts);
 
-            const bKeyCut = getBranchKeyName(S.branchName);
+            const bKeyCut = getBranchKeyName(cutBranchName);
             try {
                 const rawBCuts = localStorage.getItem("lf_" + bKeyCut + "_cuts");
                 const bCutsArr = rawBCuts ? JSON.parse(rawBCuts) : [];
                 bCutsArr.unshift(cutRecord);
                 localStorage.setItem("lf_" + bKeyCut + "_cuts", JSON.stringify(bCutsArr));
-                if (S.branchId) localStorage.setItem("lf_" + S.branchId + "_cuts", JSON.stringify(bCutsArr));
+                if (cutBranchId) localStorage.setItem("lf_" + cutBranchId + "_cuts", JSON.stringify(bCutsArr));
+                if (cutBranchName === "CNOP") {
+                    lw("cnop_cuts", bCutsArr);
+                    localStorage.setItem("lf_cnop_cuts", JSON.stringify(bCutsArr));
+                }
             } catch(e) {}
 
-            const isCalzCut = resolveCanonicalBranch(S.branchName) === "La Fuente Calzada";
+            const isCalzCut = cutBranchName === "La Fuente Calzada";
             if (isCalzCut) {
                 const calzCuts = lr("calzada_cuts", []);
                 calzCuts.unshift(cutRecord);
@@ -19608,19 +19799,20 @@
                 } catch(e) {}
             }
 
-            // 3. Sincronización asíncrona con Supabase en segundo plano
-            if (db) {
-                (async () => {
+            // 3. Sincronización asíncrona con Supabase en segundo plano (cash_cuts + respaldo CUT_RECORD en sales para CNOP y todas las sucursales)
+            (async () => {
+                let cutSyncedOk = false;
+                if (db) {
+                    const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
+                    const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
+                    const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
+
+                    const bId = uuid(cutBranchId) ? cutBranchId : defaultBranchUUID;
+                    const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
+                    const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
+
                     try {
-                        const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
-                        const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
-                        const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
-
-                        const bId = uuid(S.branchId) ? S.branchId : defaultBranchUUID;
-                        const cId = uuid(S.companyId) ? S.companyId : fallbackUUID;
-                        const uId = uuid(S.user?.id) ? S.user.id : defaultUserUUID;
-
-                        await db.from("cash_cuts").insert({
+                        const { error: ccErr } = await db.from("cash_cuts").insert({
                             company_id: cId,
                             branch_id: bId,
                             cash_register_id: bId,
@@ -19630,21 +19822,55 @@
                             counted_cash: countedVal,
                             difference: diff,
                             observations: JSON.stringify({
-                                branch_name: S.branchName,
+                                branch_name: cutBranchName,
+                                branch_id: cutBranchId,
                                 shift_name: S.shift,
-                                cashier_name: uname,
-                                performed_by_name: uname,
+                                cashier_name: cutRecord.cashier_name,
+                                performed_by_name: cutRecord.performed_by_name,
+                                user_email: uemail,
                                 opening_amount: initialFund,
                                 cash_sales: currentCashSales,
                                 card_sales: currentCardSales,
-                                net_sales_without_fund: netWithoutFund
+                                net_sales_without_fund: netWithoutFund,
+                                local_cut_id: cutRecord.id
                             })
                         });
+                        if (!ccErr) cutSyncedOk = true;
                     } catch(e) {
                         console.warn("Supabase cut sync error:", e);
                     }
-                })();
-            }
+
+                    // Respaldo garantizado en tabla sales (CUT_RECORD) para que llegue a Superusuarios aunque cash_cuts tenga restricción de llave foránea
+                    try {
+                        const { error: srErr } = await db.from("sales").insert({
+                            company_id: cId,
+                            branch_id: defaultBranchUUID,
+                            user_id: uId,
+                            sale_number: "CUT-" + Date.now(),
+                            subtotal: 0,
+                            discount: 0,
+                            tax: 0,
+                            total: 0,
+                            status: "CUT_RECORD",
+                            observations: JSON.stringify({
+                                is_cut_record: true,
+                                cut: cutRecord
+                            }),
+                            created_at: cutRecord.created_at
+                        });
+                        if (!srErr) cutSyncedOk = true;
+                    } catch(e) {}
+                }
+                if (cutSyncedOk) {
+                    const syncedCutIds = new Set(gr("synced_cut_ids", []));
+                    syncedCutIds.add(String(cutRecord.id));
+                    gw("synced_cut_ids", Array.from(syncedCutIds));
+                } else {
+                    const pendingCuts = lr("pending_sync_cuts", []);
+                    pendingCuts.push(cutRecord);
+                    lw("pending_sync_cuts", pendingCuts);
+                }
+            })();
 
             toast("✓ Corte guardado exitosamente. Imprimiendo ticket…", "success", 4000);
 
@@ -22480,11 +22706,83 @@
                 .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, async payload => {
                     if (payload.eventType === "INSERT" && payload.new) {
                         const n = payload.new;
-                        if (isSystemNonSaleRecord(n)) return;
                         let obs = {};
                         try { obs = typeof n.observations === "string" ? JSON.parse(n.observations) : (n.observations || {}); } catch(e) {}
+
+                        // Procesar en vivo registros de Cortes, Aperturas, Mermas y Avisos respaldados en sales (incluyendo CNOP)
+                        const stUpper = String(n.status || "").toUpperCase().trim();
+                        if (stUpper === "CUT_RECORD" || obs.is_cut_record || obs.cut) {
+                            const rawCut = obs.cut || obs;
+                            const cBranch = resolveCanonicalBranch(rawCut) || resolveCanonicalBranch(obs) || rawCut.branch_name || "CNOP";
+                            const normCut = {
+                                ...rawCut,
+                                id: rawCut.id || n.id,
+                                branch_name: cBranch,
+                                branch_id: getCanonicalBranchId(cBranch, rawCut.branch_id || n.branch_id),
+                                created_at: rawCut.created_at || n.created_at || now()
+                            };
+                            let allCuts = gr("all_cuts", []);
+                            if (!allCuts.some(x => String(x.id) === String(normCut.id))) {
+                                allCuts.unshift(normCut);
+                                gw("all_cuts", allCuts);
+                                _cachedConsolidatedCuts = null;
+                                if (S.isSU) {
+                                    toast(`✂️ Nuevo Corte de Caja en ${cBranch} (${normCut.shift_name || 'Turno'}) — Total: ${money(normCut.total_sales || normCut.net_sales_without_fund || 0)}`, "info", 5000);
+                                }
+                            }
+                            if (S.view === "cuts") await loadCuts(true);
+                            else safeSilentRefresh(true);
+                            return;
+                        }
+                        if (stUpper === "SHIFT_RECORD" || obs.is_shift_record) {
+                            const sBranch = resolveCanonicalBranch(obs) || obs.branch_name || "CNOP";
+                            const shObj = {
+                                id: obs.shift_id || n.id,
+                                branch_id: getCanonicalBranchId(sBranch, n.branch_id),
+                                branch_name: sBranch,
+                                shift_name: obs.shift_name || "Mañana",
+                                cashier_name: obs.cashier_name || "Encargada",
+                                opening_amount: Number(obs.opening_amount || 0),
+                                opened_at: obs.opened_at || n.created_at || now()
+                            };
+                            let allShifts = gr("all_shifts", []);
+                            if (!allShifts.some(x => String(x.id) === String(shObj.id))) {
+                                allShifts.unshift(shObj);
+                                gw("all_shifts", allShifts);
+                                if (S.isSU) {
+                                    toast(`🌅 Apertura de Turno en ${sBranch} (${shObj.shift_name}) — Fondo: ${money(shObj.opening_amount)}`, "info", 4000);
+                                }
+                            }
+                            if (S.view === "shift") await loadShiftView();
+                            else safeSilentRefresh(true);
+                            return;
+                        }
+                        if (stUpper === "DAMAGE_RECORD" && obs.report) {
+                            const rep = { ...obs.report, branch_name: resolveCanonicalBranch(obs.report) || obs.report.branch_name };
+                            let allReps = gr("all_damage_reports", []);
+                            if (!allReps.some(x => String(x.id) === String(rep.id))) {
+                                allReps.unshift(rep);
+                                gw("all_damage_reports", allReps);
+                                if (S.isSU) toast(`⚠️ Merma registrada en ${rep.branch_name || 'Sucursal'}: ${rep.quantity}x ${rep.product_name}`, "warn", 5000);
+                            }
+                            if (S.view === "damage-reports") await loadDamageReports(true);
+                            return;
+                        }
+                        if (stUpper === "NOTICE_RECORD" && obs.notice) {
+                            const not = { ...obs.notice, branch_name: resolveCanonicalBranch(obs.notice) || obs.notice.branch_name };
+                            let allNotices = gr("all_notices", []);
+                            if (!allNotices.some(x => String(x.id) === String(not.id))) {
+                                allNotices.unshift(not);
+                                gw("all_notices", allNotices);
+                                if (S.isSU) toast(`📢 Aviso de ${not.branch_name || 'Sucursal'}: "${not.message}"`, "info", 5500);
+                            }
+                            if (S.view === "damage-reports") await loadDamageReports(true);
+                            return;
+                        }
+
+                        if (isSystemNonSaleRecord(n)) return;
                         const bName = resolveCanonicalBranch({ ...n, observations: obs }) || obs.branch_name || (S.branches.find(b=>String(b.id)===String(n.branch_id))?.name || "Sucursal");
-                        const realB = S.branches.find(b => resolveCanonicalBranch(b) === bName);
+                        const finalBId = getCanonicalBranchId(bName, n.branch_id || obs.branch_id);
                         if (S.isSU) {
                             toast(`🔔 Venta cobrada: ${money(n.total)} en ${bName}`, "success", 3500);
                         }
@@ -22497,11 +22795,12 @@
                             const newSaleObj = {
                                 id: n.id,
                                 sale_number: n.sale_number || ("TICK-" + String(n.id).substring(0,8)),
-                                branch_id: realB ? realB.id : (n.branch_id || obs.branch_id),
+                                branch_id: finalBId,
                                 branch_name: bName,
-                                shift_name: obs.shift_name || (getShiftCategory({ cashier_name: obs.cashier_name, created_at: n.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
+                                shift_name: obs.shift_name || (getShiftCategory({ cashier_name: obs.cashier_name, user_email: obs.user_email, created_at: n.created_at }) === "vespertino" ? "Tarde" : "Mañana"),
                                 cashier_id: n.user_id,
                                 cashier_name: obs.cashier_name || "Encargada",
+                                user_email: obs.user_email || "",
                                 total: Number(n.total || 0),
                                 payment_method: obs.payment_method || "cash",
                                 status: (String(n.status||"").toUpperCase() === "CANCELLED") ? "CANCELLED" : "COMPLETED",
@@ -22510,9 +22809,21 @@
                                 local_id: obs.local_id || n.id,
                                 observations: n.observations
                             };
+                            if (!_sessionSales.some(x => String(x.id) === sid || (x.sale_number && x.sale_number === newSaleObj.sale_number))) {
+                                _sessionSales.unshift(newSaleObj);
+                            }
                             allGSales.unshift(newSaleObj);
                             gw("all_sales", allGSales);
-                            if (resolveCanonicalBranch(newSaleObj) === "La Fuente Calzada") {
+                            if (bName === "CNOP") {
+                                try {
+                                    const rawC = localStorage.getItem("lf_cnop_sales");
+                                    const cList = rawC ? JSON.parse(rawC) : [];
+                                    if (!cList.some(x => String(x.id) === sid || (x.local_id && obs.local_id && x.local_id === obs.local_id))) {
+                                        cList.unshift(newSaleObj);
+                                        localStorage.setItem("lf_cnop_sales", JSON.stringify(cList.slice(0, 300)));
+                                    }
+                                } catch(e) {}
+                            } else if (bName === "La Fuente Calzada") {
                                 try {
                                     const rawB = localStorage.getItem("lf_calzada_sales");
                                     const bList = rawB ? JSON.parse(rawB) : [];
@@ -22614,6 +22925,10 @@
         renderPOS,
         filtered,
         renderCatTabs,
+        setupRealtime,
+        syncPendingSalesToSupabase,
+        triggerLiveNetworkSync,
+        fetchCloudRecordsForDateRange,
         logout
     };
 
@@ -22633,7 +22948,9 @@
             try {
                 const {data} = await safeQuery(db.auth.getSession(), null, 1000);
                 if (data?.session?.user) {
-                    activeUser = data.session.user;
+                    if (!activeUser || !activeUser.email || String(data.session.user.email).toLowerCase() === String(activeUser.email).toLowerCase()) {
+                        activeUser = data.session.user;
+                    }
                 }
             } catch(e) {}
         }
