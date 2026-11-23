@@ -1272,11 +1272,47 @@
             gw("relay_synced_ids_v99", Array.from(set).slice(-1500));
         }
 
+        const DEVICE_ID = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 7);
+        const _appliedMirrorSaleIds = new Set(gr("mirror_applied_sale_ids_v101", []));
+        const _appliedMirrorCancelIds = new Set(gr("mirror_applied_cancel_ids_v101", []));
+        let _lastInvBroadcastMs = 0;
+
+        function saveAppliedMirrorSets() {
+            try {
+                gw("mirror_applied_sale_ids_v101", Array.from(_appliedMirrorSaleIds).slice(-800));
+                gw("mirror_applied_cancel_ids_v101", Array.from(_appliedMirrorCancelIds).slice(-800));
+            } catch(e) {}
+        }
+
+        function isMyAccountOrBranchShift(record) {
+            if (!record || !S.user) return false;
+            if (S.isSU) return false;
+            const myEmail = String(S.user?.email || "").trim().toLowerCase();
+            const recEmail = String(record.user_email || record.em || "").trim().toLowerCase();
+            const myBranch = resolveCanonicalBranch(myEmail) || resolveCanonicalBranch(S.branchName) || S.branchName;
+            const recBranch = resolveCanonicalBranch(record) || record.branch_name || record.b || "";
+            if (!recBranch || recBranch !== myBranch) return false;
+
+            const myShiftCat = (String(S.shift || "").toLowerCase().includes("tarde") || String(S.shift || "").toLowerCase().includes("vesp")) ? "vespertino" : "matutino";
+            const recShiftCat = getShiftCategory({
+                shift_name: record.shift_name || record.sh,
+                cashier_name: record.cashier_name || record.c,
+                user_email: recEmail,
+                created_at: record.created_at || record.ca
+            });
+            if (recEmail && myEmail && recEmail === myEmail) return true;
+            return recShiftCat === myShiftCat;
+        }
+
         async function publishSale(sale) {
             const ps = packSale(sale);
             if (!ps) return false;
+            ps.dv = DEVICE_ID;
+            _appliedMirrorSaleIds.add(String(ps.id));
+            if (ps.n) _appliedMirrorSaleIds.add(String(ps.n));
+            saveAppliedMirrorSets();
             const dk = ps.dk || toDateKey();
-            const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "s", s: ps });
+            const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "s", s: ps, dv: DEVICE_ID });
             if (ok) markRelaySynced([sale.id, sale.sale_number]);
             return ok;
         }
@@ -1284,59 +1320,89 @@
         async function publishCut(cut) {
             const pc = packCut(cut);
             if (!pc) return false;
+            pc.dv = DEVICE_ID;
             const dk = toDateKey(pc.ca);
-            const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "c", c: pc });
+            const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "c", c: pc, dv: DEVICE_ID });
             if (ok) markRelaySynced([cut.id]);
             return ok;
         }
 
         async function publishCancel(sid, snum, reason, by, createdAt) {
             const dk = toDateKey(createdAt);
-            await postToTopic(TOPIC_PREFIX + dk, { t: "can", id: String(sid || ""), n: String(snum || ""), r: reason, by: by, at: now() });
+            if (sid) _appliedMirrorCancelIds.add(String(sid));
+            if (snum) _appliedMirrorCancelIds.add(String(snum));
+            saveAppliedMirrorSets();
+            await postToTopic(TOPIC_PREFIX + dk, { t: "can", id: String(sid || ""), n: String(snum || ""), r: reason, by: by, at: now(), dv: DEVICE_ID });
             if (dk !== toDateKey()) {
-                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "can", id: String(sid || ""), n: String(snum || ""), r: reason, by: by, at: now() });
+                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "can", id: String(sid || ""), n: String(snum || ""), r: reason, by: by, at: now(), dv: DEVICE_ID });
             }
         }
 
         async function publishDeleteSale(sid, snum, createdAt) {
             const dk = toDateKey(createdAt);
-            await postToTopic(TOPIC_PREFIX + dk, { t: "dels", id: String(sid || ""), n: String(snum || "") });
+            await postToTopic(TOPIC_PREFIX + dk, { t: "dels", id: String(sid || ""), n: String(snum || ""), dv: DEVICE_ID });
             if (dk !== toDateKey()) {
-                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "dels", id: String(sid || ""), n: String(snum || "") });
+                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "dels", id: String(sid || ""), n: String(snum || ""), dv: DEVICE_ID });
             }
         }
 
         async function publishDeleteCut(cid, createdAt) {
             const dk = toDateKey(createdAt);
-            await postToTopic(TOPIC_PREFIX + dk, { t: "delc", id: String(cid || "") });
+            await postToTopic(TOPIC_PREFIX + dk, { t: "delc", id: String(cid || ""), dv: DEVICE_ID });
             if (dk !== toDateKey()) {
-                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "delc", id: String(cid || "") });
+                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "delc", id: String(cid || ""), dv: DEVICE_ID });
             }
         }
 
         async function publishShift(sh) {
             if (!sh) return;
             const dk = toDateKey(sh.opened_at || sh.created_at);
-            await postToTopic(TOPIC_PREFIX + dk, { t: "sh", sh });
+            await postToTopic(TOPIC_PREFIX + dk, { t: "sh", sh, em: S.user?.email || "", dv: DEVICE_ID });
+        }
+
+        async function publishInventory(invObj) {
+            if (!invObj || !S.user) return;
+            const nowMs = Date.now();
+            if (nowMs - _lastInvBroadcastMs < 1200) return;
+            _lastInvBroadcastMs = nowMs;
+            const cb = (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || resolveCanonicalBranch(S.branchName) || S.branchName || "La Fuente Calzada";
+            const cbi = getCanonicalBranchId(cb, S.branchId);
+            await postToTopic(LIVE_MESH_TOPIC, {
+                t: "inv",
+                b: cb,
+                bi: cbi,
+                sh: S.shift || "Mañana",
+                em: S.user?.email || "",
+                dv: DEVICE_ID,
+                inv: invObj
+            });
         }
 
         async function publishDamage(rep) {
             if (!rep) return;
             const dk = toDateKey(rep.created_at);
-            await postToTopic(TOPIC_PREFIX + dk, { t: "dmg", rep });
+            await postToTopic(TOPIC_PREFIX + dk, { t: "dmg", rep, dv: DEVICE_ID });
         }
 
         async function publishNotice(not) {
             if (!not) return;
             const dk = toDateKey(not.created_at);
-            await postToTopic(TOPIC_PREFIX + dk, { t: "not", not });
+            await postToTopic(TOPIC_PREFIX + dk, { t: "not", not, dv: DEVICE_ID });
         }
 
         async function requestBranchSync() {
             const nowMs = Date.now();
-            if (nowMs - _lastReqSyncSent < 15000) return;
+            if (nowMs - _lastReqSyncSent < 10000) return;
             _lastReqSyncSent = nowMs;
-            await postToTopic(LIVE_MESH_TOPIC, { t: "req_sync", d: toDateKey(), from: S.user?.email || "su" });
+            const cb = (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || resolveCanonicalBranch(S.branchName) || S.branchName || "";
+            await postToTopic(LIVE_MESH_TOPIC, {
+                t: "req_sync",
+                d: toDateKey(),
+                from: S.user?.email || "su",
+                b: cb,
+                sh: S.shift || "",
+                dv: DEVICE_ID
+            });
         }
 
         function ingestRelayPayload(obj, isLiveEvent = false) {
@@ -1356,9 +1422,13 @@
                 }
                 const sid = String(s.id);
                 const snum = String(s.sale_number || "");
+                const fromOtherDevice = !packed.dv || packed.dv !== DEVICE_ID;
+                let isBrandNewHere = false;
+
                 if (!_sessionSales.some(x => String(x.id) === sid || (snum && String(x.sale_number) === snum))) {
                     _sessionSales.unshift(s);
                     changed = true;
+                    isBrandNewHere = true;
                     if (isLiveEvent && S.isSU) {
                         toast(`🔔 Venta cobrada en vivo: ${money(s.total)} en ${s.branch_name} (${s.shift_name})`, "success", 3800);
                     }
@@ -1369,11 +1439,72 @@
                     allGSales.unshift(s);
                     gw("all_sales", allGSales);
                     changed = true;
+                    isBrandNewHere = true;
                 } else if (s.status === "CANCELLED" && allGSales[existingIdx].status !== "CANCELLED") {
                     allGSales[existingIdx].status = "CANCELLED";
                     allGSales[existingIdx].cancelled_reason = s.cancelled_reason;
                     gw("all_sales", allGSales);
                     changed = true;
+                }
+
+                // SINCRONIZACIÓN ESPEJO ENTRE MÚLTIPLES DISPOSITIVOS DE LA MISMA CUENTA Y MISMO TURNO
+                if (isMyAccountOrBranchShift(s)) {
+                    const lSales = lr("sales", []);
+                    const lIdx = lSales.findIndex(x => x && (String(x.id) === sid || (snum && String(x.sale_number) === snum)));
+                    if (lIdx === -1) {
+                        lSales.unshift(s);
+                        lw("sales", lSales);
+                        changed = true;
+                        isBrandNewHere = true;
+                    } else if (s.status === "CANCELLED" && lSales[lIdx].status !== "CANCELLED") {
+                        lSales[lIdx].status = "CANCELLED";
+                        lSales[lIdx].cancelled_reason = s.cancelled_reason;
+                        lw("sales", lSales);
+                        changed = true;
+                    }
+
+                    const bKey = getBranchKeyName(s.branch_name);
+                    try {
+                        const bList = lr(bKey + "_sales", []);
+                        if (!bList.some(x => x && (String(x.id) === sid || (snum && String(x.sale_number) === snum)))) {
+                            bList.unshift(s);
+                            lw(bKey + "_sales", bList);
+                            if (s.branch_name === "CNOP") {
+                                lw("cnop_sales", bList);
+                                localStorage.setItem("lf_cnop_sales", JSON.stringify(bList.slice(0, 300)));
+                            } else if (s.branch_name === "La Fuente Calzada") {
+                                lw("calzada_sales", bList);
+                                const calzToday = lr("calzada_today_sales", []);
+                                if (!calzToday.some(x => x && (String(x.id) === sid || (snum && String(x.sale_number) === snum)))) {
+                                    calzToday.unshift(s);
+                                    lw("calzada_today_sales", calzToday);
+                                }
+                            }
+                        }
+                    } catch(e) {}
+
+                    // Descontar inventario automáticamente una sola vez si la venta fue cobrada en otro dispositivo conectado a esta misma cuenta/turno hoy
+                    if (fromOtherDevice && s.status !== "CANCELLED" && toDateKey(s.created_at) === toDateKey() && !_appliedMirrorSaleIds.has(sid) && (!snum || !_appliedMirrorSaleIds.has(snum))) {
+                        _appliedMirrorSaleIds.add(sid);
+                        if (snum) _appliedMirrorSaleIds.add(snum);
+                        saveAppliedMirrorSets();
+                        if (isLiveEvent && Array.isArray(s.items) && typeof deductStock === "function") {
+                            s.items.forEach(it => {
+                                deductStock(it.product_id, Number(it.quantity || 1), it.product_name, null, true);
+                            });
+                            if (S.view === "pos" && typeof renderPOS === "function" && typeof filtered === "function") {
+                                renderPOS(filtered());
+                            } else if (S.view === "inventory" && typeof loadInventory === "function") {
+                                loadInventory();
+                            }
+                        }
+                        if (isLiveEvent && isBrandNewHere && !S.isSU) {
+                            toast(`🔄 Venta sincronizada en este turno: ${money(s.total)} (Ticket #${s.sale_number})`, "info", 3200);
+                        }
+                    } else {
+                        _appliedMirrorSaleIds.add(sid);
+                        if (snum) _appliedMirrorSaleIds.add(snum);
+                    }
                 }
             };
 
@@ -1381,13 +1512,36 @@
                 const c = unpackCut(packed);
                 if (!c || deletedCutIds.has(String(c.id))) return;
                 const allCuts = gr("all_cuts", []);
+                let isNewCut = false;
                 if (!allCuts.some(x => x && String(x.id) === String(c.id))) {
                     allCuts.unshift(c);
                     gw("all_cuts", allCuts);
                     _cachedConsolidatedCuts = null;
                     changed = true;
+                    isNewCut = true;
                     if (isLiveEvent && S.isSU) {
                         toast(`✂️ Nuevo Corte de Caja: ${c.branch_name} (${c.shift_name}) — Total: ${money(c.total_sales || c.net_sales_without_fund || 0)}`, "info", 4500);
+                    }
+                }
+                if (isMyAccountOrBranchShift(c)) {
+                    const lCuts = lr("cuts", []);
+                    if (!lCuts.some(x => x && String(x.id) === String(c.id))) {
+                        lCuts.unshift(c);
+                        lw("cuts", lCuts);
+                        changed = true;
+                        isNewCut = true;
+                    }
+                    const bKeyCut = getBranchKeyName(c.branch_name);
+                    try {
+                        const rawBCuts = localStorage.getItem("lf_" + bKeyCut + "_cuts");
+                        const bCutsArr = rawBCuts ? JSON.parse(rawBCuts) : [];
+                        if (!bCutsArr.some(x => x && String(x.id) === String(c.id))) {
+                            bCutsArr.unshift(c);
+                            localStorage.setItem("lf_" + bKeyCut + "_cuts", JSON.stringify(bCutsArr));
+                        }
+                    } catch(e) {}
+                    if (isLiveEvent && isNewCut && !S.isSU && (!packed.dv || packed.dv !== DEVICE_ID)) {
+                        toast(`✂️ Corte de turno sincronizado desde otro dispositivo (${money(c.total_sales || 0)})`, "info", 4000);
                     }
                 }
             };
@@ -1407,16 +1561,51 @@
                 if (snum) cancelledReasons[snum] = reason;
                 gw("cancelled_reasons", cancelledReasons);
                 lw("cancelled_reasons", cancelledReasons);
+                let cancelledSaleObj = null;
                 const allGSales = gr("all_sales", []);
                 allGSales.forEach(x => {
                     if (x && ((sid && String(x.id) === sid) || (snum && String(x.sale_number) === snum))) {
                         x.status = "CANCELLED";
                         x.cancelled_reason = reason;
                         x.cancelled_by = obj.by || "Encargada";
+                        cancelledSaleObj = x;
                         changed = true;
                     }
                 });
                 if (changed) gw("all_sales", allGSales);
+
+                const lSales = lr("sales", []);
+                let lChanged = false;
+                lSales.forEach(x => {
+                    if (x && ((sid && String(x.id) === sid) || (snum && String(x.sale_number) === snum))) {
+                        x.status = "CANCELLED";
+                        x.cancelled_reason = reason;
+                        x.cancelled_by = obj.by || "Encargada";
+                        if (!cancelledSaleObj) cancelledSaleObj = x;
+                        lChanged = true;
+                        changed = true;
+                    }
+                });
+                if (lChanged) lw("sales", lSales);
+
+                if (isLiveEvent && (!obj.dv || obj.dv !== DEVICE_ID) && cancelledSaleObj && isMyAccountOrBranchShift(cancelledSaleObj)) {
+                    const cKey = sid || snum;
+                    if (cKey && !_appliedMirrorCancelIds.has(cKey)) {
+                        if (sid) _appliedMirrorCancelIds.add(sid);
+                        if (snum) _appliedMirrorCancelIds.add(snum);
+                        saveAppliedMirrorSets();
+                        if (Array.isArray(cancelledSaleObj.items) && typeof addStock === "function") {
+                            cancelledSaleObj.items.forEach(it => {
+                                addStock(it.product_id, Number(it.quantity || 1), it.product_name, true);
+                            });
+                            if (S.view === "pos" && typeof renderPOS === "function" && typeof filtered === "function") renderPOS(filtered());
+                            else if (S.view === "inventory" && typeof loadInventory === "function") loadInventory();
+                        }
+                        if (!S.isSU) {
+                            toast(`🚫 Ticket #${snum || sid} cancelado en otro dispositivo de este turno.`, "warn", 3500);
+                        }
+                    }
+                }
             } else if (obj.t === "dels") {
                 const sid = String(obj.id || "");
                 const snum = String(obj.n || "");
@@ -1424,6 +1613,7 @@
                 if (snum) deletedSaleIds.add(snum);
                 gw("deleted_sale_ids", Array.from(deletedSaleIds));
                 gw("all_sales", gr("all_sales", []).filter(x => x && String(x.id) !== sid && String(x.sale_number) !== snum));
+                lw("sales", lr("sales", []).filter(x => x && String(x.id) !== sid && String(x.sale_number) !== snum));
                 _sessionSales = _sessionSales.filter(x => x && String(x.id) !== sid && String(x.sale_number) !== snum);
                 changed = true;
             } else if (obj.t === "delc") {
@@ -1433,6 +1623,7 @@
                     gw("deleted_cut_ids", Array.from(deletedCutIds));
                     lw("deleted_cut_ids", Array.from(deletedCutIds));
                     gw("all_cuts", gr("all_cuts", []).filter(x => x && String(x.id) !== cid));
+                    lw("cuts", lr("cuts", []).filter(x => x && String(x.id) !== cid));
                     _cachedConsolidatedCuts = null;
                     changed = true;
                 }
@@ -1442,6 +1633,39 @@
                 if (!allShifts.some(x => x && String(x.id) === String(sh.id))) {
                     allShifts.unshift(sh);
                     gw("all_shifts", allShifts);
+                    changed = true;
+                }
+                if (isMyAccountOrBranchShift({ ...sh, user_email: obj.em || sh.user_email })) {
+                    S.currentShift = sh;
+                    lw("current_shift", sh);
+                    const lShifts = lr("shifts", []);
+                    if (!lShifts.some(x => x && String(x.id) === String(sh.id))) {
+                        lShifts.unshift(sh);
+                        lw("shifts", lShifts);
+                    }
+                    changed = true;
+                    if (isLiveEvent && (!obj.dv || obj.dv !== DEVICE_ID) && !S.isSU) {
+                        toast(`🌅 Fondo inicial de turno sincronizado: ${money(sh.opening_amount || 0)}`, "info", 3500);
+                        if (S.view === "shift" && typeof loadShiftView === "function") loadShiftView();
+                    }
+                }
+            } else if (obj.t === "inv" && obj.inv && typeof obj.inv === "object") {
+                if (obj.dv && obj.dv === DEVICE_ID) return false;
+                const targetBranch = resolveCanonicalBranch({ branch_name: obj.b, branch_id: obj.bi, user_email: obj.em }) || obj.b || "";
+                const bKey = getBranchKeyName(targetBranch);
+                if (bKey) {
+                    gw("inv_" + bKey, obj.inv);
+                }
+                if (obj.bi) {
+                    gw("inv_" + obj.bi, obj.inv);
+                }
+                const myBranch = (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || resolveCanonicalBranch(S.branchName) || S.branchName;
+                if (targetBranch && myBranch && targetBranch === myBranch) {
+                    S.inv = { ...S.inv, ...obj.inv };
+                    if (typeof saveBranchInv === "function") saveBranchInv(S.inv, true);
+                    if (typeof alertInv === "function") alertInv();
+                    if (S.view === "pos" && typeof renderPOS === "function" && typeof filtered === "function") renderPOS(filtered());
+                    else if (S.view === "inventory" && typeof loadInventory === "function") loadInventory();
                     changed = true;
                 }
             } else if (obj.t === "dmg" && obj.rep) {
@@ -1622,8 +1846,19 @@
                         const ev = JSON.parse(e.data);
                         const msgStr = (ev && ev.message) ? ev.message : e.data;
                         const payload = typeof msgStr === "string" ? JSON.parse(msgStr) : msgStr;
-                        if (payload && payload.t === "req_sync") {
+                        if (!payload) return;
+                        if (payload.t === "req_sync") {
+                            if (payload.dv && payload.dv === DEVICE_ID) return;
                             syncLocalDayRecords(true);
+                            if (!S.isSU && S.inv && Object.keys(S.inv).length) {
+                                const myBranch = resolveCanonicalBranch(S.user?.email) || resolveCanonicalBranch(S.branchName) || S.branchName;
+                                if (!payload.b || payload.b === myBranch) {
+                                    publishInventory(S.inv);
+                                    if (S.currentShift) publishShift(S.currentShift);
+                                }
+                            }
+                        } else {
+                            ingestRelayPayload(payload, true);
                         }
                     } catch(err) {}
                 };
@@ -1637,6 +1872,7 @@
             publishDeleteSale,
             publishDeleteCut,
             publishShift,
+            publishInventory,
             publishDamage,
             publishNotice,
             requestBranchSync,
@@ -2505,7 +2741,7 @@
         return "calzada";
     }
 
-    function saveBranchInv(customInv = null) {
+    function saveBranchInv(customInv = null, silentRemote = false) {
         const invToSave = customInv || S.inv;
         const branchKey = getBranchKeyName(S.branchName);
         const isTag1 = isTagarete1Active();
@@ -2566,6 +2802,13 @@
                 lw("inv_cnop", invToSave);
             } catch(e) {}
         }
+
+        if (silentRemote) return;
+
+        // Difundir inventario en tiempo real a todos los dispositivos conectados a la misma cuenta/sucursal (incluso sin cuota Supabase)
+        try {
+            CloudBackupRelay.publishInventory(invToSave);
+        } catch(e) {}
         
         // Difundir en tiempo real a todas las pantallas activas
         if (realtimeChannel) {
@@ -2801,7 +3044,7 @@
         return S.inv[id]; 
     }
 
-    function deductStock(id, qty = 1, name = "", dynamicComponents = null) { 
+    function deductStock(id, qty = 1, name = "", dynamicComponents = null, silentRemote = false) { 
         // 1. Descontar el producto base
         const cur = getStock(id);
         S.inv[id] = Math.max(0, cur - qty); 
@@ -3021,11 +3264,11 @@
             });
         }
 
-        saveBranchInv(); 
+        saveBranchInv(null, silentRemote); 
         alertInv(); 
     }
 
-    function addStock(id, qty = 1, name = "") { 
+    function addStock(id, qty = 1, name = "", silentRemote = false) { 
         // 1. Reintegrar el producto base
         const maxS = getMaxStock(id);
         S.inv[id] = Math.min(maxS, getStock(id) + qty); 
@@ -3084,7 +3327,7 @@
             });
         }
 
-        saveBranchInv(); 
+        saveBranchInv(null, silentRemote); 
         alertInv(); 
     }
 
@@ -22892,17 +23135,15 @@
             }
             _lastSalesCount = consolidated.length;
 
-            if (S.isSU) {
-                try { CloudBackupRelay.requestBranchSync(); } catch(e) {}
-                if (realtimeChannel) {
-                    try {
-                        realtimeChannel.send({
-                            type: "broadcast",
-                            event: "request_sync",
-                            payload: { from: S.user?.email }
-                        });
-                    } catch(e) {}
-                }
+            try { CloudBackupRelay.requestBranchSync(); } catch(e) {}
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "request_sync",
+                        payload: { from: S.user?.email }
+                    });
+                } catch(e) {}
             }
             safeSilentRefresh();
         } catch(e) {
@@ -23048,6 +23289,13 @@
                         allGSales.unshift(s);
                         gw("all_sales", allGSales);
                     }
+                    if (!S.isSU && matchesBranch(s, { id: S.branchId, name: S.branchName })) {
+                        const lSales = lr("sales", []);
+                        if (!lSales.some(x => String(x.id) === sid || (x.sale_number && x.sale_number === s.sale_number))) {
+                            lSales.unshift(s);
+                            lw("sales", lSales);
+                        }
+                    }
                     _cachedConsolidatedSales = null;
                     if (S.isSU) {
                         toast(`🔔 Venta cobrada en vivo: ${money(s.total)} en ${s.branch_name || 'Sucursal'} (${s.shift_name || 'Turno'})`, "success", 4000);
@@ -23062,6 +23310,13 @@
                     if (!allCuts.some(x => String(x.id) === String(c.id))) {
                         allCuts.unshift(c);
                         gw("all_cuts", allCuts);
+                    }
+                    if (!S.isSU && matchesBranch(c, { id: S.branchId, name: S.branchName })) {
+                        const lCuts = lr("cuts", []);
+                        if (!lCuts.some(x => String(x.id) === String(c.id))) {
+                            lCuts.unshift(c);
+                            lw("cuts", lCuts);
+                        }
                     }
                     if (S.isSU) {
                         toast(`✂️ Nuevo Corte de Caja: ${c.branch_name || 'Sucursal'} (${c.shift_name || 'Turno'}) — Total: ${money(c.total_sales || c.net_sales_without_fund || 0)}`, "info", 5000);
@@ -23143,8 +23398,8 @@
                         gw("inv_" + normalizeBranchName(payload.branch_name).replace(/\s+/g, "_"), payload.inv);
                     }
                     if (matchesBranch({ branch_id: payload.branch_id, branch_name: payload.branch_name }, { id: S.branchId, name: S.branchName })) {
-                        S.inv = { ...payload.inv };
-                        lw("inv", S.inv);
+                        S.inv = { ...S.inv, ...payload.inv };
+                        saveBranchInv(S.inv, true);
                         alertInv();
                         if (S.view === "inventory") await loadInventory();
                         else if (S.view === "pos") renderPOS(filtered());
@@ -23258,8 +23513,15 @@
                         });
                         gw("all_cuts", Array.from(mapC.values()));
                     }
-                    if (payload.inv && payload.branch_id) {
-                        gw("inv_" + payload.branch_id, payload.inv);
+                    if (payload.inv && (payload.branch_id || payload.branch_name)) {
+                        if (payload.branch_id) gw("inv_" + payload.branch_id, payload.inv);
+                        if (!S.isSU && matchesBranch({ branch_id: payload.branch_id, branch_name: payload.branch_name }, { id: S.branchId, name: S.branchName })) {
+                            S.inv = { ...S.inv, ...payload.inv };
+                            saveBranchInv(S.inv, true);
+                            alertInv();
+                            if (S.view === "pos") renderPOS(filtered());
+                            else if (S.view === "inventory") await loadInventory();
+                        }
                     }
                     if (payload.custom_products && Array.isArray(payload.custom_products)) {
                         const branchDelKey = getBranchExplicitDeletedKey(S.branchName);
@@ -23539,6 +23801,7 @@
             initSearch();
             setupRealtime();
             syncPendingSalesToSupabase();
+            try { CloudBackupRelay.requestBranchSync(); } catch(e) {}
             await fetchCloudRecordsForDateRange(toDateKey(), toDateKey(), true);
             await getConsolidatedSalesForChain(true);
             autoReconnectPrinters();
