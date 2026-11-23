@@ -1125,10 +1125,537 @@
     }
     cleanCalzadaGhostSales();
 
-    /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE (VENTAS Y CORTES DE CNOP Y TODAS LAS SUCURSALES) ── */
+    /* ── NUBE DE RESPALDO AUTOMÁTICA GRATUITA (PUENTE SECUNDARIO EN VIVO + HISTÓRICO POR DÍA SIN LÍMITE DE CUOTA SUPABASE) ── */
+    const CloudBackupRelay = (() => {
+        const RELAY_BASE = "https://ntfy.sh";
+        const TOPIC_PREFIX = "lf_pos_cloud_day_v99_";
+        const LIVE_MESH_TOPIC = "lf_pos_cloud_mesh_v99";
+        let _dayEventSource = null;
+        let _meshEventSource = null;
+        let _activeStreamDate = "";
+        let _isRelaySyncing = false;
+        let _lastReqSyncSent = 0;
+
+        function packSale(s) {
+            if (!s) return null;
+            const cb = resolveCanonicalBranch(s) || (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || s.branch_name || S.branchName || "La Fuente Calzada";
+            const cbi = getCanonicalBranchId(cb, s.branch_id || S.branchId);
+            return {
+                id: String(s.id || s.sale_number || ("sale_" + Date.now())),
+                n: String(s.sale_number || s.id || ""),
+                b: cb,
+                bi: cbi,
+                sh: s.shift_name || (getShiftCategory(s) === "vespertino" ? "Tarde" : "Mañana"),
+                c: s.cashier_name || "Encargada",
+                em: s.user_email || (!S.isSU ? (S.user?.email || "") : ""),
+                tot: Number(s.total || 0),
+                pm: s.payment_method || "cash",
+                st: String(s.status || "").toUpperCase() === "CANCELLED" ? "CANCELLED" : "COMPLETED",
+                cr: s.cancelled_reason || null,
+                cb: s.cancelled_by || null,
+                ca: s.created_at || now(),
+                dk: s.date_key || toDateKey(s.created_at),
+                it: (s.items || []).map(i => ({
+                    id: i.product_id || i.id || "",
+                    nm: String(i.product_name || i.name || "Producto").slice(0, 42),
+                    q: Number(i.quantity || i.qty || 1),
+                    p: Number(i.price || 0),
+                    s: Number(i.subtotal != null ? i.subtotal : (Number(i.price || 0) * Number(i.quantity || 1)))
+                }))
+            };
+        }
+
+        function unpackSale(p) {
+            if (!p || (!p.id && !p.n)) return null;
+            const bName = resolveCanonicalBranch({
+                branch_name: p.b,
+                branch_id: p.bi,
+                cashier_name: p.c,
+                user_email: p.em
+            }) || p.b || "La Fuente Calzada";
+            const bId = getCanonicalBranchId(bName, p.bi);
+            return {
+                id: p.id,
+                sale_number: p.n || p.id,
+                branch_id: bId,
+                branch_name: bName,
+                shift_name: p.sh || (getShiftCategory({ cashier_name: p.c, user_email: p.em, created_at: p.ca }) === "vespertino" ? "Tarde" : "Mañana"),
+                cashier_name: p.c || "Encargada",
+                user_email: p.em || "",
+                total: Number(p.tot || 0),
+                payment_method: p.pm || "cash",
+                status: p.st === "CANCELLED" ? "CANCELLED" : "COMPLETED",
+                cancelled_reason: p.cr || null,
+                cancelled_by: p.cb || null,
+                created_at: p.ca || now(),
+                date_key: p.dk || toDateKey(p.ca),
+                local_id: p.id,
+                items: (p.it || []).map(i => ({
+                    product_id: i.id,
+                    product_name: i.nm,
+                    quantity: Number(i.q || 1),
+                    price: Number(i.p || 0),
+                    subtotal: Number(i.s != null ? i.s : (Number(i.p || 0) * Number(i.q || 1)))
+                }))
+            };
+        }
+
+        function packCut(ct) {
+            if (!ct) return null;
+            const cb = resolveCanonicalBranch(ct) || (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || ct.branch_name || S.branchName || "La Fuente Calzada";
+            const cbi = getCanonicalBranchId(cb, ct.branch_id || S.branchId);
+            return {
+                id: String(ct.id || ("cut_" + Date.now())),
+                b: cb,
+                bi: cbi,
+                sh: ct.shift_name || S.shift || "Mañana",
+                c: ct.performed_by_name || ct.cashier_name || "Encargada",
+                em: ct.user_email || (!S.isSU ? (S.user?.email || "") : ""),
+                oa: Number(ct.opening_amount || 0),
+                cs: Number(ct.cash_sales || 0),
+                cd: Number(ct.card_sales || 0),
+                ts: Number(ct.total_sales || 0),
+                ec: Number(ct.expected_cash || 0),
+                cc: Number(ct.counted_cash || 0),
+                df: Number(ct.difference || 0),
+                nw: Number(ct.net_sales_without_fund != null ? ct.net_sales_without_fund : (Number(ct.counted_cash || 0) - Number(ct.opening_amount || 0))),
+                ca: ct.created_at || now()
+            };
+        }
+
+        function unpackCut(p) {
+            if (!p || !p.id) return null;
+            const bName = resolveCanonicalBranch({
+                branch_name: p.b,
+                branch_id: p.bi,
+                cashier_name: p.c,
+                user_email: p.em
+            }) || p.b || "La Fuente Calzada";
+            return {
+                id: p.id,
+                branch_id: getCanonicalBranchId(bName, p.bi),
+                branch_name: bName,
+                shift_name: p.sh || "Mañana",
+                cashier_name: p.c || "Encargada",
+                performed_by_name: p.c || "Encargada",
+                user_email: p.em || "",
+                opening_amount: Number(p.oa || 0),
+                cash_sales: Number(p.cs || 0),
+                card_sales: Number(p.cd || 0),
+                total_sales: Number(p.ts || 0),
+                expected_cash: Number(p.ec || 0),
+                counted_cash: Number(p.cc || 0),
+                difference: Number(p.df || 0),
+                net_sales_without_fund: Number(p.nw || 0),
+                created_at: p.ca || now()
+            };
+        }
+
+        async function postToTopic(topic, obj) {
+            try {
+                const body = JSON.stringify(obj);
+                const res = await fetch(`${RELAY_BASE}/${topic}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=UTF-8" },
+                    body
+                });
+                return res.ok;
+            } catch(e) {
+                return false;
+            }
+        }
+
+        function markRelaySynced(ids) {
+            if (!ids || !ids.length) return;
+            const set = new Set(gr("relay_synced_ids_v99", []));
+            ids.forEach(id => { if (id) set.add(String(id)); });
+            gw("relay_synced_ids_v99", Array.from(set).slice(-1500));
+        }
+
+        async function publishSale(sale) {
+            const ps = packSale(sale);
+            if (!ps) return false;
+            const dk = ps.dk || toDateKey();
+            const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "s", s: ps });
+            if (ok) markRelaySynced([sale.id, sale.sale_number]);
+            return ok;
+        }
+
+        async function publishCut(cut) {
+            const pc = packCut(cut);
+            if (!pc) return false;
+            const dk = toDateKey(pc.ca);
+            const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "c", c: pc });
+            if (ok) markRelaySynced([cut.id]);
+            return ok;
+        }
+
+        async function publishCancel(sid, snum, reason, by, createdAt) {
+            const dk = toDateKey(createdAt);
+            await postToTopic(TOPIC_PREFIX + dk, { t: "can", id: String(sid || ""), n: String(snum || ""), r: reason, by: by, at: now() });
+            if (dk !== toDateKey()) {
+                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "can", id: String(sid || ""), n: String(snum || ""), r: reason, by: by, at: now() });
+            }
+        }
+
+        async function publishDeleteSale(sid, snum, createdAt) {
+            const dk = toDateKey(createdAt);
+            await postToTopic(TOPIC_PREFIX + dk, { t: "dels", id: String(sid || ""), n: String(snum || "") });
+            if (dk !== toDateKey()) {
+                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "dels", id: String(sid || ""), n: String(snum || "") });
+            }
+        }
+
+        async function publishDeleteCut(cid, createdAt) {
+            const dk = toDateKey(createdAt);
+            await postToTopic(TOPIC_PREFIX + dk, { t: "delc", id: String(cid || "") });
+            if (dk !== toDateKey()) {
+                await postToTopic(TOPIC_PREFIX + toDateKey(), { t: "delc", id: String(cid || "") });
+            }
+        }
+
+        async function publishShift(sh) {
+            if (!sh) return;
+            const dk = toDateKey(sh.opened_at || sh.created_at);
+            await postToTopic(TOPIC_PREFIX + dk, { t: "sh", sh });
+        }
+
+        async function publishDamage(rep) {
+            if (!rep) return;
+            const dk = toDateKey(rep.created_at);
+            await postToTopic(TOPIC_PREFIX + dk, { t: "dmg", rep });
+        }
+
+        async function publishNotice(not) {
+            if (!not) return;
+            const dk = toDateKey(not.created_at);
+            await postToTopic(TOPIC_PREFIX + dk, { t: "not", not });
+        }
+
+        async function requestBranchSync() {
+            const nowMs = Date.now();
+            if (nowMs - _lastReqSyncSent < 15000) return;
+            _lastReqSyncSent = nowMs;
+            await postToTopic(LIVE_MESH_TOPIC, { t: "req_sync", d: toDateKey(), from: S.user?.email || "su" });
+        }
+
+        function ingestRelayPayload(obj, isLiveEvent = false) {
+            if (!obj || typeof obj !== "object") return false;
+            let changed = false;
+            const deletedSaleIds = new Set(gr("deleted_sale_ids", []));
+            const deletedCutIds = new Set(gr("deleted_cut_ids", []));
+            const cancelledReasons = Object.assign({}, lr("cancelled_reasons", {}), gr("cancelled_reasons", {}));
+
+            const ingestOneSale = (packed) => {
+                const s = unpackSale(packed);
+                if (!s || isSystemNonSaleRecord(s)) return;
+                if (deletedSaleIds.has(String(s.id)) || deletedSaleIds.has(String(s.sale_number))) return;
+                if (cancelledReasons[String(s.id)] || cancelledReasons[String(s.sale_number)]) {
+                    s.status = "CANCELLED";
+                    s.cancelled_reason = s.cancelled_reason || cancelledReasons[String(s.id)] || cancelledReasons[String(s.sale_number)];
+                }
+                const sid = String(s.id);
+                const snum = String(s.sale_number || "");
+                if (!_sessionSales.some(x => String(x.id) === sid || (snum && String(x.sale_number) === snum))) {
+                    _sessionSales.unshift(s);
+                    changed = true;
+                    if (isLiveEvent && S.isSU) {
+                        toast(`🔔 Venta cobrada en vivo: ${money(s.total)} en ${s.branch_name} (${s.shift_name})`, "success", 3800);
+                    }
+                }
+                const allGSales = gr("all_sales", []);
+                const existingIdx = allGSales.findIndex(x => x && (String(x.id) === sid || (snum && String(x.sale_number) === snum)));
+                if (existingIdx === -1) {
+                    allGSales.unshift(s);
+                    gw("all_sales", allGSales);
+                    changed = true;
+                } else if (s.status === "CANCELLED" && allGSales[existingIdx].status !== "CANCELLED") {
+                    allGSales[existingIdx].status = "CANCELLED";
+                    allGSales[existingIdx].cancelled_reason = s.cancelled_reason;
+                    gw("all_sales", allGSales);
+                    changed = true;
+                }
+            };
+
+            const ingestOneCut = (packed) => {
+                const c = unpackCut(packed);
+                if (!c || deletedCutIds.has(String(c.id))) return;
+                const allCuts = gr("all_cuts", []);
+                if (!allCuts.some(x => x && String(x.id) === String(c.id))) {
+                    allCuts.unshift(c);
+                    gw("all_cuts", allCuts);
+                    _cachedConsolidatedCuts = null;
+                    changed = true;
+                    if (isLiveEvent && S.isSU) {
+                        toast(`✂️ Nuevo Corte de Caja: ${c.branch_name} (${c.shift_name}) — Total: ${money(c.total_sales || c.net_sales_without_fund || 0)}`, "info", 4500);
+                    }
+                }
+            };
+
+            if (obj.t === "s" && obj.s) {
+                ingestOneSale(obj.s);
+            } else if (obj.t === "c" && obj.c) {
+                ingestOneCut(obj.c);
+            } else if (obj.t === "batch") {
+                if (Array.isArray(obj.s)) obj.s.forEach(ingestOneSale);
+                if (Array.isArray(obj.c)) obj.c.forEach(ingestOneCut);
+            } else if (obj.t === "can") {
+                const sid = String(obj.id || "");
+                const snum = String(obj.n || "");
+                const reason = obj.r || "Cancelada";
+                if (sid) cancelledReasons[sid] = reason;
+                if (snum) cancelledReasons[snum] = reason;
+                gw("cancelled_reasons", cancelledReasons);
+                lw("cancelled_reasons", cancelledReasons);
+                const allGSales = gr("all_sales", []);
+                allGSales.forEach(x => {
+                    if (x && ((sid && String(x.id) === sid) || (snum && String(x.sale_number) === snum))) {
+                        x.status = "CANCELLED";
+                        x.cancelled_reason = reason;
+                        x.cancelled_by = obj.by || "Encargada";
+                        changed = true;
+                    }
+                });
+                if (changed) gw("all_sales", allGSales);
+            } else if (obj.t === "dels") {
+                const sid = String(obj.id || "");
+                const snum = String(obj.n || "");
+                if (sid) deletedSaleIds.add(sid);
+                if (snum) deletedSaleIds.add(snum);
+                gw("deleted_sale_ids", Array.from(deletedSaleIds));
+                gw("all_sales", gr("all_sales", []).filter(x => x && String(x.id) !== sid && String(x.sale_number) !== snum));
+                _sessionSales = _sessionSales.filter(x => x && String(x.id) !== sid && String(x.sale_number) !== snum);
+                changed = true;
+            } else if (obj.t === "delc") {
+                const cid = String(obj.id || "");
+                if (cid) {
+                    deletedCutIds.add(cid);
+                    gw("deleted_cut_ids", Array.from(deletedCutIds));
+                    lw("deleted_cut_ids", Array.from(deletedCutIds));
+                    gw("all_cuts", gr("all_cuts", []).filter(x => x && String(x.id) !== cid));
+                    _cachedConsolidatedCuts = null;
+                    changed = true;
+                }
+            } else if (obj.t === "sh" && obj.sh) {
+                const sh = obj.sh;
+                const allShifts = gr("all_shifts", []);
+                if (!allShifts.some(x => x && String(x.id) === String(sh.id))) {
+                    allShifts.unshift(sh);
+                    gw("all_shifts", allShifts);
+                    changed = true;
+                }
+            } else if (obj.t === "dmg" && obj.rep) {
+                const rep = obj.rep;
+                const allReps = gr("all_damage_reports", []);
+                if (!allReps.some(x => x && String(x.id) === String(rep.id))) {
+                    allReps.unshift(rep);
+                    gw("all_damage_reports", allReps);
+                    changed = true;
+                }
+            } else if (obj.t === "not" && obj.not) {
+                const not = obj.not;
+                const allNotices = gr("all_notices", []);
+                if (!allNotices.some(x => x && String(x.id) === String(not.id))) {
+                    allNotices.unshift(not);
+                    gw("all_notices", allNotices);
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                _cachedConsolidatedSales = null;
+                if (isLiveEvent) {
+                    safeSilentRefresh(true);
+                }
+            }
+            return changed;
+        }
+
+        async function syncLocalDayRecords(forceAllToday = false) {
+            if (_isRelaySyncing) return;
+            _isRelaySyncing = true;
+            try {
+                const todayKey = toDateKey();
+                const relaySynced = new Set(gr("relay_synced_ids_v99", []));
+                const allLocalSales = lr("pending_sync_sales", [])
+                    .concat(lr("sales", []))
+                    .concat(lr("cnop_sales", []))
+                    .concat(typeof getLocalBranchSales === "function" ? getLocalBranchSales(null) : []);
+
+                const seenS = new Set();
+                const toUploadSalesByDate = new Map();
+                allLocalSales.forEach(s => {
+                    if (!s || !s.id || isSystemNonSaleRecord(s) || isStaticBaseSale(s)) return;
+                    const sid = String(s.id);
+                    const snum = String(s.sale_number || "");
+                    if (sid.startsWith("sale_calz_today_") || sid.startsWith("sale_1789")) return;
+                    if (seenS.has(sid) || (snum && seenS.has(snum))) return;
+                    seenS.add(sid);
+                    if (snum) seenS.add(snum);
+
+                    const dk = toDateKey(s.created_at);
+                    // Subir ventas de hoy (y pendientes recientes) que aún no estén en el buzón de respaldo
+                    if (!forceAllToday && relaySynced.has(sid) && (!snum || relaySynced.has(snum))) return;
+                    if (forceAllToday && dk !== todayKey && relaySynced.has(sid)) return;
+                    const ps = packSale(s);
+                    if (!ps) return;
+                    if (!toUploadSalesByDate.has(dk)) toUploadSalesByDate.set(dk, []);
+                    toUploadSalesByDate.get(dk).push(ps);
+                });
+
+                for (const [dk, list] of toUploadSalesByDate.entries()) {
+                    // Enviar en lotes compactos de 6 ventas (< 2.5 KB por mensaje) para almacenamiento inline garantizado
+                    for (let i = 0; i < list.length; i += 6) {
+                        const chunk = list.slice(i, i + 6);
+                        const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "batch", s: chunk });
+                        if (ok) {
+                            const syncedNow = [];
+                            chunk.forEach(x => { syncedNow.push(x.id, x.n); });
+                            markRelaySynced(syncedNow);
+                        }
+                    }
+                }
+
+                // Subir también cortes de caja locales del día
+                const allLocalCuts = lr("pending_sync_cuts", [])
+                    .concat(lr("cnop_cuts", []))
+                    .concat(lr("cuts", []))
+                    .concat(gr("all_cuts", []));
+                const seenC = new Set();
+                const toUploadCutsByDate = new Map();
+                allLocalCuts.forEach(ct => {
+                    if (!ct || !ct.id) return;
+                    const cid = String(ct.id);
+                    if (cid.startsWith("cut_calzada_today_") || cid.startsWith("cut_tag1_today_") || cid.startsWith("cut_res_today_") || cid.startsWith("cut_cnop_today_") || cid.startsWith("cut_t2_today_") || cid.startsWith("cut_1789")) return;
+                    if (seenC.has(cid)) return;
+                    seenC.add(cid);
+                    const dk = toDateKey(ct.created_at);
+                    if (!forceAllToday && relaySynced.has(cid)) return;
+                    if (forceAllToday && dk !== todayKey && relaySynced.has(cid)) return;
+                    const pc = packCut(ct);
+                    if (!pc) return;
+                    if (!toUploadCutsByDate.has(dk)) toUploadCutsByDate.set(dk, []);
+                    toUploadCutsByDate.get(dk).push(pc);
+                });
+
+                for (const [dk, list] of toUploadCutsByDate.entries()) {
+                    for (let i = 0; i < list.length; i += 6) {
+                        const chunk = list.slice(i, i + 6);
+                        const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "batch", c: chunk });
+                        if (ok) {
+                            markRelaySynced(chunk.map(x => x.id));
+                        }
+                    }
+                }
+            } catch(e) {
+            } finally {
+                _isRelaySyncing = false;
+            }
+        }
+
+        async function fetchDate(dateKeyStr) {
+            const dk = String(dateKeyStr || toDateKey()).trim().slice(0, 10);
+            try {
+                const res = await fetch(`${RELAY_BASE}/${TOPIC_PREFIX}${dk}/json?poll=1&since=all`);
+                if (!res.ok) return false;
+                const text = await res.text();
+                if (!text || !text.trim()) return true;
+                const lines = text.split("\n");
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+                    try {
+                        const ev = JSON.parse(trimmed);
+                        if (ev && ev.event === "message" && ev.message) {
+                            const payload = JSON.parse(ev.message);
+                            ingestRelayPayload(payload, false);
+                        }
+                    } catch(e) {}
+                }
+                return true;
+            } catch(e) {
+                return false;
+            }
+        }
+
+        async function fetchDateRange(startKey, endKey) {
+            const sKey = String(startKey || toDateKey()).trim().slice(0, 10);
+            const eKey = String(endKey || sKey).trim().slice(0, 10);
+            const datesToFetch = [];
+            let cur = eKey;
+            for (let i = 0; i < 8; i++) {
+                datesToFetch.push(cur);
+                if (cur <= sKey) break;
+                cur = shiftDateKeyByDays(cur, -1);
+            }
+            await Promise.all(datesToFetch.map(d => fetchDate(d)));
+        }
+
+        function startLiveStream() {
+            if (typeof EventSource === "undefined") return;
+            const todayKey = toDateKey();
+            if (_dayEventSource && _activeStreamDate === todayKey) return;
+            try {
+                if (_dayEventSource) _dayEventSource.close();
+            } catch(e) {}
+            try {
+                if (_meshEventSource) _meshEventSource.close();
+            } catch(e) {}
+
+            _activeStreamDate = todayKey;
+            try {
+                _dayEventSource = new EventSource(`${RELAY_BASE}/${TOPIC_PREFIX}${todayKey}/sse`);
+                _dayEventSource.onmessage = (e) => {
+                    try {
+                        const ev = JSON.parse(e.data);
+                        const msgStr = (ev && ev.message) ? ev.message : e.data;
+                        const payload = typeof msgStr === "string" ? JSON.parse(msgStr) : msgStr;
+                        ingestRelayPayload(payload, true);
+                    } catch(err) {}
+                };
+            } catch(e) {}
+
+            try {
+                _meshEventSource = new EventSource(`${RELAY_BASE}/${LIVE_MESH_TOPIC}/sse`);
+                _meshEventSource.onmessage = (e) => {
+                    try {
+                        const ev = JSON.parse(e.data);
+                        const msgStr = (ev && ev.message) ? ev.message : e.data;
+                        const payload = typeof msgStr === "string" ? JSON.parse(msgStr) : msgStr;
+                        if (payload && payload.t === "req_sync") {
+                            syncLocalDayRecords(true);
+                        }
+                    } catch(err) {}
+                };
+            } catch(e) {}
+        }
+
+        return {
+            publishSale,
+            publishCut,
+            publishCancel,
+            publishDeleteSale,
+            publishDeleteCut,
+            publishShift,
+            publishDamage,
+            publishNotice,
+            requestBranchSync,
+            syncLocalDayRecords,
+            fetchDate,
+            fetchDateRange,
+            startLiveStream
+        };
+    })();
+
+    /* ── COLA DE SINCRONIZACIÓN AUTOMÁTICA CON SUPABASE Y NUBE DE RESPALDO (VENTAS Y CORTES DE CNOP Y TODAS LAS SUCURSALES) ── */
     let _isSyncingSales = false;
     async function syncPendingSalesToSupabase() {
-        if (!db || _isSyncingSales) return;
+        // 1. Subir siempre primero a la Nube de Respaldo Automática Gratuita (funciona incluso si Supabase está en HTTP 402)
+        try {
+            await CloudBackupRelay.syncLocalDayRecords(false);
+        } catch(e) {}
+
+        if (!db || _isSyncingSales || window._supabaseRestricted) return;
         _isSyncingSales = true;
         try {
             const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
@@ -6190,10 +6717,15 @@
             } catch(e) {}
         }
 
-        // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO
+        // 3. SINCRONIZACIÓN ASÍNCRONA EN SEGUNDO PLANO (Nube Respaldo + Supabase)
         (async () => {
+            // 3.1 Publicar instantáneamente en la Nube de Respaldo Gratuita (funciona 24/7 aunque Supabase esté en HTTP 402)
+            try {
+                await CloudBackupRelay.publishSale(saleRecord);
+            } catch(e) {}
+
             let syncedOk = false;
-            if (db) {
+            if (db && !window._supabaseRestricted) {
                 try {
                     const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
                     const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
@@ -17801,29 +18333,37 @@
     }
 
     window.retrySupabaseConnection = async function() {
-        window._supabaseRestricted = false;
-        toast("Reintentando conexión con la nube de Supabase...", "info", 3000);
+        toast("🔄 Sincronizando ventas y cortes con la Nube en Vivo...", "info", 2500);
+        try {
+            // 1. Siempre sincronizar y descargar de la Nube de Respaldo Gratuita (actúa en tiempo real y por fecha)
+            const todayKey = toDateKey();
+            const selDate = (S.suFilterDate && S.suFilterDate !== "today" && S.suFilterDate !== "all") ? S.suFilterDate : todayKey;
+            await CloudBackupRelay.syncLocalDayRecords(true);
+            await CloudBackupRelay.fetchDateRange(selDate, todayKey);
+            if (S.isSU) {
+                CloudBackupRelay.requestBranchSync();
+            }
+        } catch(e) {}
+
         try {
             const res = await fetch("https://rxyfitblocfvaltuxvqp.supabase.co/rest/v1/sales?select=id&limit=1", {
                 headers: { "apikey": "sb_publishable_YEnMCOAPzxEWJTbaZHzIGA_ahFaXg02" }
             });
             if (res.status === 402) {
                 window._supabaseRestricted = true;
-                toast("⚠️ Supabase sigue con restricción de cuota (HTTP 402 exceed_egress_quota). Desactiva el Spend Cap en supabase.com", "warning", 6000);
             } else if (res.ok) {
                 window._supabaseRestricted = false;
-                toast("✅ ¡Conexión con Supabase restablecida con éxito!", "success", 4000);
-                await triggerLiveNetworkSync();
-                if (S.view === "private-access") await loadPrivateAccess();
-                if (S.view === "accounting") await loadAccounting();
-                if (S.view === "sales") await loadSales();
-                if (S.view === "cuts") await loadCuts();
-            } else {
-                toast("Respuesta de Supabase: HTTP " + res.status, "info", 4000);
             }
-        } catch(e) {
-            toast("Error conectando con Supabase: " + e.message, "error", 4000);
-        }
+        } catch(e) {}
+
+        _cachedConsolidatedSales = null;
+        _cachedConsolidatedCuts = null;
+        await triggerLiveNetworkSync();
+        if (S.view === "private-access") await loadPrivateAccess();
+        if (S.view === "accounting") await loadAccounting();
+        if (S.view === "sales") await loadSales();
+        if (S.view === "cuts") await loadCuts();
+        toast("✅ Nube sincronizada: registros de las 6 sucursales actualizados.", "success", 3500);
     };
 
     /* ── OPTIMIZACIÓN DE CONSULTA DIARIA Y DESCARGA DE INFORMES (DIARIO Y SEMANAL PARA SUPERUSUARIOS) ── */
@@ -17906,13 +18446,22 @@
     }
 
     async function fetchCloudRecordsForDateRange(startDateStr, endDateStr, force = false) {
-        if (!db || window._supabaseRestricted) return;
         const { startKey, endKey, startISO, endISO } = getDateBoundsISO(startDateStr, endDateStr);
         const cacheKey = `${startKey}_${endKey}`;
         const lastFetched = _fetchedCloudDateRanges.get(cacheKey) || 0;
         const isTodayRange = (endKey === toDateKey());
-        const ttl = isTodayRange ? 45000 : 300000; // 45s para hoy, 5 min para fechas pasadas ya descargadas
+        const ttl = isTodayRange ? 20000 : 180000; // 20s para hoy, 3 min para fechas pasadas ya descargadas
         if (!force && (Date.now() - lastFetched < ttl)) return;
+
+        // 1. SIEMPRE consultar la Nube de Respaldo Gratuita (funciona aunque Supabase esté en HTTP 402)
+        try {
+            await CloudBackupRelay.fetchDateRange(startKey, endKey);
+        } catch(e) {}
+
+        if (!db || window._supabaseRestricted) {
+            _fetchedCloudDateRanges.set(cacheKey, Date.now());
+            return;
+        }
 
         try {
             const { data: salesData } = await safeQuery(
@@ -18016,17 +18565,19 @@
         const todayStr = toDateKey();
         const targetDate = (!requestedDate || requestedDate === "today") ? todayStr : requestedDate;
 
-        // Si el usuario seleccionó una fecha específica pasada, cargarla bajo demanda
-        if (targetDate && targetDate !== "all" && targetDate !== todayStr && /^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-            await fetchCloudRecordsForDateRange(targetDate, targetDate, forceRefresh);
-        }
+        // Descargar registros almacenados en la nube (Nube de Respaldo + Supabase) para hoy o la fecha seleccionada
+        await fetchCloudRecordsForDateRange(
+            targetDate === "all" ? shiftDateKeyByDays(todayStr, -7) : targetDate,
+            targetDate === "all" ? todayStr : targetDate,
+            forceRefresh
+        );
 
         const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 60000)) {
+        if (!forceRefresh && _cachedConsolidatedSales && (nowMs - _lastSalesFetchTime < 45000)) {
             return _cachedConsolidatedSales;
         }
         let remoteSales = [];
-        if (db) {
+        if (db && !window._supabaseRestricted) {
             try {
                 // OPTIMIZACIÓN DIARIA: Por defecto solo descargar de Supabase las ventas del día actual (o de la fecha solicitada)
                 const { startISO, endISO } = getDateBoundsISO(
@@ -18867,6 +19418,10 @@
                 } catch(e) {}
             }
 
+            try {
+                CloudBackupRelay.publishCancel(sid, snum, cleanReason, cashierCancelling);
+            } catch(e) {}
+
             if (realtimeChannel) {
                 try {
                     realtimeChannel.send({
@@ -18907,6 +19462,10 @@
                     await db.from("sales").delete().eq("id", sid);
                 } catch(e) {}
             }
+
+            try {
+                CloudBackupRelay.publishDeleteSale(sid, snum);
+            } catch(e) {}
 
             if (realtimeChannel) {
                 try {
@@ -19190,11 +19749,13 @@
     async function getConsolidatedCutsForChain(forceRefresh = false, requestedDate = null) {
         const todayStr = toDateKey();
         const targetDate = (!requestedDate || requestedDate === "today") ? todayStr : requestedDate;
-        if (targetDate && targetDate !== "all" && targetDate !== todayStr && /^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-            await fetchCloudRecordsForDateRange(targetDate, targetDate, forceRefresh);
-        }
+        await fetchCloudRecordsForDateRange(
+            targetDate === "all" ? shiftDateKeyByDays(todayStr, -7) : targetDate,
+            targetDate === "all" ? todayStr : targetDate,
+            forceRefresh
+        );
         const nowMs = Date.now();
-        if (!forceRefresh && _cachedConsolidatedCuts && (nowMs - _lastCutsFetchTime < 60000)) {
+        if (!forceRefresh && _cachedConsolidatedCuts && (nowMs - _lastCutsFetchTime < 45000)) {
             return _cachedConsolidatedCuts;
         }
         const cutsMap = new Map();
@@ -19280,7 +19841,7 @@
         });
 
         // Cortes remotos desde Supabase (optimizado al día actual o fecha solicitada, incluyendo respaldo CUT_RECORD en sales)
-        if (db) {
+        if (db && !window._supabaseRestricted) {
             const { startISO, endISO } = getDateBoundsISO(
                 targetDate === "all" ? shiftDateKeyByDays(todayStr, -7) : targetDate,
                 targetDate === "all" ? todayStr : targetDate
@@ -19332,7 +19893,7 @@
         }
 
         // Cargar registros de cortes eliminados desde Supabase
-        if (db) {
+        if (db && !window._supabaseRestricted) {
             try {
                 const {data: delRecs} = await safeQuery(db.from("sales").select("observations").eq("status", "CUT_DELETED_RECORD").limit(40), null, 2000);
                 if (delRecs && delRecs.length) {
@@ -19799,10 +20360,14 @@
                 } catch(e) {}
             }
 
-            // 3. Sincronización asíncrona con Supabase en segundo plano (cash_cuts + respaldo CUT_RECORD en sales para CNOP y todas las sucursales)
+            // 3. Sincronización asíncrona con Nube de Respaldo y Supabase en segundo plano (cash_cuts + respaldo CUT_RECORD en sales para CNOP y todas las sucursales)
             (async () => {
+                try {
+                    await CloudBackupRelay.publishCut(cutRecord);
+                } catch(e) {}
+
                 let cutSyncedOk = false;
-                if (db) {
+                if (db && !window._supabaseRestricted) {
                     const defaultBranchUUID = "c188dd82-7faf-41b8-948b-af8e789facba";
                     const fallbackUUID = "51bc275d-4e19-4115-be3f-42c0ce3dae5a";
                     const defaultUserUUID = "4710b330-566c-45c7-a92e-b7b6a62355af";
@@ -19948,6 +20513,10 @@
                     }), null, 2500);
                 } catch(e) {}
             }
+
+            try {
+                CloudBackupRelay.publishDeleteCut(cid);
+            } catch(e) {}
 
             // 4. Difusión en tiempo real por canal Mesh
             if (realtimeChannel) {
@@ -20303,6 +20872,10 @@
                     localStorage.setItem("lf_la_fuente_calzada_shifts", JSON.stringify(calzShifts));
                 } catch(e) {}
             }
+
+            try {
+                CloudBackupRelay.publishShift(shiftObj);
+            } catch(e) {}
 
             if (realtimeChannel) {
                 try {
@@ -20812,6 +21385,10 @@
             allReps.unshift(repObj);
             gw("all_damage_reports", allReps);
 
+            try {
+                CloudBackupRelay.publishDamage(repObj);
+            } catch(e) {}
+
             // 2. Transmitir en tiempo real
             if (realtimeChannel) {
                 try {
@@ -20878,6 +21455,10 @@
             const allNotices = gr("all_notices", []);
             allNotices.unshift(noticeObj);
             gw("all_notices", allNotices);
+
+            try {
+                CloudBackupRelay.publishNotice(noticeObj);
+            } catch(e) {}
 
             // 1. Transmitir en tiempo real
             if (realtimeChannel) {
@@ -21045,22 +21626,7 @@
 
         const currentSummaryBranch = S.prodSummaryBranch || (isSingleBranch ? activeBranchObj.id : "all");
 
-        const quotaNoticeHtml = window._supabaseRestricted ? `
-            <div style="background:#fffbeb;border:2px solid #f59e0b;padding:14px 20px;border-radius:14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:0 2px 10px rgba(245,158,11,0.15)">
-                <div style="display:flex;align-items:center;gap:12px;max-width:820px">
-                    <span style="font-size:26px">⚠️</span>
-                    <div>
-                        <strong style="color:#b45309;font-size:14px;display:block">Cuota de Red en la Nube Supabase Agotada (HTTP 402 exceed_egress_quota)</strong>
-                        <span style="color:#92400e;font-size:12px;line-height:1.4;display:block">
-                            Todas las tablets en las sucursales siguen cobrando y guardando ventas de forma 100% segura. Para recibir las ventas en vivo en teléfonos o computadoras directivas, el dueño debe ingresar a <strong>supabase.com</strong> y desactivar el límite de gasto (Spend Cap).
-                        </span>
-                    </div>
-                </div>
-                <button type="button" onclick="window.retrySupabaseConnection()" style="padding:10px 18px;background:#f59e0b;color:#fff;border:none;border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
-                    🔄 Reintentar Conexión Nube
-                </button>
-            </div>
-        ` : '';
+        const quotaNoticeHtml = '';
 
         c.innerHTML = `
         ${quotaNoticeHtml}
@@ -22312,7 +22878,6 @@
 
     async function triggerLiveNetworkSync() {
         if (!S.user) return;
-        if (window._supabaseRestricted) return;
         if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
         try {
             await syncPendingSalesToSupabase();
@@ -22327,14 +22892,17 @@
             }
             _lastSalesCount = consolidated.length;
 
-            if (S.isSU && realtimeChannel) {
-                try {
-                    realtimeChannel.send({
-                        type: "broadcast",
-                        event: "request_sync",
-                        payload: { from: S.user?.email }
-                    });
-                } catch(e) {}
+            if (S.isSU) {
+                try { CloudBackupRelay.requestBranchSync(); } catch(e) {}
+                if (realtimeChannel) {
+                    try {
+                        realtimeChannel.send({
+                            type: "broadcast",
+                            event: "request_sync",
+                            payload: { from: S.user?.email }
+                        });
+                    } catch(e) {}
+                }
             }
             safeSilentRefresh();
         } catch(e) {
@@ -22343,6 +22911,9 @@
     }
 
     function setupRealtime() {
+        try {
+            CloudBackupRelay.startLiveStream();
+        } catch(e) {}
         if (!db) return;
         if (realtimeChannel) {
             try { db.removeChannel(realtimeChannel); } catch(e) {}
