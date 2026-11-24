@@ -1390,9 +1390,9 @@
             await postToTopic(TOPIC_PREFIX + dk, { t: "not", not, dv: DEVICE_ID });
         }
 
-        async function requestBranchSync() {
+        async function requestBranchSync(force = false) {
             const nowMs = Date.now();
-            if (nowMs - _lastReqSyncSent < 10000) return;
+            if (!force && (nowMs - _lastReqSyncSent < 6000)) return;
             _lastReqSyncSent = nowMs;
             const cb = (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || resolveCanonicalBranch(S.branchName) || S.branchName || "";
             await postToTopic(LIVE_MESH_TOPIC, {
@@ -19521,11 +19521,17 @@
         document.getElementById("btn-ref-sales")?.addEventListener("click", async () => {
             cleanCalzadaGhostSales();
             const dTarget = (!S.salesFilterDate || S.salesFilterDate === "today" || S.salesFilterDate === "all") ? todayStr : S.salesFilterDate;
+            try {
+                CloudBackupRelay.requestBranchSync(true);
+                if (realtimeChannel) {
+                    realtimeChannel.send({ type: "broadcast", event: "request_sync", payload: { from: S.user?.email } });
+                }
+            } catch(e) {}
             await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
             _cachedConsolidatedSales = null;
             await getConsolidatedSalesForChain(true, dTarget);
             await loadSales();
-            toast("Ventas actualizadas.", "info");
+            toast("✓ Ventas actualizadas y sincronizadas con las sucursales.", "info", 3000);
         });
 
         // Buscador interactivo en vivo de tickets
@@ -20504,11 +20510,18 @@
         document.getElementById("btn-ref-cuts")?.addEventListener("click", async () => {
             cleanCalzadaGhostSales();
             const dTarget = (!S.cutsFilterDate || S.cutsFilterDate === "today" || S.cutsFilterDate === "all") ? todayStr : S.cutsFilterDate;
+            try {
+                CloudBackupRelay.requestBranchSync(true);
+                if (realtimeChannel) {
+                    realtimeChannel.send({ type: "broadcast", event: "request_sync", payload: { from: S.user?.email } });
+                }
+            } catch(e) {}
             await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
             _cachedConsolidatedCuts = null;
             _cachedConsolidatedSales = null;
+            await getConsolidatedCutsForChain(true, dTarget);
             await loadCuts();
-            toast("Cortes actualizados.", "info");
+            toast("✓ Cortes actualizados y sincronizados.", "info", 3000);
         });
 
         document.getElementById("btn-save-cut")?.addEventListener("click", async () => {
@@ -22715,11 +22728,20 @@
 
         document.getElementById("btn-ref-acc")?.addEventListener("click", async () => {
             const dTarget = (!S.accHistoryFilterDate || S.accHistoryFilterDate === "today" || S.accHistoryFilterDate === "all") ? todayStr : S.accHistoryFilterDate;
+            toast("🔄 Consultando nuevas ventas en las 6 sucursales...", "info", 2200);
+            try {
+                CloudBackupRelay.requestBranchSync(true);
+                if (realtimeChannel) {
+                    realtimeChannel.send({ type: "broadcast", event: "request_sync", payload: { from: S.user?.email } });
+                }
+            } catch(e) {}
             await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
             _cachedConsolidatedSales = null;
             _cachedConsolidatedCuts = null;
+            await getConsolidatedSalesForChain(true, dTarget);
+            await getConsolidatedCutsForChain(true, dTarget);
             await loadAccounting();
-            toast("Contabilidad actualizada y sincronizada.", "info");
+            toast("✅ Contabilidad actualizada con las últimas ventas y cortes.", "success", 3500);
         });
 
 
