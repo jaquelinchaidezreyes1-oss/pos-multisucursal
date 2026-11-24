@@ -1740,11 +1740,26 @@
                     }
                 }
 
-                // Subir también cortes de caja locales del día
+                // Subir también cortes de caja locales del día (escaneando todas las llaves por sucursal)
                 const allLocalCuts = lr("pending_sync_cuts", [])
                     .concat(lr("cnop_cuts", []))
                     .concat(lr("cuts", []))
-                    .concat(gr("all_cuts", []));
+                    .concat(gr("all_cuts", []))
+                    .concat(lr("last_printed_cut", null) ? [lr("last_printed_cut", null)] : []);
+                const cutSuffixes = [
+                    "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6",
+                    "calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop",
+                    "la_fuente_calzada", "c188dd82-7faf-41b8-948b-af8e789facba"
+                ];
+                cutSuffixes.forEach(sfx => {
+                    try {
+                        const raw = localStorage.getItem("lf_" + sfx + "_cuts");
+                        if (raw && raw.startsWith("[")) {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) parsed.forEach(c => allLocalCuts.push(c));
+                        }
+                    } catch(e) {}
+                });
                 const seenC = new Set();
                 const toUploadCutsByDate = new Map();
                 allLocalCuts.forEach(ct => {
@@ -1977,7 +1992,18 @@
             const syncedCutIds = new Set(gr("synced_cut_ids", []));
             const localCuts = lr("pending_sync_cuts", [])
                 .concat(lr("cnop_cuts", []))
-                .concat(lr("cuts", []));
+                .concat(lr("cuts", []))
+                .concat(gr("all_cuts", []))
+                .concat(lr("last_printed_cut", null) ? [lr("last_printed_cut", null)] : []);
+            ["calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop", "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6"].forEach(sfx => {
+                try {
+                    const raw = localStorage.getItem("lf_" + sfx + "_cuts");
+                    if (raw && raw.startsWith("[")) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) parsed.forEach(c => localCuts.push(c));
+                    }
+                } catch(e) {}
+            });
             const seenCuts = new Set();
             const unsyncedCuts = [];
             localCuts.forEach(ct => {
@@ -23458,7 +23484,17 @@
                         .slice(0, 250);
 
                     const combinedCutsMap = new Map();
-                    [myCuts, allGCuts].forEach(list => {
+                    const allBranchCutsLists = [myCuts, allGCuts, lr("last_printed_cut", null) ? [lr("last_printed_cut", null)] : []];
+                    ["calzada", "rescate", "mollotes", "tagarete_1", "tagarete_2", "cnop", "branch-1", "branch-2", "branch-3", "branch-4", "branch-5", "branch-6"].forEach(sfx => {
+                        try {
+                            const raw = localStorage.getItem("lf_" + sfx + "_cuts");
+                            if (raw && raw.startsWith("[")) {
+                                const parsed = JSON.parse(raw);
+                                if (Array.isArray(parsed)) allBranchCutsLists.push(parsed);
+                            }
+                        } catch(e) {}
+                    });
+                    allBranchCutsLists.forEach(list => {
                         (list || []).forEach(c => {
                             if (c && toDateKey(c.created_at) === todayKey) {
                                 const key = String(c.id || c.created_at);
