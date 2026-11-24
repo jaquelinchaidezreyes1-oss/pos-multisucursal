@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lafuente-pos-v112';
+const CACHE_NAME = 'lafuente-pos-v113';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -27,7 +27,15 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  if (event.request.url.includes('supabase.co') || event.request.url.includes('googleapis') || event.request.url.includes('gstatic')) {
+  const url = event.request.url || '';
+  if (
+    event.request.method !== 'GET' ||
+    url.includes('supabase.co') ||
+    url.includes('ntfy.sh') ||
+    url.includes('googleapis') ||
+    url.includes('gstatic') ||
+    url.includes('jsdelivr')
+  ) {
     return;
   }
   event.respondWith(

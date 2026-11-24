@@ -1780,7 +1780,7 @@
         async function fetchDate(dateKeyStr) {
             const dk = String(dateKeyStr || toDateKey()).trim().slice(0, 10);
             try {
-                const res = await fetch(`${RELAY_BASE}/${TOPIC_PREFIX}${dk}/json?poll=1&since=all`);
+                const res = await fetch(`${RELAY_BASE}/${TOPIC_PREFIX}${dk}/json?poll=1&since=all&_t=${Date.now()}`, { cache: "no-store" });
                 if (!res.ok) return false;
                 const text = await res.text();
                 if (!text || !text.trim()) return true;
@@ -22736,6 +22736,8 @@
                 }
             } catch(e) {}
             await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
+            await new Promise(r => setTimeout(r, 900));
+            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
             _cachedConsolidatedSales = null;
             _cachedConsolidatedCuts = null;
             await getConsolidatedSalesForChain(true, dTarget);
@@ -23431,6 +23433,7 @@
                 // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS (ENVÍA TODAS LAS VENTAS ALMACENADAS EN EL DÍA)
                 .on("broadcast", { event: "request_sync" }, async () => {
                     syncPendingSalesToSupabase();
+                    try { CloudBackupRelay.syncLocalDayRecords(true); } catch(e) {}
                     const todayKey = toDateKey();
                     const mySales = lr("sales", []);
                     const myCuts = lr("cuts", []);
