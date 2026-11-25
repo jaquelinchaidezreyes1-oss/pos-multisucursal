@@ -1135,11 +1135,24 @@
         const RELAY_BASE = RELAY_MIRRORS[0];
         const TOPIC_PREFIX = "lf_pos_cloud_day_v99_";
         const LIVE_MESH_TOPIC = "lf_pos_cloud_mesh_v99";
-        let _dayEventSource = null;
-        let _meshEventSource = null;
+        let _dayEventSources = [];
+        let _meshEventSources = [];
         let _activeStreamDate = "";
         let _isRelaySyncing = false;
         let _lastReqSyncSent = 0;
+
+        function getBranchSlug(branchOrRecord) {
+            const cb = (typeof branchOrRecord === "string" ? resolveCanonicalBranch(branchOrRecord) : resolveCanonicalBranch(branchOrRecord)) || "";
+            if (cb === "Tagarete 2") return "tag2";
+            if (cb === "Tagarete 1") return "tag1";
+            if (cb === "Rescate") return "res";
+            if (cb === "Mollotes") return "moll";
+            if (cb === "CNOP") return "cnop";
+            if (cb === "La Fuente Calzada") return "calz";
+            return "gen";
+        }
+
+        const ALL_BRANCH_SLUGS = ["calz", "res", "moll", "tag1", "tag2", "cnop", "gen"];
 
         function packSale(s) {
             if (!s) return null;
@@ -1319,13 +1332,15 @@
             if (ps.n) _appliedMirrorSaleIds.add(String(ps.n));
             saveAppliedMirrorSets();
             const dk = ps.dk || toDateKey();
+            const bSlug = getBranchSlug(ps.b);
             const payload = { t: "s", s: ps, dv: DEVICE_ID };
-            const [okDay, okMesh] = await Promise.all([
+            const [okBranchDay, okDay, okMesh] = await Promise.all([
+                postToTopic(`${TOPIC_PREFIX}${bSlug}_${dk}`, payload),
                 postToTopic(TOPIC_PREFIX + dk, payload),
                 postToTopic(LIVE_MESH_TOPIC, payload)
             ]);
-            if (okDay || okMesh) markRelaySynced([sale.id, sale.sale_number]);
-            return okDay || okMesh;
+            if (okBranchDay || okDay || okMesh) markRelaySynced([sale.id, sale.sale_number]);
+            return okBranchDay || okDay || okMesh;
         }
 
         async function publishCut(cut) {
@@ -1333,13 +1348,15 @@
             if (!pc) return false;
             pc.dv = DEVICE_ID;
             const dk = toDateKey(pc.ca);
+            const bSlug = getBranchSlug(pc.b);
             const payload = { t: "c", c: pc, dv: DEVICE_ID };
-            const [okDay, okMesh] = await Promise.all([
+            const [okBranchDay, okDay, okMesh] = await Promise.all([
+                postToTopic(`${TOPIC_PREFIX}${bSlug}_${dk}`, payload),
                 postToTopic(TOPIC_PREFIX + dk, payload),
                 postToTopic(LIVE_MESH_TOPIC, payload)
             ]);
-            if (okDay || okMesh) markRelaySynced([cut.id]);
-            return okDay || okMesh;
+            if (okBranchDay || okDay || okMesh) markRelaySynced([cut.id]);
+            return okBranchDay || okDay || okMesh;
         }
 
         async function publishCancel(sid, snum, reason, by, createdAt) {
@@ -1724,7 +1741,7 @@
                     .concat(typeof getLocalBranchSales === "function" ? getLocalBranchSales(null) : []);
 
                 const seenS = new Set();
-                const toUploadSalesByDate = new Map();
+                const toUploadSalesByTopic = new Map();
                 allLocalSales.forEach(s => {
                     if (!s || !s.id || isSystemNonSaleRecord(s) || isStaticBaseSale(s)) return;
                     const sid = String(s.id);
@@ -1742,23 +1759,31 @@
                     if (forceAllToday && !isTargetDay) return;
                     const ps = packSale(s);
                     if (!ps) return;
-                    if (!toUploadSalesByDate.has(dk)) toUploadSalesByDate.set(dk, []);
-                    toUploadSalesByDate.get(dk).push(ps);
+                    const bSlug = getBranchSlug(ps.b);
+                    const tKey = `${bSlug}_${dk}`;
+                    if (!toUploadSalesByTopic.has(tKey)) toUploadSalesByTopic.set(tKey, { dk, bSlug, list: [] });
+                    toUploadSalesByTopic.get(tKey).list.push(ps);
                 });
 
-                // Enviar en lotes compactos de 10 ventas al Buzón Diario (TOPIC_PREFIX + dk)
+                // Enviar en lotes compactos de 5 ventas (< 1.5 KB por mensaje) al Buzón Exclusivo de la Sucursal y al General
                 const allDayBatches = [];
-                for (const [dk, list] of toUploadSalesByDate.entries()) {
-                    for (let i = 0; i < list.length; i += 10) {
-                        allDayBatches.push({ dk, chunk: list.slice(i, i + 10) });
+                for (const { dk, bSlug, list } of toUploadSalesByTopic.values()) {
+                    for (let i = 0; i < list.length; i += 5) {
+                        allDayBatches.push({ dk, bSlug, chunk: list.slice(i, i + 5) });
                     }
                 }
                 for (let b = 0; b < allDayBatches.length; b += 2) {
                     const group = allDayBatches.slice(b, b + 2);
-                    await Promise.all(group.map(async ({ dk, chunk }) => {
+                    await Promise.all(group.map(async ({ dk, bSlug, chunk }) => {
                         const payload = { t: "batch", s: chunk, dv: DEVICE_ID };
-                        const ok = await postToTopic(TOPIC_PREFIX + dk, payload);
-                        if (ok) {
+                        const [okB, okG] = await Promise.all([
+                            postToTopic(`${TOPIC_PREFIX}${bSlug}_${dk}`, payload),
+                            postToTopic(TOPIC_PREFIX + dk, payload)
+                        ]);
+                        if (forceAllToday) {
+                            postToTopic(LIVE_MESH_TOPIC, payload).catch(() => {});
+                        }
+                        if (okB || okG) {
                             const syncedNow = [];
                             chunk.forEach(x => { syncedNow.push(x.id, x.n); });
                             markRelaySynced(syncedNow);
@@ -1787,7 +1812,7 @@
                     } catch(e) {}
                 });
                 const seenC = new Set();
-                const toUploadCutsByDate = new Map();
+                const toUploadCutsByTopic = new Map();
                 allLocalCuts.forEach(ct => {
                     if (!ct || !ct.id) return;
                     const cid = String(ct.id);
@@ -1801,22 +1826,30 @@
                     if (forceAllToday && !isTargetDay) return;
                     const pc = packCut(ct);
                     if (!pc) return;
-                    if (!toUploadCutsByDate.has(dk)) toUploadCutsByDate.set(dk, []);
-                    toUploadCutsByDate.get(dk).push(pc);
+                    const bSlug = getBranchSlug(pc.b);
+                    const tKey = `${bSlug}_${dk}`;
+                    if (!toUploadCutsByTopic.has(tKey)) toUploadCutsByTopic.set(tKey, { dk, bSlug, list: [] });
+                    toUploadCutsByTopic.get(tKey).list.push(pc);
                 });
 
                 const allCutBatches = [];
-                for (const [dk, list] of toUploadCutsByDate.entries()) {
-                    for (let i = 0; i < list.length; i += 8) {
-                        allCutBatches.push({ dk, chunk: list.slice(i, i + 8) });
+                for (const { dk, bSlug, list } of toUploadCutsByTopic.values()) {
+                    for (let i = 0; i < list.length; i += 5) {
+                        allCutBatches.push({ dk, bSlug, chunk: list.slice(i, i + 5) });
                     }
                 }
                 for (let b = 0; b < allCutBatches.length; b += 2) {
                     const group = allCutBatches.slice(b, b + 2);
-                    await Promise.all(group.map(async ({ dk, chunk }) => {
+                    await Promise.all(group.map(async ({ dk, bSlug, chunk }) => {
                         const payload = { t: "batch", c: chunk, dv: DEVICE_ID };
-                        const ok = await postToTopic(TOPIC_PREFIX + dk, payload);
-                        if (ok) {
+                        const [okB, okG] = await Promise.all([
+                            postToTopic(`${TOPIC_PREFIX}${bSlug}_${dk}`, payload),
+                            postToTopic(TOPIC_PREFIX + dk, payload)
+                        ]);
+                        if (forceAllToday) {
+                            postToTopic(LIVE_MESH_TOPIC, payload).catch(() => {});
+                        }
+                        if (okB || okG) {
                             markRelaySynced(chunk.map(x => x.id));
                         }
                     }));
@@ -1829,7 +1862,7 @@
 
         async function fetchDate(dateKeyStr) {
             const dk = String(dateKeyStr || toDateKey()).trim().slice(0, 10);
-            const parseLines = (text) => {
+            const parseLines = async (text) => {
                 if (!text || !text.trim()) return;
                 const lines = text.split("\n");
                 for (const line of lines) {
@@ -1837,26 +1870,41 @@
                     if (!trimmed) continue;
                     try {
                         const ev = JSON.parse(trimmed);
-                        if (ev && ev.event === "message" && ev.message) {
+                        if (!ev || ev.event !== "message") continue;
+                        if (ev.message) {
                             const payload = typeof ev.message === "string" ? JSON.parse(ev.message) : ev.message;
                             ingestRelayPayload(payload, false);
+                        } else if (ev.attachment && ev.attachment.url) {
+                            try {
+                                const attRes = await fetch(ev.attachment.url, { cache: "no-store" });
+                                if (attRes && attRes.ok) {
+                                    const attJson = await attRes.json();
+                                    ingestRelayPayload(attJson, false);
+                                }
+                            } catch(eAtt) {}
                         }
                     } catch(e) {}
                 }
             };
             try {
+                const topicsToPoll = [
+                    `${TOPIC_PREFIX}${dk}`,
+                    ...ALL_BRANCH_SLUGS.map(slug => `${TOPIC_PREFIX}${slug}_${dk}`)
+                ];
                 await Promise.all(RELAY_MIRRORS.map(async (baseUrl) => {
-                    try {
-                        const resDay = await fetch(`${baseUrl}/${TOPIC_PREFIX}${dk}/json?poll=1&since=all&_t=${Date.now()}`, { cache: "no-store" });
-                        if (resDay && resDay.ok) {
-                            parseLines(await resDay.text());
-                        }
-                    } catch(e) {}
+                    await Promise.all(topicsToPoll.map(async (topicName) => {
+                        try {
+                            const resDay = await fetch(`${baseUrl}/${topicName}/json?poll=1&since=all&_t=${Date.now()}`, { cache: "no-store" });
+                            if (resDay && resDay.ok) {
+                                await parseLines(await resDay.text());
+                            }
+                        } catch(e) {}
+                    }));
                     if (dk === toDateKey()) {
                         try {
                             const resMesh = await fetch(`${baseUrl}/${LIVE_MESH_TOPIC}/json?poll=1&since=12h&_t=${Date.now()}`, { cache: "no-store" });
                             if (resMesh && resMesh.ok) {
-                                parseLines(await resMesh.text());
+                                await parseLines(await resMesh.text());
                             }
                         } catch(e) {}
                     }
@@ -1883,51 +1931,70 @@
         function startLiveStream() {
             if (typeof EventSource === "undefined") return;
             const todayKey = toDateKey();
-            if (_dayEventSource && _activeStreamDate === todayKey) return;
-            try {
-                if (_dayEventSource) _dayEventSource.close();
-            } catch(e) {}
-            try {
-                if (_meshEventSource) _meshEventSource.close();
-            } catch(e) {}
+            if (_dayEventSources.length && _activeStreamDate === todayKey) return;
+            _dayEventSources.forEach(es => { try { es.close(); } catch(e) {} });
+            _meshEventSources.forEach(es => { try { es.close(); } catch(e) {} });
+            _dayEventSources = [];
+            _meshEventSources = [];
 
             _activeStreamDate = todayKey;
-            try {
-                _dayEventSource = new EventSource(`${RELAY_BASE}/${TOPIC_PREFIX}${todayKey}/sse`);
-                _dayEventSource.onmessage = (e) => {
-                    try {
-                        const ev = JSON.parse(e.data);
-                        const msgStr = (ev && ev.message) ? ev.message : e.data;
-                        const payload = typeof msgStr === "string" ? JSON.parse(msgStr) : msgStr;
-                        ingestRelayPayload(payload, true);
-                    } catch(err) {}
-                };
-            } catch(e) {}
-
-            try {
-                _meshEventSource = new EventSource(`${RELAY_BASE}/${LIVE_MESH_TOPIC}/sse`);
-                _meshEventSource.onmessage = (e) => {
-                    try {
-                        const ev = JSON.parse(e.data);
-                        const msgStr = (ev && ev.message) ? ev.message : e.data;
-                        const payload = typeof msgStr === "string" ? JSON.parse(msgStr) : msgStr;
-                        if (!payload) return;
-                        if (payload.t === "req_sync") {
-                            if (payload.dv && payload.dv === DEVICE_ID) return;
-                            syncLocalDayRecords(true, payload.d || null);
-                            if (!S.isSU && S.inv && Object.keys(S.inv).length) {
-                                const myBranch = resolveCanonicalBranch(S.user?.email) || resolveCanonicalBranch(S.branchName) || S.branchName;
-                                if (!payload.b || payload.b === myBranch) {
-                                    publishInventory(S.inv);
-                                    if (S.currentShift) publishShift(S.currentShift);
-                                }
-                            }
-                        } else {
-                            ingestRelayPayload(payload, true);
+            const handleSseEvent = async (e) => {
+                try {
+                    const ev = JSON.parse(e.data);
+                    if (ev && ev.attachment && ev.attachment.url && !ev.message) {
+                        const attRes = await fetch(ev.attachment.url, { cache: "no-store" });
+                        if (attRes && attRes.ok) {
+                            ingestRelayPayload(await attRes.json(), true);
                         }
-                    } catch(err) {}
-                };
-            } catch(e) {}
+                        return;
+                    }
+                    const msgStr = (ev && ev.message) ? ev.message : e.data;
+                    const payload = typeof msgStr === "string" ? JSON.parse(msgStr) : msgStr;
+                    ingestRelayPayload(payload, true);
+                } catch(err) {}
+            };
+
+            const handleMeshEvent = async (e) => {
+                try {
+                    const ev = JSON.parse(e.data);
+                    let payload = null;
+                    if (ev && ev.attachment && ev.attachment.url && !ev.message) {
+                        const attRes = await fetch(ev.attachment.url, { cache: "no-store" });
+                        if (attRes && attRes.ok) payload = await attRes.json();
+                    } else {
+                        const msgStr = (ev && ev.message) ? ev.message : e.data;
+                        payload = typeof msgStr === "string" ? JSON.parse(msgStr) : msgStr;
+                    }
+                    if (!payload) return;
+                    if (payload.t === "req_sync") {
+                        if (payload.dv && payload.dv === DEVICE_ID) return;
+                        syncLocalDayRecords(true, payload.d || null);
+                        if (!S.isSU && S.inv && Object.keys(S.inv).length) {
+                            const myBranch = resolveCanonicalBranch(S.user?.email) || resolveCanonicalBranch(S.branchName) || S.branchName;
+                            if (!payload.b || payload.b === myBranch) {
+                                publishInventory(S.inv);
+                                if (S.currentShift) publishShift(S.currentShift);
+                            }
+                        }
+                    } else {
+                        ingestRelayPayload(payload, true);
+                    }
+                } catch(err) {}
+            };
+
+            // Conectar stream en vivo en los espejos para máxima disponibilidad
+            RELAY_MIRRORS.slice(0, 2).forEach(baseUrl => {
+                try {
+                    const esDay = new EventSource(`${baseUrl}/${TOPIC_PREFIX}${todayKey}/sse`);
+                    esDay.onmessage = handleSseEvent;
+                    _dayEventSources.push(esDay);
+                } catch(e) {}
+                try {
+                    const esMesh = new EventSource(`${baseUrl}/${LIVE_MESH_TOPIC}/sse`);
+                    esMesh.onmessage = handleMeshEvent;
+                    _meshEventSources.push(esMesh);
+                } catch(e) {}
+            });
         }
 
         return {
@@ -18681,8 +18748,8 @@
             const startFetch = (targetDateStr === "all") ? shiftDateKeyByDays(todayStr, -7) : (dTarget < yesterdayStr ? dTarget : yesterdayStr);
             await fetchCloudRecordsForDateRange(startFetch, todayStr, true);
 
-            // 4. Esperar 1.1s a que las tablets de las 6 sucursales respondan al llamado en vivo y hacer segunda extracción
-            await new Promise(r => setTimeout(r, 1100));
+            // 4. Esperar 1.8s a que las tablets de las 6 sucursales respondan al llamado en vivo y hacer segunda extracción de todos los buzones por sucursal
+            await new Promise(r => setTimeout(r, 1800));
             _fetchedCloudDateRanges.clear();
             await fetchCloudRecordsForDateRange(dTarget, todayStr, true);
         } catch(e) {}
