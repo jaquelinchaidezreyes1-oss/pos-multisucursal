@@ -1140,6 +1140,8 @@
         let _activeStreamDate = "";
         let _isRelaySyncing = false;
         let _lastReqSyncSent = 0;
+        let _lastSeenReqSyncId = "";
+        let _branchAutoPollTimer = null;
 
         function getBranchSlug(branchOrRecord) {
             const cb = (typeof branchOrRecord === "string" ? resolveCanonicalBranch(branchOrRecord) : resolveCanonicalBranch(branchOrRecord)) || "";
@@ -1428,8 +1430,10 @@
             _lastReqSyncSent = nowMs;
             const cb = (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || resolveCanonicalBranch(S.branchName) || S.branchName || "";
             const dKey = (targetDateReq && /^\d{4}-\d{2}-\d{2}$/.test(String(targetDateReq).slice(0, 10))) ? String(targetDateReq).slice(0, 10) : toDateKey();
+            const reqId = "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
             await postToTopic(LIVE_MESH_TOPIC, {
                 t: "req_sync",
+                rid: reqId,
                 d: dKey,
                 from: S.user?.email || "su",
                 b: cb,
@@ -1694,12 +1698,17 @@
                 }
                 const myBranch = (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || resolveCanonicalBranch(S.branchName) || S.branchName;
                 if (targetBranch && myBranch && targetBranch === myBranch) {
-                    S.inv = { ...S.inv, ...obj.inv };
-                    if (typeof saveBranchInv === "function") saveBranchInv(S.inv, true);
-                    if (typeof alertInv === "function") alertInv();
-                    if (S.view === "pos" && typeof renderPOS === "function" && typeof filtered === "function") renderPOS(filtered());
-                    else if (S.view === "inventory" && typeof loadInventory === "function") loadInventory();
-                    changed = true;
+                    let hasDiff = false;
+                    for (const k of Object.keys(obj.inv)) {
+                        if (S.inv[k] !== obj.inv[k]) { hasDiff = true; break; }
+                    }
+                    if (hasDiff) {
+                        S.inv = { ...S.inv, ...obj.inv };
+                        if (typeof saveBranchInv === "function") saveBranchInv(S.inv, true);
+                        if (typeof alertInv === "function") alertInv();
+                        if (S.view === "inventory" && typeof loadInventory === "function") loadInventory();
+                        changed = true;
+                    }
                 }
             } else if (obj.t === "dmg" && obj.rep) {
                 const rep = obj.rep;
@@ -1995,6 +2004,52 @@
                     _meshEventSources.push(esMesh);
                 } catch(e) {}
             });
+
+            // RADAR SILENCIOSO EN SEGUNDO PLANO PARA TODAS LAS SUCURSALES (SIN QUE LAS ENCARGADAS TENGAN QUE PICAR NINGÚN BOTÓN):
+            // Cada 18 segundos:
+            // 1. Las tablets de las sucursales suben automáticamente cualquier venta o corte del día que no haya subido.
+            // 2. Revisan si un Superusuario presionó "Actualizar" (req_sync) incluso si el SSE de la tablet se desconectó, y responden de inmediato.
+            // 3. Auto-actualizan su versión del Service Worker silenciosamente si hay una nueva versión en GitHub.
+            if (_branchAutoPollTimer) clearInterval(_branchAutoPollTimer);
+            _branchAutoPollTimer = setInterval(async () => {
+                try {
+                    if (!S.user) return;
+                    // Auto-empujar cualquier venta o corte nuevo del día desde la tablet de la encargada sin que toque nada
+                    if (!S.isSU) {
+                        await syncLocalDayRecords(false);
+                    }
+                    // Revisar por HTTP directo si hay una petición "req_sync" reciente del Superusuario
+                    for (const baseUrl of RELAY_MIRRORS.slice(0, 2)) {
+                        try {
+                            const r = await fetch(`${baseUrl}/${LIVE_MESH_TOPIC}/json?poll=1&since=45s&_t=${Date.now()}`, { cache: "no-store" });
+                            if (!r || !r.ok) continue;
+                            const txt = await r.text();
+                            if (!txt || !txt.trim()) continue;
+                            const lines = txt.split("\n");
+                            for (const ln of lines) {
+                                const tr = ln.trim();
+                                if (!tr) continue;
+                                try {
+                                    const ev = JSON.parse(tr);
+                                    if (!ev || ev.event !== "message" || !ev.message) continue;
+                                    const pl = typeof ev.message === "string" ? JSON.parse(ev.message) : ev.message;
+                                    if (!pl) continue;
+                                    if (pl.t === "req_sync") {
+                                        if (pl.dv && pl.dv === DEVICE_ID) continue;
+                                        const rKey = String(pl.rid || ev.id || pl.d || "");
+                                        if (rKey && rKey !== _lastSeenReqSyncId) {
+                                            _lastSeenReqSyncId = rKey;
+                                            await syncLocalDayRecords(true, pl.d || null);
+                                        }
+                                    } else {
+                                        ingestRelayPayload(pl, true);
+                                    }
+                                } catch(eIn) {}
+                            }
+                        } catch(eUrl) {}
+                    }
+                } catch(ePoll) {}
+            }, 18000);
         }
 
         return {
@@ -23269,7 +23324,7 @@
         else if (S.view === "sales") loadSales(true);
         else if (S.view === "cuts") loadCuts(true);
         else if (S.view === "sales-count") loadSalesCount(true);
-        if (S.view === "pos") updatePosLiveMovement();
+        // Nota: Si la encargada está en la vista "pos" (Punto de Venta), jamás re-renderizar ni refrescar la pantalla en segundo plano para evitar parpadeos visuales mientras cobra.
     }
 
     async function triggerLiveNetworkSync() {
@@ -23888,9 +23943,9 @@
             console.warn("Realtime error:", e);
         }
 
-        // Heartbeat de auto-sincronización periódica activa cada 30 segundos
+        // Heartbeat de auto-sincronización periódica activa en segundo plano (100% silencioso, sin recargar ni parpadear la pantalla)
         if (window._syncTimer) clearInterval(window._syncTimer);
-        window._syncTimer = setInterval(triggerLiveNetworkSync, 60000);
+        window._syncTimer = setInterval(triggerLiveNetworkSync, 30000);
 
         // Sincronización inmediata al volver a enfocar la pestaña
         window.addEventListener("focus", triggerLiveNetworkSync);
