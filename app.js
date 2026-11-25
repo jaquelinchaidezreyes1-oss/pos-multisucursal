@@ -1312,9 +1312,13 @@
             if (ps.n) _appliedMirrorSaleIds.add(String(ps.n));
             saveAppliedMirrorSets();
             const dk = ps.dk || toDateKey();
-            const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "s", s: ps, dv: DEVICE_ID });
-            if (ok) markRelaySynced([sale.id, sale.sale_number]);
-            return ok;
+            const payload = { t: "s", s: ps, dv: DEVICE_ID };
+            const [okDay, okMesh] = await Promise.all([
+                postToTopic(TOPIC_PREFIX + dk, payload),
+                postToTopic(LIVE_MESH_TOPIC, payload)
+            ]);
+            if (okDay || okMesh) markRelaySynced([sale.id, sale.sale_number]);
+            return okDay || okMesh;
         }
 
         async function publishCut(cut) {
@@ -1322,9 +1326,13 @@
             if (!pc) return false;
             pc.dv = DEVICE_ID;
             const dk = toDateKey(pc.ca);
-            const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "c", c: pc, dv: DEVICE_ID });
-            if (ok) markRelaySynced([cut.id]);
-            return ok;
+            const payload = { t: "c", c: pc, dv: DEVICE_ID };
+            const [okDay, okMesh] = await Promise.all([
+                postToTopic(TOPIC_PREFIX + dk, payload),
+                postToTopic(LIVE_MESH_TOPIC, payload)
+            ]);
+            if (okDay || okMesh) markRelaySynced([cut.id]);
+            return okDay || okMesh;
         }
 
         async function publishCancel(sid, snum, reason, by, createdAt) {
@@ -1730,17 +1738,27 @@
                     toUploadSalesByDate.get(dk).push(ps);
                 });
 
+                // Enviar respuesta rápida de todas las ventas del día al canal LIVE_MESH_TOPIC primero (con concurrencia 3) para que el Superusuario las reciba en < 1 segundo
+                const allDayBatches = [];
                 for (const [dk, list] of toUploadSalesByDate.entries()) {
-                    // Enviar en lotes compactos de 6 ventas (< 2.5 KB por mensaje) para almacenamiento inline garantizado
                     for (let i = 0; i < list.length; i += 6) {
-                        const chunk = list.slice(i, i + 6);
-                        const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "batch", s: chunk });
+                        allDayBatches.push({ dk, chunk: list.slice(i, i + 6) });
+                    }
+                }
+                for (let b = 0; b < allDayBatches.length; b += 3) {
+                    const group = allDayBatches.slice(b, b + 3);
+                    await Promise.all(group.map(async ({ dk, chunk }) => {
+                        const payload = { t: "batch", s: chunk, dv: DEVICE_ID };
+                        if (forceAllToday) {
+                            await postToTopic(LIVE_MESH_TOPIC, payload);
+                        }
+                        const ok = await postToTopic(TOPIC_PREFIX + dk, payload);
                         if (ok) {
                             const syncedNow = [];
                             chunk.forEach(x => { syncedNow.push(x.id, x.n); });
                             markRelaySynced(syncedNow);
                         }
-                    }
+                    }));
                 }
 
                 // Subir también cortes de caja locales del día (escaneando todas las llaves por sucursal)
@@ -1781,14 +1799,24 @@
                     toUploadCutsByDate.get(dk).push(pc);
                 });
 
+                const allCutBatches = [];
                 for (const [dk, list] of toUploadCutsByDate.entries()) {
                     for (let i = 0; i < list.length; i += 6) {
-                        const chunk = list.slice(i, i + 6);
-                        const ok = await postToTopic(TOPIC_PREFIX + dk, { t: "batch", c: chunk });
+                        allCutBatches.push({ dk, chunk: list.slice(i, i + 6) });
+                    }
+                }
+                for (let b = 0; b < allCutBatches.length; b += 3) {
+                    const group = allCutBatches.slice(b, b + 3);
+                    await Promise.all(group.map(async ({ dk, chunk }) => {
+                        const payload = { t: "batch", c: chunk, dv: DEVICE_ID };
+                        if (forceAllToday) {
+                            await postToTopic(LIVE_MESH_TOPIC, payload);
+                        }
+                        const ok = await postToTopic(TOPIC_PREFIX + dk, payload);
                         if (ok) {
                             markRelaySynced(chunk.map(x => x.id));
                         }
-                    }
+                    }));
                 }
             } catch(e) {
             } finally {
@@ -1798,11 +1826,8 @@
 
         async function fetchDate(dateKeyStr) {
             const dk = String(dateKeyStr || toDateKey()).trim().slice(0, 10);
-            try {
-                const res = await fetch(`${RELAY_BASE}/${TOPIC_PREFIX}${dk}/json?poll=1&since=all&_t=${Date.now()}`, { cache: "no-store" });
-                if (!res.ok) return false;
-                const text = await res.text();
-                if (!text || !text.trim()) return true;
+            const parseLines = (text) => {
+                if (!text || !text.trim()) return;
                 const lines = text.split("\n");
                 for (const line of lines) {
                     const trimmed = line.trim();
@@ -1810,10 +1835,22 @@
                     try {
                         const ev = JSON.parse(trimmed);
                         if (ev && ev.event === "message" && ev.message) {
-                            const payload = JSON.parse(ev.message);
+                            const payload = typeof ev.message === "string" ? JSON.parse(ev.message) : ev.message;
                             ingestRelayPayload(payload, false);
                         }
                     } catch(e) {}
+                }
+            };
+            try {
+                const [resDay, resMesh] = await Promise.all([
+                    fetch(`${RELAY_BASE}/${TOPIC_PREFIX}${dk}/json?poll=1&since=all&_t=${Date.now()}`, { cache: "no-store" }).catch(() => null),
+                    (dk === toDateKey() ? fetch(`${RELAY_BASE}/${LIVE_MESH_TOPIC}/json?poll=1&since=12h&_t=${Date.now()}`, { cache: "no-store" }).catch(() => null) : Promise.resolve(null))
+                ]);
+                if (resDay && resDay.ok) {
+                    parseLines(await resDay.text());
+                }
+                if (resMesh && resMesh.ok) {
+                    parseLines(await resMesh.text());
                 }
                 return true;
             } catch(e) {
