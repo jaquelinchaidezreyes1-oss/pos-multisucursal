@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lafuente-pos-v116';
+const CACHE_NAME = 'lafuente-pos-v117';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -31,7 +31,7 @@ self.addEventListener('fetch', event => {
   if (
     event.request.method !== 'GET' ||
     url.includes('supabase.co') ||
-    url.includes('ntfy.sh') ||
+    url.includes('ntfy.') ||
     url.includes('googleapis') ||
     url.includes('gstatic') ||
     url.includes('jsdelivr')

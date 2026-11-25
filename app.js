@@ -1127,7 +1127,12 @@
 
     /* ── NUBE DE RESPALDO AUTOMÁTICA GRATUITA (PUENTE SECUNDARIO EN VIVO + HISTÓRICO POR DÍA SIN LÍMITE DE CUOTA SUPABASE) ── */
     const CloudBackupRelay = (() => {
-        const RELAY_BASE = "https://ntfy.sh";
+        const RELAY_MIRRORS = [
+            "https://ntfy.sh",
+            "https://ntfy.tedomum.net",
+            "https://ntfy.jae.fi"
+        ];
+        const RELAY_BASE = RELAY_MIRRORS[0];
         const TOPIC_PREFIX = "lf_pos_cloud_day_v99_";
         const LIVE_MESH_TOPIC = "lf_pos_cloud_mesh_v99";
         let _dayEventSource = null;
@@ -1252,17 +1257,19 @@
         }
 
         async function postToTopic(topic, obj) {
-            try {
-                const body = JSON.stringify(obj);
-                const res = await fetch(`${RELAY_BASE}/${topic}`, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain;charset=UTF-8" },
-                    body
-                });
-                return res.ok;
-            } catch(e) {
-                return false;
-            }
+            const body = JSON.stringify(obj);
+            let anyOk = false;
+            await Promise.all(RELAY_MIRRORS.map(async (baseUrl) => {
+                try {
+                    const res = await fetch(`${baseUrl}/${topic}`, {
+                        method: "POST",
+                        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+                        body
+                    });
+                    if (res.ok) anyOk = true;
+                } catch(e) {}
+            }));
+            return anyOk;
         }
 
         function markRelaySynced(ids) {
@@ -1729,29 +1736,27 @@
 
                     const dk = toDateKey(s.created_at);
                     const isTargetDay = (dk === todayKey || dk === requestedKey);
-                    // Subir ventas de hoy/fecha solicitada (y pendientes recientes) que aún no estén en el buzón de respaldo
+                    // En sincronización automática o solicitud del Superusuario, subir únicamente hoy y fecha solicitada (nunca saturar con meses pasados)
+                    if (!isTargetDay && dk < shiftDateKeyByDays(todayKey, -1)) return;
                     if (!forceAllToday && relaySynced.has(sid) && (!snum || relaySynced.has(snum))) return;
-                    if (forceAllToday && !isTargetDay && relaySynced.has(sid)) return;
+                    if (forceAllToday && !isTargetDay) return;
                     const ps = packSale(s);
                     if (!ps) return;
                     if (!toUploadSalesByDate.has(dk)) toUploadSalesByDate.set(dk, []);
                     toUploadSalesByDate.get(dk).push(ps);
                 });
 
-                // Enviar respuesta rápida de todas las ventas del día al canal LIVE_MESH_TOPIC primero (con concurrencia 3) para que el Superusuario las reciba en < 1 segundo
+                // Enviar en lotes compactos de 10 ventas al Buzón Diario (TOPIC_PREFIX + dk)
                 const allDayBatches = [];
                 for (const [dk, list] of toUploadSalesByDate.entries()) {
-                    for (let i = 0; i < list.length; i += 6) {
-                        allDayBatches.push({ dk, chunk: list.slice(i, i + 6) });
+                    for (let i = 0; i < list.length; i += 10) {
+                        allDayBatches.push({ dk, chunk: list.slice(i, i + 10) });
                     }
                 }
-                for (let b = 0; b < allDayBatches.length; b += 3) {
-                    const group = allDayBatches.slice(b, b + 3);
+                for (let b = 0; b < allDayBatches.length; b += 2) {
+                    const group = allDayBatches.slice(b, b + 2);
                     await Promise.all(group.map(async ({ dk, chunk }) => {
                         const payload = { t: "batch", s: chunk, dv: DEVICE_ID };
-                        if (forceAllToday) {
-                            await postToTopic(LIVE_MESH_TOPIC, payload);
-                        }
                         const ok = await postToTopic(TOPIC_PREFIX + dk, payload);
                         if (ok) {
                             const syncedNow = [];
@@ -1791,8 +1796,9 @@
                     seenC.add(cid);
                     const dk = toDateKey(ct.created_at);
                     const isTargetDay = (dk === todayKey || dk === requestedKey);
+                    if (!isTargetDay && dk < shiftDateKeyByDays(todayKey, -1)) return;
                     if (!forceAllToday && relaySynced.has(cid)) return;
-                    if (forceAllToday && !isTargetDay && relaySynced.has(cid)) return;
+                    if (forceAllToday && !isTargetDay) return;
                     const pc = packCut(ct);
                     if (!pc) return;
                     if (!toUploadCutsByDate.has(dk)) toUploadCutsByDate.set(dk, []);
@@ -1801,17 +1807,14 @@
 
                 const allCutBatches = [];
                 for (const [dk, list] of toUploadCutsByDate.entries()) {
-                    for (let i = 0; i < list.length; i += 6) {
-                        allCutBatches.push({ dk, chunk: list.slice(i, i + 6) });
+                    for (let i = 0; i < list.length; i += 8) {
+                        allCutBatches.push({ dk, chunk: list.slice(i, i + 8) });
                     }
                 }
-                for (let b = 0; b < allCutBatches.length; b += 3) {
-                    const group = allCutBatches.slice(b, b + 3);
+                for (let b = 0; b < allCutBatches.length; b += 2) {
+                    const group = allCutBatches.slice(b, b + 2);
                     await Promise.all(group.map(async ({ dk, chunk }) => {
                         const payload = { t: "batch", c: chunk, dv: DEVICE_ID };
-                        if (forceAllToday) {
-                            await postToTopic(LIVE_MESH_TOPIC, payload);
-                        }
                         const ok = await postToTopic(TOPIC_PREFIX + dk, payload);
                         if (ok) {
                             markRelaySynced(chunk.map(x => x.id));
@@ -1842,16 +1845,22 @@
                 }
             };
             try {
-                const [resDay, resMesh] = await Promise.all([
-                    fetch(`${RELAY_BASE}/${TOPIC_PREFIX}${dk}/json?poll=1&since=all&_t=${Date.now()}`, { cache: "no-store" }).catch(() => null),
-                    (dk === toDateKey() ? fetch(`${RELAY_BASE}/${LIVE_MESH_TOPIC}/json?poll=1&since=12h&_t=${Date.now()}`, { cache: "no-store" }).catch(() => null) : Promise.resolve(null))
-                ]);
-                if (resDay && resDay.ok) {
-                    parseLines(await resDay.text());
-                }
-                if (resMesh && resMesh.ok) {
-                    parseLines(await resMesh.text());
-                }
+                await Promise.all(RELAY_MIRRORS.map(async (baseUrl) => {
+                    try {
+                        const resDay = await fetch(`${baseUrl}/${TOPIC_PREFIX}${dk}/json?poll=1&since=all&_t=${Date.now()}`, { cache: "no-store" });
+                        if (resDay && resDay.ok) {
+                            parseLines(await resDay.text());
+                        }
+                    } catch(e) {}
+                    if (dk === toDateKey()) {
+                        try {
+                            const resMesh = await fetch(`${baseUrl}/${LIVE_MESH_TOPIC}/json?poll=1&since=12h&_t=${Date.now()}`, { cache: "no-store" });
+                            if (resMesh && resMesh.ok) {
+                                parseLines(await resMesh.text());
+                            }
+                        } catch(e) {}
+                    }
+                }));
                 return true;
             } catch(e) {
                 return false;
