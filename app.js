@@ -1390,14 +1390,15 @@
             await postToTopic(TOPIC_PREFIX + dk, { t: "not", not, dv: DEVICE_ID });
         }
 
-        async function requestBranchSync(force = false) {
+        async function requestBranchSync(force = false, targetDateReq = null) {
             const nowMs = Date.now();
             if (!force && (nowMs - _lastReqSyncSent < 6000)) return;
             _lastReqSyncSent = nowMs;
             const cb = (!S.isSU ? resolveCanonicalBranch(S.user?.email) : "") || resolveCanonicalBranch(S.branchName) || S.branchName || "";
+            const dKey = (targetDateReq && /^\d{4}-\d{2}-\d{2}$/.test(String(targetDateReq).slice(0, 10))) ? String(targetDateReq).slice(0, 10) : toDateKey();
             await postToTopic(LIVE_MESH_TOPIC, {
                 t: "req_sync",
-                d: toDateKey(),
+                d: dKey,
                 from: S.user?.email || "su",
                 b: cb,
                 sh: S.shift || "",
@@ -1695,11 +1696,12 @@
             return changed;
         }
 
-        async function syncLocalDayRecords(forceAllToday = false) {
-            if (_isRelaySyncing) return;
+        async function syncLocalDayRecords(forceAllToday = false, targetDateReq = null) {
+            if (_isRelaySyncing && !forceAllToday) return;
             _isRelaySyncing = true;
             try {
                 const todayKey = toDateKey();
+                const requestedKey = (targetDateReq && /^\d{4}-\d{2}-\d{2}$/.test(String(targetDateReq).slice(0, 10))) ? String(targetDateReq).slice(0, 10) : todayKey;
                 const relaySynced = new Set(gr("relay_synced_ids_v99", []));
                 const allLocalSales = lr("pending_sync_sales", [])
                     .concat(lr("sales", []))
@@ -1718,9 +1720,10 @@
                     if (snum) seenS.add(snum);
 
                     const dk = toDateKey(s.created_at);
-                    // Subir ventas de hoy (y pendientes recientes) que aún no estén en el buzón de respaldo
+                    const isTargetDay = (dk === todayKey || dk === requestedKey);
+                    // Subir ventas de hoy/fecha solicitada (y pendientes recientes) que aún no estén en el buzón de respaldo
                     if (!forceAllToday && relaySynced.has(sid) && (!snum || relaySynced.has(snum))) return;
-                    if (forceAllToday && dk !== todayKey && relaySynced.has(sid)) return;
+                    if (forceAllToday && !isTargetDay && relaySynced.has(sid)) return;
                     const ps = packSale(s);
                     if (!ps) return;
                     if (!toUploadSalesByDate.has(dk)) toUploadSalesByDate.set(dk, []);
@@ -1769,8 +1772,9 @@
                     if (seenC.has(cid)) return;
                     seenC.add(cid);
                     const dk = toDateKey(ct.created_at);
+                    const isTargetDay = (dk === todayKey || dk === requestedKey);
                     if (!forceAllToday && relaySynced.has(cid)) return;
-                    if (forceAllToday && dk !== todayKey && relaySynced.has(cid)) return;
+                    if (forceAllToday && !isTargetDay && relaySynced.has(cid)) return;
                     const pc = packCut(ct);
                     if (!pc) return;
                     if (!toUploadCutsByDate.has(dk)) toUploadCutsByDate.set(dk, []);
@@ -1864,7 +1868,7 @@
                         if (!payload) return;
                         if (payload.t === "req_sync") {
                             if (payload.dv && payload.dv === DEVICE_ID) return;
-                            syncLocalDayRecords(true);
+                            syncLocalDayRecords(true, payload.d || null);
                             if (!S.isSU && S.inv && Object.keys(S.inv).length) {
                                 const myBranch = resolveCanonicalBranch(S.user?.email) || resolveCanonicalBranch(S.branchName) || S.branchName;
                                 if (!payload.b || payload.b === myBranch) {
@@ -18601,38 +18605,62 @@
         return out;
     }
 
-    window.retrySupabaseConnection = async function() {
-        toast("🔄 Sincronizando ventas y cortes con la Nube en Vivo...", "info", 2500);
-        try {
-            // 1. Siempre sincronizar y descargar de la Nube de Respaldo Gratuita (actúa en tiempo real y por fecha)
-            const todayKey = toDateKey();
-            const selDate = (S.suFilterDate && S.suFilterDate !== "today" && S.suFilterDate !== "all") ? S.suFilterDate : todayKey;
-            await CloudBackupRelay.syncLocalDayRecords(true);
-            await CloudBackupRelay.fetchDateRange(selDate, todayKey);
-            if (S.isSU) {
-                CloudBackupRelay.requestBranchSync();
-            }
-        } catch(e) {}
+    window.forceExtractAllBranchesForSU = async function(targetDateStr = null) {
+        const todayStr = toDateKey();
+        const dTarget = (!targetDateStr || targetDateStr === "today" || targetDateStr === "all") ? todayStr : String(targetDateStr).slice(0, 10);
+        toast("🔄 Extrayendo ventas y cortes en vivo de las 6 sucursales...", "info", 2600);
+        cleanCalzadaGhostSales();
 
         try {
-            const res = await fetch("https://rxyfitblocfvaltuxvqp.supabase.co/rest/v1/sales?select=id&limit=1", {
-                headers: { "apikey": "sb_publishable_YEnMCOAPzxEWJTbaZHzIGA_ahFaXg02" }
-            });
-            if (res.status === 402) {
-                window._supabaseRestricted = true;
-            } else if (res.ok) {
-                window._supabaseRestricted = false;
+            // 1. Limpiar bloqueos de caché temporal para forzar extracción real desde la nube
+            _fetchedCloudDateRanges.clear();
+            _cachedConsolidatedSales = null;
+            _cachedConsolidatedCuts = null;
+
+            // 2. Ordenar a todas las tablets/dispositivos abiertos de las 6 sucursales que empujen sus registros del día ahora mismo
+            await CloudBackupRelay.syncLocalDayRecords(true, dTarget);
+            await CloudBackupRelay.requestBranchSync(true, dTarget);
+            if (realtimeChannel) {
+                try {
+                    realtimeChannel.send({
+                        type: "broadcast",
+                        event: "request_sync",
+                        payload: { from: S.user?.email, date: dTarget }
+                    });
+                } catch(e) {}
             }
+
+            // 3. Primera extracción inmediata de la Nube de Respaldo y Supabase (día objetivo + hoy + ayer por si hubo ventas de cierre)
+            const yesterdayStr = shiftDateKeyByDays(todayStr, -1);
+            const startFetch = (targetDateStr === "all") ? shiftDateKeyByDays(todayStr, -7) : (dTarget < yesterdayStr ? dTarget : yesterdayStr);
+            await fetchCloudRecordsForDateRange(startFetch, todayStr, true);
+
+            // 4. Esperar 1.1s a que las tablets de las 6 sucursales respondan al llamado en vivo y hacer segunda extracción
+            await new Promise(r => setTimeout(r, 1100));
+            _fetchedCloudDateRanges.clear();
+            await fetchCloudRecordsForDateRange(dTarget, todayStr, true);
         } catch(e) {}
 
         _cachedConsolidatedSales = null;
         _cachedConsolidatedCuts = null;
-        await triggerLiveNetworkSync();
-        if (S.view === "private-access") await loadPrivateAccess();
-        if (S.view === "accounting") await loadAccounting();
-        if (S.view === "sales") await loadSales();
-        if (S.view === "cuts") await loadCuts();
-        toast("✅ Nube sincronizada: registros de las 6 sucursales actualizados.", "success", 3500);
+        const allSales = await getConsolidatedSalesForChain(true, dTarget);
+        const allCuts = await getConsolidatedCutsForChain(true, dTarget);
+
+        const daySalesCount = allSales.filter(s => !isSystemNonSaleRecord(s) && String(s.status || "").toUpperCase() !== "CANCELLED" && (targetDateStr === "all" ? true : isTodaySale(s, dTarget))).length;
+        const dayCutsCount = allCuts.filter(c => targetDateStr === "all" ? true : (toDateKey(c.created_at) === dTarget)).length;
+
+        if (S.view === "accounting") await loadAccounting(true);
+        else if (S.view === "sales") await loadSales(true);
+        else if (S.view === "cuts") await loadCuts(true);
+        else if (S.view === "private-access") await loadPrivateAccess(true);
+        else if (S.view === "sales-count") await loadSalesCount(true);
+
+        toast(`✅ Extracción completada (6 sucursales): ${daySalesCount} ventas y ${dayCutsCount} cortes sincronizados.`, "success", 4200);
+    };
+
+    window.retrySupabaseConnection = async function() {
+        const activeDate = (S.view === "accounting" ? S.accHistoryFilterDate : (S.view === "sales" ? S.salesFilterDate : (S.view === "cuts" ? S.cutsFilterDate : S.privateAccessDate))) || toDateKey();
+        await window.forceExtractAllBranchesForSU(activeDate);
     };
 
     /* ── OPTIMIZACIÓN DE CONSULTA DIARIA Y DESCARGA DE INFORMES (DIARIO Y SEMANAL PARA SUPERUSUARIOS) ── */
@@ -19545,19 +19573,8 @@
         }));
 
         document.getElementById("btn-ref-sales")?.addEventListener("click", async () => {
-            cleanCalzadaGhostSales();
-            const dTarget = (!S.salesFilterDate || S.salesFilterDate === "today" || S.salesFilterDate === "all") ? todayStr : S.salesFilterDate;
-            try {
-                CloudBackupRelay.requestBranchSync(true);
-                if (realtimeChannel) {
-                    realtimeChannel.send({ type: "broadcast", event: "request_sync", payload: { from: S.user?.email } });
-                }
-            } catch(e) {}
-            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
-            _cachedConsolidatedSales = null;
-            await getConsolidatedSalesForChain(true, dTarget);
-            await loadSales();
-            toast("✓ Ventas actualizadas y sincronizadas con las sucursales.", "info", 3000);
+            const dTarget = (!S.salesFilterDate || S.salesFilterDate === "today") ? todayStr : S.salesFilterDate;
+            await window.forceExtractAllBranchesForSU(dTarget);
         });
 
         // Buscador interactivo en vivo de tickets
@@ -20534,20 +20551,8 @@
         });
 
         document.getElementById("btn-ref-cuts")?.addEventListener("click", async () => {
-            cleanCalzadaGhostSales();
-            const dTarget = (!S.cutsFilterDate || S.cutsFilterDate === "today" || S.cutsFilterDate === "all") ? todayStr : S.cutsFilterDate;
-            try {
-                CloudBackupRelay.requestBranchSync(true);
-                if (realtimeChannel) {
-                    realtimeChannel.send({ type: "broadcast", event: "request_sync", payload: { from: S.user?.email } });
-                }
-            } catch(e) {}
-            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
-            _cachedConsolidatedCuts = null;
-            _cachedConsolidatedSales = null;
-            await getConsolidatedCutsForChain(true, dTarget);
-            await loadCuts();
-            toast("✓ Cortes actualizados y sincronizados.", "info", 3000);
+            const dTarget = (!S.cutsFilterDate || S.cutsFilterDate === "today") ? todayStr : S.cutsFilterDate;
+            await window.forceExtractAllBranchesForSU(dTarget);
         });
 
         document.getElementById("btn-save-cut")?.addEventListener("click", async () => {
@@ -22753,23 +22758,8 @@
         });
 
         document.getElementById("btn-ref-acc")?.addEventListener("click", async () => {
-            const dTarget = (!S.accHistoryFilterDate || S.accHistoryFilterDate === "today" || S.accHistoryFilterDate === "all") ? todayStr : S.accHistoryFilterDate;
-            toast("🔄 Consultando nuevas ventas en las 6 sucursales...", "info", 2200);
-            try {
-                CloudBackupRelay.requestBranchSync(true);
-                if (realtimeChannel) {
-                    realtimeChannel.send({ type: "broadcast", event: "request_sync", payload: { from: S.user?.email } });
-                }
-            } catch(e) {}
-            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
-            await new Promise(r => setTimeout(r, 900));
-            await fetchCloudRecordsForDateRange(dTarget, dTarget, true);
-            _cachedConsolidatedSales = null;
-            _cachedConsolidatedCuts = null;
-            await getConsolidatedSalesForChain(true, dTarget);
-            await getConsolidatedCutsForChain(true, dTarget);
-            await loadAccounting();
-            toast("✅ Contabilidad actualizada con las últimas ventas y cortes.", "success", 3500);
+            const dTarget = (!S.accHistoryFilterDate || S.accHistoryFilterDate === "today") ? todayStr : S.accHistoryFilterDate;
+            await window.forceExtractAllBranchesForSU(dTarget);
         });
 
 
@@ -23457,10 +23447,12 @@
                     }
                 })
                 // 3. PETICIÓN DE SINCRONIZACIÓN DE RED DE OTRAS CUENTAS (ENVÍA TODAS LAS VENTAS ALMACENADAS EN EL DÍA)
-                .on("broadcast", { event: "request_sync" }, async () => {
+                .on("broadcast", { event: "request_sync" }, async (msg) => {
+                    const reqDate = msg?.payload?.date || null;
                     syncPendingSalesToSupabase();
-                    try { CloudBackupRelay.syncLocalDayRecords(true); } catch(e) {}
+                    try { CloudBackupRelay.syncLocalDayRecords(true, reqDate); } catch(e) {}
                     const todayKey = toDateKey();
+                    const targetKey = (reqDate && /^\d{4}-\d{2}-\d{2}$/.test(String(reqDate).slice(0, 10))) ? String(reqDate).slice(0, 10) : todayKey;
                     const mySales = lr("sales", []);
                     const myCuts = lr("cuts", []);
                     const allGSales = gr("all_sales", []);
@@ -23473,7 +23465,7 @@
                     [_sessionSales, mySales, branchLocalSales, allGSales].forEach(list => {
                         (list || []).forEach(s => {
                             if (!s || isSystemNonSaleRecord(s) || isStaticBaseSale(s)) return;
-                            if (isTodaySale(s, todayKey)) {
+                            if (isTodaySale(s, todayKey) || isTodaySale(s, targetKey)) {
                                 const key = String(s.sale_number || s.local_id || s.id);
                                 if (key && !combinedTodayMap.has(key)) combinedTodayMap.set(key, s);
                             }
@@ -23496,7 +23488,7 @@
                     });
                     allBranchCutsLists.forEach(list => {
                         (list || []).forEach(c => {
-                            if (c && toDateKey(c.created_at) === todayKey) {
+                            if (c && (toDateKey(c.created_at) === todayKey || toDateKey(c.created_at) === targetKey)) {
                                 const key = String(c.id || c.created_at);
                                 if (key && !combinedCutsMap.has(key)) combinedCutsMap.set(key, c);
                             }
